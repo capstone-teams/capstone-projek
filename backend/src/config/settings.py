@@ -37,9 +37,12 @@ class Settings(BaseSettings):
     MOODLE_WEB_SERVICE_TOKEN: str
 
     LLM_PROVIDER: str
-    # Shared credential/model, kept as a fallback for single-provider setups.
-    LLM_API_KEY: str
-    LLM_MODEL: str
+    # Optional shared credential/model, kept for single-provider setups. Prefer
+    # the provider-specific values below: a shared value only applies to the
+    # provider selected by LLM_PROVIDER, so it can never be sent to the other
+    # provider by accident.
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = ""
 
     # Provider-specific LLM credentials and models. An empty value means "not
     # set": the provider then falls back to LLM_API_KEY / LLM_MODEL above when

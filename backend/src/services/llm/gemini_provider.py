@@ -12,7 +12,10 @@ from src.services.llm.base import (
 # Provisional default model. The final model is NOT decided yet: PRD AIR-008
 # requires a model evaluation first, so this only keeps the provider usable out
 # of the box and stays overridable through GEMINI_MODEL / LLM_MODEL.
-DEFAULT_MODEL = "gemini-1.5-flash"
+# Verified against the live API; older names (gemini-1.5-flash, gemini-2.5-flash)
+# are retired for new keys and answer HTTP 404, so check availability before
+# pinning a model here.
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
