@@ -79,14 +79,43 @@ class BaseLLMProvider(ABC):
         return await self.generate(CONNECTIVITY_PROMPT)
 
 
+# Machine-readable reasons providers use to report a rejected credential, e.g.
+# Gemini answers HTTP 400 + reason API_KEY_INVALID for a bad key.
+CREDENTIAL_REJECTION_REASONS = frozenset(
+    {
+        "API_KEY_INVALID",
+        "API_KEY_SERVICE_BLOCKED",
+        "API_KEY_HTTP_REFERRER_BLOCKED",
+        "API_KEY_IP_ADDRESS_BLOCKED",
+    }
+)
+
+
+def _rejected_credential(exc: httpx.HTTPStatusError) -> bool:
+    """Whether the error body marks this failure as a rejected credential.
+
+    Only the machine-readable `reason` enum is inspected; free-text messages are
+    ignored so upstream text can never leak into our errors.
+    """
+    try:
+        details = exc.response.json().get("error", {}).get("details", [])
+    except (ValueError, AttributeError):
+        return False
+    return any(
+        isinstance(detail, dict) and detail.get("reason") in CREDENTIAL_REJECTION_REASONS
+        for detail in details
+    )
+
+
 def _status_error(provider_name: str, exc: httpx.HTTPStatusError) -> LLMProviderError:
     """Map an HTTP error status to a typed provider error.
 
-    Only the status code is kept: upstream response bodies and request URLs can
-    echo a credential back, so they are never propagated.
+    Only the status code and, for credentials, a machine-readable reason enum are
+    kept: upstream response bodies and request URLs can echo a credential back,
+    so they are never propagated.
     """
     status = exc.response.status_code
-    if status in (401, 403):
+    if status in (401, 403) or _rejected_credential(exc):
         return LLMConfigurationError(f"{provider_name} provider rejected the credential (HTTP {status})")
     if status >= 500:
         return LLMConnectionError(f"{provider_name} provider request failed (HTTP {status})")

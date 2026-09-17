@@ -208,6 +208,37 @@ async def test_authentication_failure_maps_to_a_configuration_error():
 
 
 @pytest.mark.asyncio
+async def test_reported_credential_rejection_at_http_400_maps_to_a_configuration_error():
+    """Gemini answers HTTP 400 with reason API_KEY_INVALID for an invalid key."""
+    provider = GeminiProvider(api_key="invalid-key")
+    body = {
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "details": [{"reason": "API_KEY_INVALID", "domain": "googleapis.com"}],
+        }
+    }
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.side_effect = mock_status_error(400, body)
+        with pytest.raises(LLMConfigurationError):
+            await provider.generate("Hello")
+
+
+@pytest.mark.asyncio
+async def test_unrelated_http_400_stays_a_provider_error():
+    provider = GeminiProvider(api_key="valid-key")
+    body = {"error": {"code": 400, "status": "INVALID_ARGUMENT", "details": [{"reason": "BAD_REQUEST"}]}}
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.side_effect = mock_status_error(400, body)
+        with pytest.raises(LLMProviderError) as excinfo:
+            await provider.generate("Hello")
+
+    assert not isinstance(excinfo.value, LLMConfigurationError)
+
+
+@pytest.mark.asyncio
 async def test_server_failure_maps_to_a_connection_error():
     provider = OpenAIProvider(api_key="mock_key")
 
