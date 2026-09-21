@@ -17,7 +17,8 @@ backend/
 │   │   ├── __init__.py
 │   │   └── settings.py
 │   ├── routes/                   # Definition Endpoint API & HTTP Router (FastAPI)
-│   │   └── __init__.py
+│   │   ├── __init__.py           # Registri & agregator router (/api/v1)
+│   │   └── health.py             # Endpoint root & health check
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
 │   │   └── __init__.py
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
@@ -165,13 +166,143 @@ Aturan Repository:
 
 ---
 
+## 🧩 Konvensi Pembuatan Module / Domain Baru
+
+Struktur direktori backend **bersifat tetap** (lihat bagian *Structure Overview*). Karena itu "module" atau "domain" di proyek ini **bukan** direktori baru, melainkan sebuah *kesatuan file* yang tersebar pada layer yang sudah ada. Konvensi ini memastikan setiap anggota tim membuat domain baru dengan pola yang sama, tanpa menentukan strukturnya sendiri-sendiri.
+
+### 1. Komponen Sebuah Domain
+
+| Komponen | Lokasi File | Wajib? | Contoh |
+| :--- | :--- | :--- | :--- |
+| **Router** | `src/routes/<domain>.py` | Wajib | `src/routes/rps.py` |
+| **Schema** | `src/schemas/<domain>.py` | Wajib jika ada request/response body | `src/schemas/rps.py` |
+| **Service** | `src/services/<domain>_service.py` | Wajib | `src/services/rps_service.py` |
+| **Model** | `src/models/<domain>.py` | Wajib jika domain punya tabel | `src/models/rps.py` |
+| **Repository** | `src/services/<domain>_repository.py` | Opsional (lihat bagian *Repository / Data Access*) | `src/services/rps_repository.py` |
+| **Controller** | `src/controllers/<domain>.py` | Opsional (lihat bagian *Tanggung Jawab Setiap Layer*) | `src/controllers/rps.py` |
+| **Test** | `tests/test_<domain>.py` | Wajib | `tests/test_rps.py` |
+
+Aturan:
+
+1. **Tidak semua komponen wajib ada.** Buat komponen hanya jika domain benar-benar membutuhkannya. Domain yang hanya membaca data dari sistem eksternal (contoh: daftar course dari Moodle) tidak perlu `models/` maupun repository.
+2. **Dilarang membuat direktori baru per domain** (contoh: `src/rps/`, `src/modules/rps/`, `src/routes/rps/`). Semua file domain tetap berada pada layer masing-masing.
+3. **Dilarang membuat direktori `repositories/`.** Data access berada di `src/services/`.
+4. Satu domain diwakili oleh **satu file per layer**, bukan satu direktori. Jika salah satu file mulai terlalu besar atau menangani lebih dari satu entity, pecah berdasarkan **sub-domain**, bukan dengan menambah layer baru: `src/services/rps_analysis_service.py`.
+
+### 2. Aturan Penamaan
+
+| Elemen | Konvensi | Contoh |
+| :--- | :--- | :--- |
+| File router | `<domain>.py` (snake_case) | `src/routes/rps.py` |
+| Variabel router | `router` | `router = APIRouter(prefix="/rps", tags=["RPS"])` |
+| File service | `<domain>_service.py` | `src/services/rps_service.py` |
+| Kelas service | `<Domain>Service` (PascalCase) | `class RPSService` |
+| File repository | `<domain>_repository.py` | `src/services/rps_repository.py` |
+| Kelas repository | `<Domain>Repository` | `class RPSRepository` |
+| File model | `<domain>.py` | `src/models/rps.py` |
+| Kelas model | `<Domain>` (tunggal, PascalCase) | `class RPS(Base)` |
+| Nama tabel | plural snake_case | `__tablename__ = "rps"` |
+| File schema | `<domain>.py` | `src/schemas/rps.py` |
+| Kelas schema | `<Domain><Kegunaan><Request\|Response>` | `RPSUploadRequest`, `RPSDetailResponse` |
+| File test | `test_<domain>.py` | `tests/test_rps.py` |
+
+### 3. Prefix Endpoint Domain
+
+Prefix versi API (`/api/v1`) **hanya** dimiliki oleh `api_router` di `src/routes/__init__.py`. File router domain cukup menuliskan prefix domainnya sendiri:
+
+| `APIRouter(prefix=...)` di `src/routes/<domain>.py` | URL akhir |
+| :--- | :--- |
+| `prefix="/rps"` | `/api/v1/rps` |
+| `prefix="/courses"` | `/api/v1/courses` |
+
+Menuliskan `/api/v1` di dalam file router domain (`prefix="/api/v1/rps"` ❌) menghasilkan URL ganda (`/api/v1/api/v1/rps`).
+
+### 4. Registrasi Router Domain
+
+Router domain didaftarkan di **satu tempat**: `src/routes/__init__.py`.
+
+```python
+# src/routes/__init__.py
+from fastapi import APIRouter
+
+from src.routes.health import router as health_router
+from src.routes.rps import router as rps_router
+
+API_V1_PREFIX = "/api/v1"
+
+api_router = APIRouter(prefix=API_V1_PREFIX)
+api_router.include_router(rps_router)
+```
+
+`src/main.py` **tidak perlu diubah** saat menambah domain — ia hanya menyertakan `health_router` (endpoint infrastruktur, tanpa prefix versi) dan `api_router`.
+
+### 5. Langkah Membuat Domain Baru
+
+Contoh domain `rps`:
+
+1. **Schema** — buat `src/schemas/rps.py` berisi DTO request/response (`RPSUploadRequest`, `RPSDetailResponse`).
+2. **Model** — buat `src/models/rps.py` berisi ORM model, hanya jika domain punya tabel.
+3. **Repository** *(opsional)* — buat `src/services/rps_repository.py` jika query mulai panjang/berulang atau dipakai lebih dari satu service.
+4. **Service** — buat `src/services/rps_service.py` berisi seluruh logika bisnis domain.
+5. **Router** — buat `src/routes/rps.py` dengan `router = APIRouter(prefix="/rps", tags=["RPS"])`. Handler hanya memvalidasi input, memanggil service, dan mengembalikan response.
+6. **Registrasi** — tambahkan satu baris di `src/routes/__init__.py`: `api_router.include_router(rps_router)`.
+7. **Test** — buat `tests/test_rps.py` (minimal: happy path endpoint dan aturan bisnis utama service).
+8. **Verifikasi** — jalankan `uv run pytest`, lalu pastikan endpoint muncul di `/docs` dengan URL `/api/v1/<domain>`.
+
+### 6. Kerangka File per Layer
+
+```python
+# src/schemas/rps.py — DTO Pydantic saja
+from pydantic import BaseModel
+
+
+class RPSUploadRequest(BaseModel):
+    title: str
+    content: str
+
+
+class RPSDetailResponse(BaseModel):
+    id: int
+    title: str
+```
+
+```python
+# src/models/rps.py — ORM model saja
+from sqlalchemy.orm import Mapped, mapped_column
+
+from src.config.database import Base  # Base disediakan oleh milestone BE-02
+
+
+class RPS(Base):
+    __tablename__ = "rps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    content: Mapped[str]
+```
+
+Kerangka `routes/`, `services/`, dan repository sudah dicontohkan pada bagian *Contoh Penerapan Boundary* di bawah, sehingga tidak diulang di sini.
+
+> **Catatan (akan difinalkan pada BE-02):** penempatan dependency provider seperti `get_rps_service(...)` belum ditetapkan karena bergantung pada `AsyncSession` / `get_db` dari database foundation. Ingat bahwa `src/routes/` **dilarang** mengimpor `sqlalchemy` maupun `Session`, sehingga provider tidak boleh dituliskan sembarangan di dalam file router.
+
+### 7. Checklist Penambahan Domain
+
+- [ ] Seluruh file domain berada pada layer yang benar, dan tidak ada direktori baru per domain.
+- [ ] File router bernama `src/routes/<domain>.py` dan prefix `/api/v1` tidak ditulis dua kali.
+- [ ] Router terdaftar tepat satu kali melalui `api_router` di `src/routes/__init__.py`.
+- [ ] `src/main.py` tidak diubah dan tidak ada route yang didefinisikan di luar `src/routes/`.
+- [ ] Tidak ada query database di dalam `routes/`, dan layer bawah tidak mengimpor layer di atasnya.
+- [ ] Domain baru memiliki test pada `tests/test_<domain>.py`.
+
+---
+
 ## ✅ Contoh Penerapan Boundary (Benar vs Salah)
 
 **1. Route handler — benar (tipis, hanya urusan HTTP):**
 
 ```python
 # src/routes/rps.py  ✅
-router = APIRouter(prefix="/api/v1/rps", tags=["RPS"])
+router = APIRouter(prefix="/rps", tags=["RPS"])   # prefix /api/v1 dimiliki api_router
 
 @router.post("", response_model=RPSDetailResponse, status_code=201)
 async def upload_rps(
