@@ -12,6 +12,7 @@
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

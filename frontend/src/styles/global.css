@@ -1,45 +1,128 @@
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #182d35;
-  background: #f4f7f8;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  /* Brand / Primary Palette for LMS ITK - Alur MVP (from Figma #265:29) */
+  --color-primary: #1D4ED8;
+  --color-primary-hover: #1E40AF;
+  --color-primary-active: #172554;
+  --color-primary-accent: #2563EB;
+  --color-primary-light: #EFF6FF;
+  --color-primary-border: #BFDBFE;
+
+  /* Neutral & Background (Slate palette) */
+  --color-bg: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-surface-hover: #F1F5F9;
+  --color-surface-subtle: #F8FAFC;
+
+  /* Typography Colors */
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748B;
+  --color-text-dimmed: #94A3B8;
+  --color-text-white: #FFFFFF;
+
+  /* Borders */
+  --color-border: #E2E8F0;
+  --color-border-subtle: #F1F5F9;
+  --color-border-strong: #CBD5E1;
+
+  /* Semantic / Status Colors */
+  --color-success: #059669;
+  --color-success-bg: #ECFDF5;
+  --color-success-text: #047857;
+  --color-success-border: #A7F3D0;
+
+  --color-warning: #D97706;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-text: #B45309;
+  --color-warning-border: #FDE68A;
+
+  --color-info: #2563EB;
+  --color-info-bg: #EFF6FF;
+  --color-info-text: #1D4ED8;
+  --color-info-border: #BFDBFE;
+
+  --color-purple: #7C3AED;
+  --color-purple-bg: #F5F3FF;
+  --color-purple-text: #6D28D9;
+  --color-purple-border: #DDD6FE;
+
+  /* Typography Font Families - Inter throughout */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Border Radii (Figma specifies borderRadius: 8px) */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-xs: 0px 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0px 1px 3px rgba(15, 23, 42, 0.08), 0px 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-card: 0px 1px 3px rgba(15, 23, 42, 0.05);
+  --shadow-modal: 0px 20px 25px -5px rgba(15, 23, 42, 0.1), 0px 8px 10px -6px rgba(15, 23, 42, 0.05);
+
+  /* Layout Dimensions */
+  --header-height: 64px;
+  --max-content-width: 1440px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
-* { box-sizing: border-box; }
+@media (max-width: 640px) {
+  /* Prevent iOS Safari auto-zoom on input focus */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
 
-body {
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family);
+  color: var(--color-text-primary);
   margin: 0;
-  min-width: 320px;
-}
-
-.welcome {
-  width: min(100% - 2rem, 48rem);
-  margin: clamp(2rem, 10vh, 7rem) auto;
-  padding: clamp(1.5rem, 5vw, 3.5rem);
-  background: #fff;
-  border: 1px solid #d8e3e7;
-  border-radius: 1rem;
-}
-
-.welcome__label {
-  color: #176c64;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  line-height: 1.25;
 }
 
-h1 {
-  font-size: clamp(1.75rem, 5vw, 2.75rem);
-  line-height: 1.2;
-  letter-spacing: -0.03em;
+p {
+  margin: 0;
 }
 
-.welcome__notice {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid #d8e3e7;
-  color: #4b606a;
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+svg {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
