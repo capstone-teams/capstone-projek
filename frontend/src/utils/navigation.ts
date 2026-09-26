@@ -53,31 +53,38 @@ export function getBreadcrumbTrail(path: AppPath): BreadcrumbItem[] {
     case '/course-plan':
       return [
         { label: 'Dashboard', path: '/dashboard' },
-        { label: 'Keamanan Siber' },
+        { label: 'Aljabar Linear dan Geometri' },
       ]
     case '/rps-analysis':
       return [
         { label: 'Dashboard', path: '/dashboard' },
-        { label: 'Keamanan Siber', path: '/course-plan' },
+        { label: 'Aljabar Linear dan Geometri', path: '/course-plan' },
         { label: 'Hasil Analisis RPS' },
       ]
     case '/weekly-content':
       return [
         { label: 'Dashboard', path: '/dashboard' },
-        { label: 'Keamanan Siber', path: '/course-plan' },
-        { label: 'Detail Minggu 03' },
+        { label: 'Aljabar Linear dan Geometri', path: '/course-plan' },
+        { label: 'Detail Konten Mingguan' },
+      ]
+    case '/material-view':
+      return [
+        { label: 'Dashboard', path: '/dashboard' },
+        { label: 'Aljabar Linear dan Geometri', path: '/course-plan' },
+        { label: 'Detail Konten Mingguan', path: '/weekly-content' },
+        { label: 'Penampil Dokumen Materi' },
       ]
     case '/student/courses':
       return [{ label: 'Mata Kuliah' }]
     case '/student/course':
       return [
         { label: 'Mata Kuliah', path: '/student/courses' },
-        { label: 'Keamanan Siber' },
+        { label: 'Aljabar Linear dan Geometri' },
       ]
     case '/student/week':
       return [
         { label: 'Mata Kuliah', path: '/student/courses' },
-        { label: 'Keamanan Siber', path: '/student/course' },
+        { label: 'Aljabar Linear dan Geometri', path: '/student/course' },
         { label: 'Minggu 03' },
       ]
     default:

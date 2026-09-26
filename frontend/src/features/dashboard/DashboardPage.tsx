@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import type { AppPath, ModalType } from '../../types/navigation'
 import { DOSEN_COURSES } from '../../data/courseData'
 import styles from './DashboardPage.module.css'
@@ -7,23 +7,21 @@ interface DashboardPageProps {
   onNavigate: (path: AppPath) => void
   onOpenModal: (modal: ModalType) => void
   onShowToast?: (message: string, type?: 'info' | 'success') => void
-  initialEmpty?: boolean
+  hasCourses?: boolean
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
   onNavigate,
   onOpenModal,
   onShowToast,
-  initialEmpty = false,
+  hasCourses = false,
 }) => {
-  const [isEmpty, setIsEmpty] = useState(initialEmpty)
-
   const handleCourseClick = (code: string, name: string) => {
-    if (code === 'IF403') {
+    if (code === 'IF201405' || code === 'IF403') {
       onNavigate('/course-plan')
     } else {
       onShowToast?.(
-        `Course Plan ${name} (${code}) sedang dalam penyusunan. Buka Keamanan Siber untuk melihat Course Plan aktif.`,
+        `Course Plan ${name} (${code}) sedang dalam penyusunan. Buka Aljabar Linear dan Geometri untuk melihat Course Plan aktif.`,
         'info'
       )
     }
@@ -50,7 +48,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </div>
 
-      {isEmpty ? (
+      {!hasCourses ? (
         <div className={styles.emptyCard}>
           <h2 className={styles.emptyTitle}>Belum ada mata kuliah</h2>
           <p className={styles.emptyDesc}>
@@ -63,13 +61,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               onClick={() => onOpenModal('upload-rps')}
             >
               Upload RPS
-            </button>
-            <button
-              type="button"
-              className={styles.btnSecondary}
-              onClick={() => setIsEmpty(false)}
-            >
-              Muat Contoh Mata Kuliah
             </button>
           </div>
         </div>

@@ -26,7 +26,7 @@ export const MoodlePublishModal: React.FC<MoodlePublishModalProps> = ({
           </label>
           <input
             type="text"
-            value="Keamanan Siber · Kelas A"
+            value="Aljabar Linear dan Geometri · Kelas A"
             disabled
             style={{
               padding: '10px 14px',

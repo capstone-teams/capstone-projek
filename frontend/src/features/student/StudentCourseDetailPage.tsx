@@ -86,15 +86,15 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
           Mata Kuliah
         </button>
         <span className={styles.breadcrumbSeparator}>/</span>
-        <span className={styles.breadcrumbCurrent}>Keamanan Siber</span>
+        <span className={styles.breadcrumbCurrent}>Aljabar Linear dan Geometri</span>
       </div>
 
       {/* Page Heading */}
       <div className={styles.pageHeading}>
         <div className={styles.headingText}>
-          <h1 className={styles.pageTitle}>Keamanan Siber</h1>
+          <h1 className={styles.pageTitle}>Aljabar Linear dan Geometri</h1>
           <p className={styles.pageSubtitle}>
-            Muchammad Chandra Cahyo Utomo, S. Kom., M. Kom. · IF403 · 3 SKS
+            Muchammad Chandra Cahyo Utomo, S. Kom., M. Kom. · IF201405 · 3 SKS
           </p>
         </div>
 
@@ -103,7 +103,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
             type="button"
             className={styles.btnSecondary}
             onClick={() =>
-              onShowToast?.('Membuka Course Keamanan Siber di Moodle ITK...', 'info')
+              onShowToast?.('Membuka Course Aljabar Linear dan Geometri di Moodle ITK...', 'info')
             }
           >
             Buka Course di Moodle
@@ -116,7 +116,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         <div className={styles.statusText}>
           <h2 className={styles.statusHeading}>Overview mata kuliah</h2>
           <p className={styles.statusDesc}>
-            Konsep, ancaman, dan praktik keamanan sistem informasi.
+            Penerapan konsep dasar Sistem Persamaan Linear, Matriks, Vektor, dan Geometri.
           </p>
         </div>
 
@@ -125,7 +125,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
             type="button"
             className={styles.btnSecondary}
             onClick={() =>
-              onShowToast?.('Membuka dokumen RPS Keamanan Siber...', 'info')
+              onShowToast?.('Membuka dokumen RPS Aljabar Linear dan Geometri...', 'info')
             }
           >
             Lihat RPS

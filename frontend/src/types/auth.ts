@@ -8,6 +8,8 @@ export interface UserProfile {
   prodi: string
   email: string
   avatarInitial: string
+  teachingApproach?: string
+  aiInstructions?: string
 }
 
 export const DOSEN_PROFILE: UserProfile = {
@@ -18,6 +20,9 @@ export const DOSEN_PROFILE: UserProfile = {
   prodi: 'Informatika · Jurusan Sains & Teknologi Informasi',
   email: 'chandra.cahyo@itk.ac.id',
   avatarInitial: 'MC',
+  teachingApproach: 'Berbasis proyek dan studi kasus bertahap.',
+  aiInstructions:
+    'Gunakan contoh nyata penerapan aljabar linear pada komputasi dan grafika, sertakan latihan bertingkat, dan hindari kuis mendadak.',
 }
 
 export const MAHASISWA_PROFILE: UserProfile = {

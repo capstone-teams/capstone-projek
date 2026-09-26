@@ -14,11 +14,11 @@ export const StudentCoursesPage: React.FC<StudentCoursesPageProps> = ({
   onShowToast,
 }) => {
   const handleCourseClick = (code: string, name: string) => {
-    if (code === 'IF403') {
+    if (code === 'IF201405' || code === 'IF403') {
       onNavigate('/student/course')
     } else {
       onShowToast?.(
-        `Silabus ${name} (${code}) sedang dalam penyusunan dosen. Buka Keamanan Siber untuk materi aktif.`,
+        `Silabus ${name} (${code}) sedang dalam penyusunan dosen. Buka Aljabar Linear dan Geometri untuk materi aktif.`,
         'info'
       )
     }

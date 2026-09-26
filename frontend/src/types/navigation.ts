@@ -4,6 +4,7 @@ export type AppPath =
   | '/rps-analysis'
   | '/course-plan'
   | '/weekly-content'
+  | '/material-view'
   | '/student/courses'
   | '/student/course'
   | '/student/week'
@@ -41,18 +42,23 @@ export const APP_ROUTES: Record<AppPath, RouteMetadata> = {
   },
   '/rps-analysis': {
     path: '/rps-analysis',
-    title: 'Hasil Analisis RPS — Keamanan Siber — LMS ITK',
+    title: 'Hasil Analisis RPS — Aljabar Linear dan Geometri — LMS ITK',
     role: 'dosen',
   },
   '/course-plan': {
     path: '/course-plan',
-    title: 'Keamanan Siber (Course Plan) — LMS ITK',
+    title: 'Aljabar Linear dan Geometri (Course Plan) — LMS ITK',
     role: 'dosen',
   },
   '/weekly-content': {
     path: '/weekly-content',
     title: 'Detail Konten Mingguan — LMS ITK',
     role: 'dosen',
+  },
+  '/material-view': {
+    path: '/material-view',
+    title: 'Penampil Dokumen Materi — LMS ITK',
+    role: 'public',
   },
   '/student/courses': {
     path: '/student/courses',
