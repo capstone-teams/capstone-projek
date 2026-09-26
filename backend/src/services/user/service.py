@@ -132,6 +132,14 @@ class UserService:
         """Existence check berdasarkan email, dipakai authentication/feature lain."""
         return await self._repository.exists_by_email(email)
 
+    async def list_users(self) -> list[User]:
+        """Daftar seluruh user, diurutkan berdasarkan email.
+
+        Dipakai operation yang memang membutuhkan seluruh user (contoh: daftar
+        user untuk ADMIN pada BE-03.4).
+        """
+        return await self._repository.list_all()
+
     async def _persist(self, user: User) -> User:
         """Simpan perubahan user; baris yang hilang di tengah jalan tetap not-found."""
         persisted = await self._repository.update(user)

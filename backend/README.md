@@ -17,17 +17,19 @@ backend/
 │   │   ├── settings.py           # Pydantic Settings (environment variables)
 │   │   └── database.py           # Async engine & session factory
 │   ├── routes/                   # Definition Endpoint API & HTTP Router (FastAPI)
+│   │   ├── admin.py              # GET /admin/users (ADMIN only)
 │   │   ├── auth.py               # POST /auth/login, GET /auth/me
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
-│   │   ├── auth/                 # Authentication: kredensial, token, AuthService
+│   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
-│   │   └── dependencies.py       # Dependency provider untuk routes
+│   │   └── dependencies.py       # Dependency provider untuk routes (+ require_roles)
 │   ├── models/                   # Database Entities / ORM Models (SQLAlchemy)
 │   ├── schemas/                  # Request & Response DTOs / Data Validation (Pydantic)
+│   │   ├── admin.py              # DTO operasi administrasi
 │   │   └── auth.py
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
 │   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
@@ -35,6 +37,8 @@ backend/
 │   └── main.py                   # FastAPI Application Entry Point
 ├── tests/                        # Automated unit & integration tests (pytest)
 │   ├── conftest.py               # Fixture bersama (session SQLite in-memory)
+│   ├── test_admin_routes.py      # Endpoint administrasi (ADMIN only)
+│   ├── test_authorization.py     # Mekanisme role authorization
 │   ├── test_auth_postgres.py     # Integrasi authentication vs PostgreSQL sungguhan
 │   └── test_*.py                 # Unit & route test per modul
 ├── pyproject.toml                # Konfigurasi dependensi & tools (uv)
@@ -218,6 +222,82 @@ async def create_rps(current_user: User = Depends(get_current_user)):
 4. **Semua kegagalan authentication menghasilkan response identik** (401 `AUTHENTICATION_FAILED`) untuk email tidak terdaftar, password salah, user non-aktif, user tanpa credential lokal, dan token tidak valid — mencegah *user enumeration*. Detail penyebab hanya dicatat server-side, tanpa nilai credential/token.
 5. **`SECRET_KEY` produksi wajib berasal dari environment configuration yang aman.** Saat startup aplikasi mencatat peringatan (tanpa mencetak nilainya) bila `SECRET_KEY` lebih pendek dari 32 karakter; nilai contoh pada `.env.example` tidak layak dipakai di produksi.
 6. **Pengujian integrasi membutuhkan PostgreSQL sungguhan** dan otomatis dilewati bila database tidak tersedia — lihat `tests/test_auth_postgres.py`.
+
+---
+
+## 🛡️ Authorization (BE-03.4)
+
+Authorization menjawab **"bolehkah User ini menjalankan operation ini?"** dan hanya berjalan untuk user yang **sudah** terautentikasi (BE-03.3). Keduanya dipisah: kegagalan authentication menghasilkan 401 `AUTHENTICATION_FAILED`, sedangkan kegagalan authorization menghasilkan 403 `AUTHORIZATION_DENIED`.
+
+Alur:
+
+```text
+Authenticated Request → Current User (dari record User) → User Role
+        → Authorization Guard (RolePolicy) → Allowed / Denied (403)
+```
+
+### Memakai role authorization pada endpoint
+
+```python
+# src/routes/rps.py
+from fastapi import APIRouter, Depends
+
+from src.services.dependencies import require_roles
+from src.services.user.domain import User
+from src.services.user.enums import UserRole
+
+router = APIRouter(prefix="/rps", tags=["RPS"])
+
+# Single-role restriction: cukup sebagai dependency, handler tidak perlu tahu.
+@router.post("", dependencies=[Depends(require_roles(UserRole.INSTRUCTOR))])
+async def create_rps(...): ...
+
+# Multiple-role restriction, dengan identitas yang sudah diotorisasi dipakai handler:
+@router.get("/{rps_id}")
+async def read_rps(
+    rps_id: str,
+    current_user: User = Depends(require_roles(UserRole.INSTRUCTOR, UserRole.STUDENT)),
+): ...  # current_user.role sudah dipastikan termasuk role yang diizinkan
+```
+
+Contoh nyata yang berlaku sekarang: `src/routes/admin.py` — seluruh endpoint `/api/v1/admin/users` memakai satu policy `admin_only = require_roles(UserRole.ADMIN)`.
+
+### Endpoint
+
+| Method | Path | Role yang diizinkan | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/admin/users` | `ADMIN` | Daftar seluruh user (diurutkan berdasarkan email) |
+| `GET` | `/api/v1/admin/users/{user_id}` | `ADMIN` | Detail satu user; 404 `RESOURCE_NOT_FOUND` bila tidak ada |
+
+Respons kegagalan mengikuti design-api §18/§19:
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Tanpa token, token tidak valid/kedaluwarsa, atau user non-aktif | 401 | `AUTHENTICATION_FAILED` (+ header `WWW-Authenticate: Bearer`) |
+| Role user tidak termasuk role yang dibutuhkan | 403 | `AUTHORIZATION_DENIED` (tanpa challenge header) |
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Keputusan allow/deny berbasis role (`RolePolicy`) | `src/services/auth/authorization.py` |
+| Dependency factory `require_roles(...)` | `src/services/dependencies.py` |
+| Error domain authorization (403 `AUTHORIZATION_DENIED`) | `src/services/auth/errors.py` |
+| Pemetaan error domain → response HTTP | `src/middlewares/error_handlers.py` |
+| Contoh pemakaian pada endpoint | `src/routes/admin.py` |
+| DTO operasi administrasi | `src/schemas/admin.py` |
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Keputusan authorization berada di layer `services/`, bukan di router.** `RolePolicy` adalah value object murni (tanpa FastAPI, tanpa database) di `src/services/auth/authorization.py`; dependency factory `require_roles(...)` berada di `src/services/dependencies.py` — tempat seluruh provider dependency HTTP sudah berada (BE-03.3). Router hanya memasang `Depends(require_roles(...))`, sehingga pengecekan role tidak ditulis ulang maupun tersebar di setiap handler.
+2. **Authorization dijalankan sebelum business operation.** Karena berupa dependency FastAPI, ia selesai sebelum handler endpoint dieksekusi; `tests/test_authorization.py` membuktikannya dengan endpoint yang mencatat eksekusinya.
+3. **Authentication diperiksa lebih dulu.** `require_roles(...)` me-resolve `get_current_user` terlebih dahulu, sehingga request tanpa authentication (atau user non-aktif) selalu berhenti di 401 dan hanya user terautentikasi yang role-nya dievaluasi. Guard tidak dapat dilewati dengan menghilangkan identity.
+4. **Role selalu berasal dari record User.** `RolePolicy` hanya melihat `user.role` milik current user; tidak ada parameter role yang berasal dari request. Role pada body, query, header (`X-Role`, dsb.), maupun klaim JWT buatan client tidak pernah dipercaya — semuanya diuji di `tests/test_authorization.py`. Perubahan role berlaku pada request berikutnya tanpa token baru, karena role dibaca ulang dari database.
+5. **Single-role dan multiple-role restriction memakai satu mekanisme.** `require_roles(UserRole.ADMIN)` membatasi ke satu role secara eksplisit (ADMIN pun tidak otomatis boleh pada operation INSTRUCTOR-only), sedangkan `require_roles(UserRole.INSTRUCTOR, UserRole.STUDENT)` mengizinkan salah satu.
+6. **Policy salah tulis gagal cepat.** Policy tanpa role atau dengan role yang tidak dikenal (misalnya `"SUPERADMIN"`) memunculkan `AuthorizationPolicyError` saat factory dipanggil (wiring endpoint), bukan 403 yang menyesatkan saat runtime.
+7. **Kegagalan authorization konsisten dan tidak membocorkan detail.** Selalu 403 `AUTHORIZATION_DENIED` dengan pesan publik yang sama, tanpa menyebut role yang dibutuhkan maupun role user tersebut; detailnya hanya dicatat server-side. 403 juga tidak memakai header `WWW-Authenticate` karena bukan kegagalan authentication.
+8. **Mekanisme siap diperluas.** `RolePolicy` adalah titik perluasan untuk resource/policy authorization pada tahap berikutnya (cukup menambah aturan di `RolePolicy.enforce` atau menyediakan policy baru dengan bentuk yang sama) tanpa mengubah cara endpoint memakainya.
+9. **Satu policy dapat dipakai oleh banyak endpoint.** Router `admin` mendefinisikan `admin_only` sekali dan memakainya di dua endpoint; endpoint fitur lain (mis. RPS instructor-only) cukup memakai `require_roles(...)` yang sama ketika fiturnya diimplementasikan.
 
 ---
 

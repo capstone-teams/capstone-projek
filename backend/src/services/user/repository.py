@@ -85,6 +85,12 @@ class UserRepository:
         )
         return (await self._session.execute(statement)).scalar_one_or_none() is not None
 
+    async def list_all(self) -> list[User]:
+        """Seluruh user, diurutkan berdasarkan email (deterministik)."""
+        statement = select(UserEntity).order_by(UserEntity.email)
+        entities = (await self._session.execute(statement)).scalars().all()
+        return [to_domain(entity) for entity in entities]
+
     async def _commit_or_raise_duplicate(self, email: str) -> None:
         """Commit perubahan, petakan unique violation menjadi error domain."""
         try:
