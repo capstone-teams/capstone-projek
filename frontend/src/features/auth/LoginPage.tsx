@@ -9,18 +9,25 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }) => {
-  const [email, setEmail] = useState('chandra.cahyo@itk.ac.id')
+  const [username, setUsername] = useState('dosen')
   const [password, setPassword] = useState('password123')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const handleLoginDosen = (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    onRoleChange('dosen')
-    onNavigate('/dashboard')
-  }
+    const cleanUsername = username.trim().toLowerCase()
 
-  const handleLoginMahasiswa = () => {
-    onRoleChange('mahasiswa')
-    onNavigate('/student/courses')
+    if (cleanUsername.includes('mahasiswa')) {
+      setErrorMessage(null)
+      onRoleChange('mahasiswa')
+      onNavigate('/student/courses')
+    } else if (cleanUsername.includes('dosen')) {
+      setErrorMessage(null)
+      onRoleChange('dosen')
+      onNavigate('/dashboard')
+    } else {
+      setErrorMessage('Username harus berupa "dosen" atau "mahasiswa".')
+    }
   }
 
   return (
@@ -43,15 +50,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
         <div className={styles.formPanel}>
           <h2 className={styles.formTitle}>Masuk ke akun Anda</h2>
 
-          <form onSubmit={handleLoginDosen}>
+          <form onSubmit={handleLogin}>
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Email / username</label>
+              <label className={styles.formLabel}>Username</label>
               <input
                 type="text"
                 className={styles.formInput}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="nama@itk.ac.id"
+                value={username}
+                onChange={(e) => {
+                  setUsername(e.target.value)
+                  if (errorMessage) setErrorMessage(null)
+                }}
+                placeholder="Ketik 'dosen' atau 'mahasiswa'"
                 required
               />
             </div>
@@ -64,25 +74,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••"
-                required
               />
             </div>
 
-            <div className={styles.buttonRow}>
-              <button type="submit" className={styles.btnPrimary}>
-                Masuk sebagai Dosen
-              </button>
-              <button
-                type="button"
-                className={styles.btnSecondary}
-                onClick={handleLoginMahasiswa}
+            {errorMessage && (
+              <div
+                style={{
+                  color: '#DC2626',
+                  fontSize: '13px',
+                  marginBottom: '12px',
+                  backgroundColor: '#FEF2F2',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #FECACA',
+                }}
               >
-                Masuk Mahasiswa
+                {errorMessage}
+              </div>
+            )}
+
+            <div className={styles.buttonRow}>
+              <button type="submit" className={styles.btnPrimary} style={{ width: '100%' }}>
+                Masuk
               </button>
             </div>
 
             <p className={styles.helperText}>
-              Gunakan akun institusi yang diberikan untuk sistem persiapan RPS.
+              Ketik <strong>dosen</strong> untuk masuk ke akun dosen, atau <strong>mahasiswa</strong> untuk akun mahasiswa. Kata sandi tidak divalidasi.
             </p>
           </form>
         </div>
