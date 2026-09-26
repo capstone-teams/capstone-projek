@@ -20,6 +20,7 @@ import { GeneratePlanModal } from './features/course-plan/components/GeneratePla
 import { PlanProgressModal } from './features/course-plan/components/PlanProgressModal'
 import { PlanRevisionModal } from './features/course-plan/components/PlanRevisionModal'
 import { WeekDetailPage } from './features/weekly-content/WeekDetailPage'
+import { MaterialViewPage } from './features/weekly-content/MaterialViewPage'
 import { GenerateContentModal } from './features/weekly-content/components/GenerateContentModal'
 import { ContentProgressModal } from './features/weekly-content/components/ContentProgressModal'
 import { ContentRevisionModal } from './features/weekly-content/components/ContentRevisionModal'
@@ -33,13 +34,21 @@ function getInitialPath(): AppPath {
   return resolveAppPath(window.location.pathname)
 }
 
+function getInitialHasCourses(): boolean {
+  const params = new URLSearchParams(window.location.search)
+  const has = params.get('hasCourses')
+  if (has === 'true') return true
+  if (has === 'false') return false
+  return false
+}
+
 function getInitialPlanStage(): CoursePlanStage {
   const params = new URLSearchParams(window.location.search)
   const stage = params.get('planStage') as CoursePlanStage
   if (stage === 'empty' || stage === 'review' || stage === 'approved' || stage === 'published') {
     return stage
   }
-  return 'review'
+  return 'empty'
 }
 
 function getInitialContentStage(): WeeklyContentStage {
@@ -48,7 +57,7 @@ function getInitialContentStage(): WeeklyContentStage {
   if (stage === 'empty' || stage === 'review' || stage === 'synced') {
     return stage
   }
-  return 'review'
+  return 'empty'
 }
 
 export default function App() {
@@ -58,9 +67,12 @@ export default function App() {
     const route = APP_ROUTES[getInitialPath()]
     return route?.role === 'mahasiswa' ? 'mahasiswa' : 'dosen'
   })
+  const [hasCourses, setHasCourses] = useState<boolean>(getInitialHasCourses)
   const [activeModal, setActiveModal] = useState<ModalType>(null)
   const [coursePlanStage, setCoursePlanStage] = useState<CoursePlanStage>(getInitialPlanStage)
   const [weeklyContentStage, setWeeklyContentStage] = useState<WeeklyContentStage>(getInitialContentStage)
+  const [selectedWeek, setSelectedWeek] = useState<number>(3)
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>('doc-week3-pdf')
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
   const showToast = useCallback((message: string, type: 'info' | 'success' = 'info') => {
@@ -83,9 +95,26 @@ export default function App() {
         setActiveRole('dosen')
       }
     }
+    if (path === '/login') {
+      setHasCourses(false)
+      setCoursePlanStage('empty')
+      setWeeklyContentStage('empty')
+      setSelectedWeek(3)
+      setSelectedMaterialId('doc-week3-pdf')
+    }
     window.history.pushState(null, '', path)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
+
+  const handleResetDemo = useCallback(() => {
+    setHasCourses(false)
+    setCoursePlanStage('empty')
+    setWeeklyContentStage('empty')
+    setSelectedWeek(3)
+    setSelectedMaterialId('doc-week3-pdf')
+    navigate('/dashboard')
+    showToast('Alur demo berhasil direset ke kondisi awal.', 'info')
+  }, [navigate, showToast])
 
   // Sync initial address bar on first render if visiting root or unknown path
   useEffect(() => {
@@ -145,6 +174,7 @@ export default function App() {
 
       {currentPath === '/dashboard' && (
         <DashboardPage
+          hasCourses={hasCourses}
           onNavigate={navigate}
           onOpenModal={setActiveModal}
           onShowToast={showToast}
@@ -162,6 +192,11 @@ export default function App() {
         <CoursePlanPage
           stage={coursePlanStage}
           onStageChange={setCoursePlanStage}
+          allWeeksGenerated={weeklyContentStage === 'review' || weeklyContentStage === 'synced'}
+          onAutoGenerateAllWeeks={() => {
+            setWeeklyContentStage('review')
+          }}
+          onSelectWeek={(week) => setSelectedWeek(week)}
           onNavigate={navigate}
           onOpenModal={setActiveModal}
           onShowToast={showToast}
@@ -171,8 +206,20 @@ export default function App() {
       {currentPath === '/weekly-content' && (
         <WeekDetailPage
           stage={weeklyContentStage}
+          weekNumber={selectedWeek}
+          onStageChange={setWeeklyContentStage}
+          onSelectMaterial={(id) => setSelectedMaterialId(id)}
           onNavigate={navigate}
           onOpenModal={setActiveModal}
+          onShowToast={showToast}
+        />
+      )}
+
+      {currentPath === '/material-view' && (
+        <MaterialViewPage
+          documentId={selectedMaterialId}
+          weekNumber={selectedWeek}
+          onNavigate={navigate}
           onShowToast={showToast}
         />
       )}
@@ -190,6 +237,8 @@ export default function App() {
 
       {currentPath === '/student/week' && (
         <StudentWeekDetailPage
+          weekNumber={selectedWeek}
+          onSelectMaterial={(id) => setSelectedMaterialId(id)}
           onNavigate={navigate}
           onShowToast={showToast}
         />
@@ -199,8 +248,10 @@ export default function App() {
       <ProfileModal
         isOpen={activeModal === 'profile'}
         onClose={closeModal}
+        profile={dosenProfile}
         onShowToast={showToast}
-        onSave={(name, email) => {
+        onResetDemo={handleResetDemo}
+        onSave={(name, email, teachingApproach, aiInstructions) => {
           setDosenProfile((prev) => {
             const initials = name
               .split(' ')
@@ -214,6 +265,8 @@ export default function App() {
               name,
               email,
               avatarInitial: initials,
+              teachingApproach,
+              aiInstructions,
             }
           })
         }}
@@ -229,6 +282,9 @@ export default function App() {
         isOpen={activeModal === 'rps-progress'}
         onClose={closeModal}
         onComplete={() => {
+          setHasCourses(true)
+          setCoursePlanStage('empty')
+          setWeeklyContentStage('empty')
           closeModal()
           navigate('/rps-analysis')
           showToast('Dokumen RPS berhasil dianalisis.', 'success')

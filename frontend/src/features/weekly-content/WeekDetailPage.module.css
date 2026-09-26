@@ -230,3 +230,365 @@
     min-height: 44px;
   }
 }
+
+/* Inline Agent Monitoring Widget */
+.agentMonitoringCard {
+  background-color: #F8FAFC;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.05);
+}
+
+.monitoringHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pulseDot {
+  width: 12px;
+  height: 12px;
+  background-color: #2563EB;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  animation: pulse 1.6s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
+}
+
+.monitoringTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0F172A;
+  margin: 0;
+}
+
+.monitoringSubtitle {
+  font-size: 12px;
+  color: #64748B;
+}
+
+.progressBarContainer {
+  height: 6px;
+  background-color: #E2E8F0;
+  border-radius: 9999px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progressBarFill {
+  height: 100%;
+  background-color: #1D4ED8;
+  border-radius: 9999px;
+  transition: width 0.4s ease;
+}
+
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.stepDone {
+  color: #059669;
+  font-weight: 500;
+}
+
+.stepActive {
+  color: #1D4ED8;
+  font-weight: 600;
+}
+
+.stepPending {
+  color: #94A3B8;
+  font-weight: 400;
+}
+
+/* Week Switcher for comparing references */
+.weekSwitcher {
+  display: inline-flex;
+  align-items: center;
+  background-color: #F1F5F9;
+  padding: 4px;
+  border-radius: 8px;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.weekSwitcherBtn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: #64748B;
+  transition: all 0.15s ease;
+}
+
+.weekSwitcherBtn:hover {
+  color: #0F172A;
+}
+
+.weekSwitcherBtnActive {
+  background-color: #FFFFFF;
+  color: #1D4ED8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 1. Gaya Klasik LMS ITK (Minggu 02) */
+.lmsTopicCard {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.subCpmkBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.subCpmkTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.subCpmkText {
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.bahanKajianTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.bahanKajianList {
+  margin: 0;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.lmsInstructorNote {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #F1F5F9;
+}
+
+.lmsFileList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lmsFileCard {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lmsFileCard:hover {
+  border-color: #93C5FD;
+  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.08);
+  transform: translateY(-1px);
+}
+
+.lmsFileInfo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fileIconPdf {
+  width: 38px;
+  height: 38px;
+  background-color: #2563EB;
+  color: #FFFFFF;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+.fileIconPpt {
+  width: 38px;
+  height: 38px;
+  background-color: #0284C7;
+  color: #FFFFFF;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);
+}
+
+.fileIconTask {
+  width: 38px;
+  height: 38px;
+  background-color: #4F46E5;
+  color: #FFFFFF;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+}
+
+.lmsFileTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1D4ED8;
+  margin-bottom: 2px;
+}
+
+.lmsFileMeta {
+  font-size: 12px;
+  color: #64748B;
+}
+
+.lmsActionArrow {
+  font-size: 14px;
+  color: #94A3B8;
+  font-weight: 600;
+}
+
+/* 2. Gaya Modern Visual (Minggu 03) */
+.modernHeaderCard {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.badgeSubCpmk {
+  display: inline-flex;
+  align-items: center;
+  background-color: #EFF6FF;
+  color: #1D4ED8;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.chipsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.chipItem {
+  background-color: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #334155;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.conceptDiagramCard {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.diagramContainer {
+  background-color: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.diagramCaption {
+  font-size: 12px;
+  color: #64748B;
+  text-align: center;
+}
+
+.richModuleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .richModuleGrid {
+    grid-template-columns: 1fr;
+  }
+}

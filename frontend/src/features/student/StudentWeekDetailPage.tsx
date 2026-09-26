@@ -3,11 +3,15 @@ import type { AppPath } from '../../types/navigation'
 import styles from './Student.module.css'
 
 interface StudentWeekDetailPageProps {
+  weekNumber?: number
+  onSelectMaterial?: (documentId: string) => void
   onNavigate: (path: AppPath) => void
   onShowToast?: (message: string, type?: 'info' | 'success') => void
 }
 
 export const StudentWeekDetailPage: React.FC<StudentWeekDetailPageProps> = ({
+  weekNumber = 3,
+  onSelectMaterial,
   onNavigate,
   onShowToast,
 }) => {
@@ -28,7 +32,7 @@ export const StudentWeekDetailPage: React.FC<StudentWeekDetailPageProps> = ({
           className={styles.breadcrumbLink}
           onClick={() => onNavigate('/student/course')}
         >
-          Keamanan Siber
+          Aljabar Linear dan Geometri
         </button>
         <span className={styles.breadcrumbSeparator}>/</span>
         <span className={styles.breadcrumbCurrent}>Minggu 03</span>
@@ -38,10 +42,10 @@ export const StudentWeekDetailPage: React.FC<StudentWeekDetailPageProps> = ({
       <div className={styles.pageHeading}>
         <div className={styles.headingText}>
           <h1 className={styles.pageTitle}>
-            Pertemuan 03 · Rekognisi Jejak Digital
+            Pertemuan 03 · Determinan & Invers Matriks
           </h1>
           <p className={styles.pageSubtitle}>
-            Keamanan Siber · Materi dan aktivitas pembelajaran
+            Aljabar Linear dan Geometri · Materi dan aktivitas pembelajaran
           </p>
         </div>
 
@@ -63,16 +67,27 @@ export const StudentWeekDetailPage: React.FC<StudentWeekDetailPageProps> = ({
             <h3 className={styles.cardTitle}>Materi Pembelajaran</h3>
             <div className={styles.cardContent}>
               {`Tujuan pembelajaran
-Mengidentifikasi jejak digital dan menjelaskan teknik rekognisi pada lingkungan pengujian yang diizinkan.
+Menghitung determinan dengan reduksi baris elementer dan ekspansi kofaktor, serta menentukan invers matriks non-singular.
 
-Rekognisi Jejak Digital
-Pelajari perbedaan rekognisi pasif dan aktif serta cara mendokumentasikan informasi pada studi kasus.`}
+Determinan & Invers Matriks (OBE & Kofaktor)
+Pelajari sifat-sifat determinan, operasi baris elementer, dan matriks adjoint untuk mencari invers matriks.`}
             </div>
 
-            <div style={{ marginTop: '12px' }}>
+            <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
               <button
                 type="button"
                 className={styles.btnPrimary}
+                onClick={() => {
+                  const docId = weekNumber === 2 ? 'doc-week2-pdf' : 'doc-week3-pdf'
+                  onSelectMaterial?.(docId)
+                  onNavigate('/material-view')
+                }}
+              >
+                Buka Modul Materi Lengkap
+              </button>
+              <button
+                type="button"
+                className={styles.btnSecondary}
                 onClick={() =>
                   onShowToast?.(
                     'Membuka Materi Minggu 03 di Moodle ITK (Tab Baru)...',
@@ -80,7 +95,7 @@ Pelajari perbedaan rekognisi pasif dan aktif serta cara mendokumentasikan inform
                   )
                 }
               >
-                Baca Materi di Moodle
+                Buka di Moodle
               </button>
             </div>
           </div>
@@ -88,22 +103,21 @@ Pelajari perbedaan rekognisi pasif dan aktif serta cara mendokumentasikan inform
           <div className={styles.card}>
             <h3 className={styles.cardTitle}>Resource Pembelajaran</h3>
             <div className={styles.cardContent}>
-              {`Panduan rekognisi dan studi kasus
-Dokumen pendamping materi pertemuan 3.`}
+              {`Modul Determinan & Invers Matriks
+Dokumen pendamping materi perkuliahan minggu ke-3.`}
             </div>
 
             <div style={{ marginTop: '12px' }}>
               <button
                 type="button"
-                className={styles.btnPrimary}
-                onClick={() =>
-                  onShowToast?.(
-                    'Membuka Dokumen Resource: Panduan Rekognisi...',
-                    'info'
-                  )
-                }
+                className={styles.btnSecondary}
+                onClick={() => {
+                  const docId = weekNumber === 2 ? 'doc-week2-ppt' : 'doc-week3-ppt'
+                  onSelectMaterial?.(docId)
+                  onNavigate('/material-view')
+                }}
               >
-                Buka Resource
+                Lihat Slide Perkuliahan
               </button>
             </div>
           </div>
@@ -113,8 +127,8 @@ Dokumen pendamping materi pertemuan 3.`}
           <div className={styles.card}>
             <h3 className={styles.cardTitle}>Tugas Minggu Ini</h3>
             <div className={styles.cardContent}>
-              {`Analisis jejak digital
-Gunakan kasus simulasi yang disediakan dosen.
+              {`Latihan invers matriks OBE
+Gunakan metode reduksi baris elementer pada soal studi kasus yang diberikan dosen.
 
 Batas pengumpulan
 27 September 2026 · 23.59
@@ -122,10 +136,22 @@ Batas pengumpulan
 Tersedia di Moodle`}
             </div>
 
-            <div style={{ marginTop: '12px' }}>
+            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 type="button"
                 className={styles.btnPrimary}
+                style={{ width: '100%' }}
+                onClick={() => {
+                  const docId = weekNumber === 2 ? 'doc-week2-task' : 'doc-week3-task'
+                  onSelectMaterial?.(docId)
+                  onNavigate('/material-view')
+                }}
+              >
+                Buka Lembar Latihan Tugas
+              </button>
+              <button
+                type="button"
+                className={styles.btnSecondary}
                 style={{ width: '100%' }}
                 onClick={() =>
                   onShowToast?.(
@@ -134,7 +160,7 @@ Tersedia di Moodle`}
                   )
                 }
               >
-                Buka Tugas
+                Kumpul ke Moodle
               </button>
             </div>
           </div>
