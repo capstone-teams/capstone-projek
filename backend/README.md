@@ -157,6 +157,8 @@ Kapan sebuah fitur perlu memisahkan data access menjadi repository?
 
 Pola penamaan: `src/services/<domain>_repository.py` (contoh: `src/services/rps_repository.py`, `src/services/content_repository.py`).
 
+Untuk domain yang memuat lebih dari satu modul internal, gunakan bentuk paket `src/services/<domain>/` dengan pemisahan `repository.py` (data access) dan `service.py` (operasi aplikasi) — seperti pada `src/services/llm/` dan `src/services/user/`.
+
 Aturan Repository:
 
 1. Repository **hanya** berisi operasi data (query & mutasi) — tanpa aturan bisnis, kalkulasi domain, atau percabangan workflow.
