@@ -321,3 +321,45 @@ Seluruh pengujian berada di folder `tests/` dan harus dijalankan serta lulus seb
 ```bash
 uv run pytest
 ```
+
+Pengujian yang membutuhkan PostgreSQL (`tests/test_auth_postgres.py`) dijalankan bila database tersedia dan otomatis dilewati bila tidak.
+
+---
+
+## 🐳 Menjalankan dengan Docker
+
+`docker-compose.yml` di root repository menjalankan **PostgreSQL 16 + backend** dengan konfigurasi yang sama untuk seluruh tim, termasuk migrasi Alembic yang dijalankan otomatis saat container start.
+
+```bash
+cd ..                          # root repository
+docker compose up -d --build
+docker compose ps              # db & backend harus berstatus healthy
+curl http://127.0.0.1:8000/health
+```
+
+Isi folder ini yang terlibat:
+
+| Berkas | Keterangan |
+| :--- | :--- |
+| `Dockerfile` | `python:3.13-slim` + `uv 0.11.21`; memasang seluruh dependensi (termasuk grup `dev`, agar test suite dapat dijalankan di container); berjalan sebagai user non-root `app` |
+| `.dockerignore` | Mengecualikan `.env` (credential tidak pernah masuk image) dan artefak lokal; `.env.example` tetap disertakan karena Settings memakainya sebagai fallback konfigurasi |
+| `docker-entrypoint.sh` | Menunggu database siap, menjalankan `alembic upgrade head` (idempotent), lalu mengeksekusi perintah utama |
+
+Perintah yang sering dipakai:
+
+```bash
+docker compose logs -f backend                              # log aplikasi (uvicorn --reload)
+docker compose run --rm backend uv run pytest               # test suite di dalam container
+docker compose run --rm backend uv run pytest tests/test_auth_postgres.py
+docker compose exec backend uv run alembic upgrade head     # migrasi manual
+docker compose exec db psql -U postgres -d lms_moodle_db    # shell database
+docker compose down                                         # hentikan service
+docker compose down -v                                      # hentikan + hapus data database
+```
+
+Catatan:
+
+1. Backend di container menjangkau database lewat nama service `db` (`DB_HOST=db`), bukan `localhost`.
+2. Kredensial default mengikuti `backend/.env.example`. Bila menjalankan backend langsung di host, siapkan `backend/.env` dan pastikan `DB_PORT` sama dengan port yang dipublikasikan compose.
+3. `./backend/src` dan `./backend/tests` di-mount ke container sehingga perubahan kode langsung terpakai (uvicorn `--reload`); `.venv` di dalam image tidak tertimpa.
+4. Port yang sudah dipakai dapat ditimpa: `DB_PORT=5433 APP_PORT=8001 docker compose up -d`.

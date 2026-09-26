@@ -24,7 +24,8 @@ Proyek Capstone — Institut Teknologi Kalimantan (ITK).
 
 - **Python 3.13+** — lihat `backend/.python-version`
 - **[uv](https://docs.astral.sh/uv/)** — manajemen dependensi & virtual environment
-- **PostgreSQL** — dibutuhkan mulai milestone BE-02; belum diperlukan untuk menjalankan backend saat ini
+- **PostgreSQL 16** — dibutuhkan backend; skemanya dikelola Alembic
+- **Docker + Docker Compose** *(opsional, disarankan)* — `docker-compose.yml` menyiapkan PostgreSQL + backend dengan konfigurasi yang sama untuk seluruh tim
 
 ---
 
@@ -61,25 +62,54 @@ uv run pytest
 
 Seluruh test wajib lulus sebelum membuat Pull Request.
 
+### 🐳 Alternatif: jalankan dengan Docker
+
+Tidak perlu memasang Python maupun PostgreSQL di host — `docker-compose.yml` menyediakan **PostgreSQL 16 + backend** dengan konfigurasi yang sama untuk seluruh tim:
+
+```bash
+cd capstone-projek
+
+# Bangun image dan jalankan database + backend (migrasi Alembic otomatis)
+docker compose up -d --build
+
+# Status kesehatan & log
+docker compose ps
+docker compose logs -f backend
+```
+
+Kredensial default mengikuti `backend/.env.example` (`postgres` / `lms_moodle_db` di port `5432`), sehingga cara menjalankan backend langsung di host tetap kompatibel.
+
+| Perintah | Keterangan |
+| :--- | :--- |
+| `docker compose up -d --build` | Jalankan database + backend (migrasi dijalankan otomatis) |
+| `docker compose run --rm backend uv run pytest` | Jalankan test suite di dalam container |
+| `docker compose exec backend uv run alembic upgrade head` | Terapkan migrasi secara manual |
+| `docker compose down` | Hentikan service (data tetap tersimpan di volume) |
+| `docker compose down -v` | Hentikan service **dan hapus** data database |
+
+Bila port `5432` atau `8000` sudah dipakai, timpa lewat environment: `DB_PORT=5433 APP_PORT=8001 docker compose up -d`. Detailnya ada di [`backend/README.md`](backend/README.md).
+
 ---
 
 ## 🗂️ Struktur Repository
 
 ```text
 capstone-projek/
-├── backend/            # Service backend (FastAPI + SQLAlchemy + Pydantic)
-│   ├── src/            # Source code aplikasi
-│   ├── tests/          # Unit & integration test (pytest)
-│   └── README.md       # Dokumentasi arsitektur backend
-├── frontend/           # Antarmuka pengguna (belum ada source code)
+├── backend/               # Service backend (FastAPI + SQLAlchemy + Pydantic)
+│   ├── src/               # Source code aplikasi
+│   ├── tests/             # Unit & integration test (pytest)
+│   ├── Dockerfile         # Image backend (uv + uvicorn)
+│   └── README.md          # Dokumentasi arsitektur backend
+├── frontend/              # Antarmuka pengguna (belum ada source code)
 │   └── README.md
-├── docs/               # Dokumentasi proyek
+├── docs/                  # Dokumentasi proyek
 │   ├── 01. project-charter/
 │   ├── 02. design/
 │   ├── 03. quality-plan/
 │   └── 04. workflow/
-├── .github/            # Template issue & Pull Request
-├── aturan.md           # Aturan kolaborasi: branch, commit, issue, PR, review
+├── .github/               # Template issue & Pull Request
+├── docker-compose.yml     # PostgreSQL + backend untuk development lokal
+├── aturan.md              # Aturan kolaborasi: branch, commit, issue, PR, review
 └── README.md           # File ini
 ```
 
