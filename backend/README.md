@@ -8,32 +8,39 @@ Folder ini berisi *source code*, konfigurasi, dan pengujian untuk service backen
 
 ```text
 backend/
-├── alembic/                      # Skrip & histori migrasi database (Alembic)
+├── migrations/                   # Skrip & histori migrasi database (Alembic)
 │   ├── versions/                 # File revisi migrasi skema DB (.py)
 │   └── env.py                    # Konfigurasi runtime environment Alembic
 ├── alembic.ini                   # File konfigurasi utama Alembic
 ├── src/                          # Source code utama aplikasi
-│   ├── config/                   # Konfigurasi aplikasi, env vars, & koneksi DB
-│   │   ├── __init__.py
-│   │   └── settings.py
+│   ├── config/                   # Konfigurasi aplikasi, env vars, & infrastruktur DB
+│   │   ├── settings.py           # Pydantic Settings (environment variables)
+│   │   └── database.py           # Async engine & session factory
 │   ├── routes/                   # Definition Endpoint API & HTTP Router (FastAPI)
-│   │   └── __init__.py
+│   │   ├── admin.py              # GET /admin/users (ADMIN only)
+│   │   ├── auth.py               # POST /auth/login, GET /auth/me
+│   │   ├── health.py
+│   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
-│   │   └── __init__.py
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
-│   │   └── __init__.py
+│   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
+│   │   ├── user/                 # Domain User/Role, UserService, UserRepository
+│   │   ├── llm/                  # Integrasi penyedia LLM
+│   │   └── dependencies.py       # Dependency provider untuk routes (+ require_roles)
 │   ├── models/                   # Database Entities / ORM Models (SQLAlchemy)
-│   │   └── __init__.py
 │   ├── schemas/                  # Request & Response DTOs / Data Validation (Pydantic)
-│   │   └── __init__.py
+│   │   ├── admin.py              # DTO operasi administrasi
+│   │   └── auth.py
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
-│   │   └── __init__.py
+│   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
 │   ├── utils/                    # Helper functions & pure utilities
-│   │   └── __init__.py
 │   └── main.py                   # FastAPI Application Entry Point
 ├── tests/                        # Automated unit & integration tests (pytest)
-│   ├── test_config.py
-│   └── test_main.py
+│   ├── conftest.py               # Fixture bersama (session SQLite in-memory)
+│   ├── test_admin_routes.py      # Endpoint administrasi (ADMIN only)
+│   ├── test_authorization.py     # Mekanisme role authorization
+│   ├── test_auth_postgres.py     # Integrasi authentication vs PostgreSQL sungguhan
+│   └── test_*.py                 # Unit & route test per modul
 ├── pyproject.toml                # Konfigurasi dependensi & tools (uv)
 ├── pytest.ini                    # Konfigurasi test runner pytest
 ├── uv.lock                       # Lockfile dependensi uv
@@ -157,11 +164,140 @@ Kapan sebuah fitur perlu memisahkan data access menjadi repository?
 
 Pola penamaan: `src/services/<domain>_repository.py` (contoh: `src/services/rps_repository.py`, `src/services/content_repository.py`).
 
+Untuk domain yang memuat lebih dari satu modul internal, gunakan bentuk paket `src/services/<domain>/` dengan pemisahan `repository.py` (data access) dan `service.py` (operasi aplikasi) — seperti pada `src/services/llm/` dan `src/services/user/`.
+
 Aturan Repository:
 
 1. Repository **hanya** berisi operasi data (query & mutasi) — tanpa aturan bisnis, kalkulasi domain, atau percabangan workflow.
 2. Repository hanya boleh dipanggil oleh `services/`. `routes/` dan `controllers/` **dilarang** memanggil repository secara langsung.
 3. Jika sebuah fitur belum membutuhkan query kompleks, repository **tidak perlu dibuat**. Service boleh langsung memakai `Session` — yang penting tanggung jawab tersebut tetap berada di layer service, bukan di router.
+
+---
+
+## 🔐 Authentication (BE-03.3)
+
+Authentication menjawab **"siapa User ini?"**. Keputusan boleh/tidaknya sebuah operasi dijalankan berada di authorization (BE-03.4), bukan di sini.
+
+### Endpoint
+
+| Method | Path | Keterangan |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/auth/login` | Verifikasi kredensial; mengembalikan `access_token`, `token_type`, dan identitas (`id`, `role`) |
+| `GET` | `/api/v1/auth/me` | Mengembalikan current user; membutuhkan header `Authorization: Bearer <access_token>` |
+
+`username` pada login adalah **email** user (email adalah identity attribute pada data model; User tidak memiliki atribut username terpisah).
+
+### Memakai authentication pada endpoint baru
+
+```python
+# src/routes/rps.py
+from fastapi import APIRouter, Depends
+
+from src.services.dependencies import get_current_user
+from src.services.user.domain import User
+
+router = APIRouter(prefix="/rps", tags=["RPS"])
+
+@router.post("")
+async def create_rps(current_user: User = Depends(get_current_user)):
+    ...  # current_user.role selalu berasal dari record User
+```
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Verifikasi kredensial, penerbitan/validasi token, current user | `src/services/auth/` |
+| DTO request/response | `src/schemas/auth.py` |
+| Endpoint HTTP | `src/routes/auth.py` |
+| Pemetaan error domain → 401 `AUTHENTICATION_FAILED` | `src/middlewares/error_handlers.py` |
+| Dependency provider (session, service, current user) | `src/services/dependencies.py` |
+| Infrastruktur engine & session | `src/config/database.py` |
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Dependency provider berada di dalam layer `services/`** (`src/services/dependencies.py`). Aturan layer sebelumnya menyisakan penempatan ini terbuka sampai database session didefinisikan; dengan penempatan ini router tetap **tidak** mengimpor SQLAlchemy dan cukup memakai `Depends(...)`.
+2. **`src/schemas/` boleh mengimpor enum role** dari `src.services.user.enums` (sumber tunggal nilai role/status). Alternatifnya adalah mendefinisikan ulang nilai role di DTO, yang justru melanggar aturan BE-03.1. Selain enum tersebut, schema tetap hanya berisi Pydantic dan bebas SQLAlchemy.
+3. **Role tidak pernah berasal dari client.** Role pada authentication state dibaca ulang dari record User setiap request (`AuthService.get_authenticated_user`), sehingga perubahan role atau deaktivasi langsung berlaku dan privilege tidak dapat dinaikkan lewat payload maupun klaim token.
+4. **Semua kegagalan authentication menghasilkan response identik** (401 `AUTHENTICATION_FAILED`) untuk email tidak terdaftar, password salah, user non-aktif, user tanpa credential lokal, dan token tidak valid — mencegah *user enumeration*. Detail penyebab hanya dicatat server-side, tanpa nilai credential/token.
+5. **`SECRET_KEY` produksi wajib berasal dari environment configuration yang aman.** Saat startup aplikasi mencatat peringatan (tanpa mencetak nilainya) bila `SECRET_KEY` lebih pendek dari 32 karakter; nilai contoh pada `.env.example` tidak layak dipakai di produksi.
+6. **Pengujian integrasi membutuhkan PostgreSQL sungguhan** dan otomatis dilewati bila database tidak tersedia — lihat `tests/test_auth_postgres.py`.
+
+---
+
+## 🛡️ Authorization (BE-03.4)
+
+Authorization menjawab **"bolehkah User ini menjalankan operation ini?"** dan hanya berjalan untuk user yang **sudah** terautentikasi (BE-03.3). Keduanya dipisah: kegagalan authentication menghasilkan 401 `AUTHENTICATION_FAILED`, sedangkan kegagalan authorization menghasilkan 403 `AUTHORIZATION_DENIED`.
+
+Alur:
+
+```text
+Authenticated Request → Current User (dari record User) → User Role
+        → Authorization Guard (RolePolicy) → Allowed / Denied (403)
+```
+
+### Memakai role authorization pada endpoint
+
+```python
+# src/routes/rps.py
+from fastapi import APIRouter, Depends
+
+from src.services.dependencies import require_roles
+from src.services.user.domain import User
+from src.services.user.enums import UserRole
+
+router = APIRouter(prefix="/rps", tags=["RPS"])
+
+# Single-role restriction: cukup sebagai dependency, handler tidak perlu tahu.
+@router.post("", dependencies=[Depends(require_roles(UserRole.INSTRUCTOR))])
+async def create_rps(...): ...
+
+# Multiple-role restriction, dengan identitas yang sudah diotorisasi dipakai handler:
+@router.get("/{rps_id}")
+async def read_rps(
+    rps_id: str,
+    current_user: User = Depends(require_roles(UserRole.INSTRUCTOR, UserRole.STUDENT)),
+): ...  # current_user.role sudah dipastikan termasuk role yang diizinkan
+```
+
+Contoh nyata yang berlaku sekarang: `src/routes/admin.py` — seluruh endpoint `/api/v1/admin/users` memakai satu policy `admin_only = require_roles(UserRole.ADMIN)`.
+
+### Endpoint
+
+| Method | Path | Role yang diizinkan | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/admin/users` | `ADMIN` | Daftar seluruh user (diurutkan berdasarkan email) |
+| `GET` | `/api/v1/admin/users/{user_id}` | `ADMIN` | Detail satu user; 404 `RESOURCE_NOT_FOUND` bila tidak ada |
+
+Respons kegagalan mengikuti design-api §18/§19:
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Tanpa token, token tidak valid/kedaluwarsa, atau user non-aktif | 401 | `AUTHENTICATION_FAILED` (+ header `WWW-Authenticate: Bearer`) |
+| Role user tidak termasuk role yang dibutuhkan | 403 | `AUTHORIZATION_DENIED` (tanpa challenge header) |
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Keputusan allow/deny berbasis role (`RolePolicy`) | `src/services/auth/authorization.py` |
+| Dependency factory `require_roles(...)` | `src/services/dependencies.py` |
+| Error domain authorization (403 `AUTHORIZATION_DENIED`) | `src/services/auth/errors.py` |
+| Pemetaan error domain → response HTTP | `src/middlewares/error_handlers.py` |
+| Contoh pemakaian pada endpoint | `src/routes/admin.py` |
+| DTO operasi administrasi | `src/schemas/admin.py` |
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Keputusan authorization berada di layer `services/`, bukan di router.** `RolePolicy` adalah value object murni (tanpa FastAPI, tanpa database) di `src/services/auth/authorization.py`; dependency factory `require_roles(...)` berada di `src/services/dependencies.py` — tempat seluruh provider dependency HTTP sudah berada (BE-03.3). Router hanya memasang `Depends(require_roles(...))`, sehingga pengecekan role tidak ditulis ulang maupun tersebar di setiap handler.
+2. **Authorization dijalankan sebelum business operation.** Karena berupa dependency FastAPI, ia selesai sebelum handler endpoint dieksekusi; `tests/test_authorization.py` membuktikannya dengan endpoint yang mencatat eksekusinya.
+3. **Authentication diperiksa lebih dulu.** `require_roles(...)` me-resolve `get_current_user` terlebih dahulu, sehingga request tanpa authentication (atau user non-aktif) selalu berhenti di 401 dan hanya user terautentikasi yang role-nya dievaluasi. Guard tidak dapat dilewati dengan menghilangkan identity.
+4. **Role selalu berasal dari record User.** `RolePolicy` hanya melihat `user.role` milik current user; tidak ada parameter role yang berasal dari request. Role pada body, query, header (`X-Role`, dsb.), maupun klaim JWT buatan client tidak pernah dipercaya — semuanya diuji di `tests/test_authorization.py`. Perubahan role berlaku pada request berikutnya tanpa token baru, karena role dibaca ulang dari database.
+5. **Single-role dan multiple-role restriction memakai satu mekanisme.** `require_roles(UserRole.ADMIN)` membatasi ke satu role secara eksplisit (ADMIN pun tidak otomatis boleh pada operation INSTRUCTOR-only), sedangkan `require_roles(UserRole.INSTRUCTOR, UserRole.STUDENT)` mengizinkan salah satu.
+6. **Policy salah tulis gagal cepat.** Policy tanpa role atau dengan role yang tidak dikenal (misalnya `"SUPERADMIN"`) memunculkan `AuthorizationPolicyError` saat factory dipanggil (wiring endpoint), bukan 403 yang menyesatkan saat runtime.
+7. **Kegagalan authorization konsisten dan tidak membocorkan detail.** Selalu 403 `AUTHORIZATION_DENIED` dengan pesan publik yang sama, tanpa menyebut role yang dibutuhkan maupun role user tersebut; detailnya hanya dicatat server-side. 403 juga tidak memakai header `WWW-Authenticate` karena bukan kegagalan authentication.
+8. **Mekanisme siap diperluas.** `RolePolicy` adalah titik perluasan untuk resource/policy authorization pada tahap berikutnya (cukup menambah aturan di `RolePolicy.enforce` atau menyediakan policy baru dengan bentuk yang sama) tanpa mengubah cara endpoint memakainya.
+9. **Satu policy dapat dipakai oleh banyak endpoint.** Router `admin` mendefinisikan `admin_only` sekali dan memakainya di dua endpoint; endpoint fitur lain (mis. RPS instructor-only) cukup memakai `require_roles(...)` yang sama ketika fiturnya diimplementasikan.
 
 ---
 
@@ -265,3 +401,45 @@ Seluruh pengujian berada di folder `tests/` dan harus dijalankan serta lulus seb
 ```bash
 uv run pytest
 ```
+
+Pengujian yang membutuhkan PostgreSQL (`tests/test_auth_postgres.py`) dijalankan bila database tersedia dan otomatis dilewati bila tidak.
+
+---
+
+## 🐳 Menjalankan dengan Docker
+
+`docker-compose.yml` di root repository menjalankan **PostgreSQL 16 + backend** dengan konfigurasi yang sama untuk seluruh tim, termasuk migrasi Alembic yang dijalankan otomatis saat container start.
+
+```bash
+cd ..                          # root repository
+docker compose up -d --build
+docker compose ps              # db & backend harus berstatus healthy
+curl http://127.0.0.1:8000/health
+```
+
+Isi folder ini yang terlibat:
+
+| Berkas | Keterangan |
+| :--- | :--- |
+| `Dockerfile` | `python:3.13-slim` + `uv 0.11.21`; memasang seluruh dependensi (termasuk grup `dev`, agar test suite dapat dijalankan di container); berjalan sebagai user non-root `app` |
+| `.dockerignore` | Mengecualikan `.env` (credential tidak pernah masuk image) dan artefak lokal; `.env.example` tetap disertakan karena Settings memakainya sebagai fallback konfigurasi |
+| `docker-entrypoint.sh` | Menunggu database siap, menjalankan `alembic upgrade head` (idempotent), lalu mengeksekusi perintah utama |
+
+Perintah yang sering dipakai:
+
+```bash
+docker compose logs -f backend                              # log aplikasi (uvicorn --reload)
+docker compose run --rm backend uv run pytest               # test suite di dalam container
+docker compose run --rm backend uv run pytest tests/test_auth_postgres.py
+docker compose exec backend uv run alembic upgrade head     # migrasi manual
+docker compose exec db psql -U postgres -d lms_moodle_db    # shell database
+docker compose down                                         # hentikan service
+docker compose down -v                                      # hentikan + hapus data database
+```
+
+Catatan:
+
+1. Backend di container menjangkau database lewat nama service `db` (`DB_HOST=db`), bukan `localhost`.
+2. Kredensial default mengikuti `backend/.env.example`. Bila menjalankan backend langsung di host, siapkan `backend/.env` dan pastikan `DB_PORT` sama dengan port yang dipublikasikan compose.
+3. `./backend/src` dan `./backend/tests` di-mount ke container sehingga perubahan kode langsung terpakai (uvicorn `--reload`); `.venv` di dalam image tidak tertimpa.
+4. Port yang sudah dipakai dapat ditimpa: `DB_PORT=5433 APP_PORT=8001 docker compose up -d`.
