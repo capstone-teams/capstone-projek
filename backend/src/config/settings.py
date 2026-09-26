@@ -60,10 +60,16 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = ""
 
     model_config = SettingsConfigDict(
+        # Urutan penting: pydantic-settings menggabungkan file-file ini secara
+        # berurutan dan file TERAKHIR yang menang. ``.env.example`` diletakkan
+        # paling awal karena hanya berfungsi sebagai fallback agar checkout
+        # baru (dan CI) tetap dapat menjalankan aplikasi/test tanpa ``.env``
+        # privat; konfigurasi milik developer (``.env``) harus selalu
+        # menimpanya.
         env_file=(
+            BACKEND_DIR / ".env.example",
             ROOT_DIR / ".env",
             BACKEND_DIR / ".env",
-            BACKEND_DIR / ".env.example",
         ),
         env_file_encoding="utf-8",
         extra="ignore",
