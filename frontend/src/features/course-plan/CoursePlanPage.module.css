@@ -263,6 +263,16 @@
   font-weight: 600;
 }
 
+.badgeReady {
+  background-color: #F0FDF4;
+  color: #15803D;
+  border: 1px solid #BBF7D0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 @media (max-width: 1024px) {
   .container {
     padding: 24px 32px 48px;
@@ -323,4 +333,101 @@
     width: 100% !important;
     min-height: 44px;
   }
+}
+
+/* Inline Agent Monitoring Widget */
+.agentMonitoringCard {
+  background-color: #F8FAFC;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.05);
+}
+
+.monitoringHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pulseDot {
+  width: 12px;
+  height: 12px;
+  background-color: #2563EB;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  animation: pulse 1.6s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
+}
+
+.monitoringTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0F172A;
+  margin: 0;
+}
+
+.monitoringSubtitle {
+  font-size: 12px;
+  color: #64748B;
+}
+
+.progressBarContainer {
+  height: 6px;
+  background-color: #E2E8F0;
+  border-radius: 9999px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progressBarFill {
+  height: 100%;
+  background-color: #1D4ED8;
+  border-radius: 9999px;
+  transition: width 0.4s ease;
+}
+
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.stepDone {
+  color: #059669;
+  font-weight: 500;
+}
+
+.stepActive {
+  color: #1D4ED8;
+  font-weight: 600;
+}
+
+.stepPending {
+  color: #94A3B8;
+  font-weight: 400;
 }
