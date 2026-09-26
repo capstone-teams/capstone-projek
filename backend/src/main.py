@@ -11,9 +11,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from src.config.database import dispose_engine
 from src.config.settings import settings
 from src.middlewares.error_handlers import register_exception_handlers
 from src.routes import api_router, health_router
+from src.services.auth.tokens import warn_if_secret_is_weak
 
 
 @asynccontextmanager
@@ -23,7 +25,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     Disediakan khusus untuk resource infrastruktur (contoh: database engine,
     connection pool, HTTP client). Logika bisnis tidak boleh dijalankan di sini.
     """
+    warn_if_secret_is_weak()
     yield
+    await dispose_engine()
 
 
 def create_app() -> FastAPI:

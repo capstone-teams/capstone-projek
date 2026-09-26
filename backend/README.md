@@ -8,32 +8,35 @@ Folder ini berisi *source code*, konfigurasi, dan pengujian untuk service backen
 
 ```text
 backend/
-├── alembic/                      # Skrip & histori migrasi database (Alembic)
+├── migrations/                   # Skrip & histori migrasi database (Alembic)
 │   ├── versions/                 # File revisi migrasi skema DB (.py)
 │   └── env.py                    # Konfigurasi runtime environment Alembic
 ├── alembic.ini                   # File konfigurasi utama Alembic
 ├── src/                          # Source code utama aplikasi
-│   ├── config/                   # Konfigurasi aplikasi, env vars, & koneksi DB
-│   │   ├── __init__.py
-│   │   └── settings.py
+│   ├── config/                   # Konfigurasi aplikasi, env vars, & infrastruktur DB
+│   │   ├── settings.py           # Pydantic Settings (environment variables)
+│   │   └── database.py           # Async engine & session factory
 │   ├── routes/                   # Definition Endpoint API & HTTP Router (FastAPI)
-│   │   └── __init__.py
+│   │   ├── auth.py               # POST /auth/login, GET /auth/me
+│   │   ├── health.py
+│   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
-│   │   └── __init__.py
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
-│   │   └── __init__.py
+│   │   ├── auth/                 # Authentication: kredensial, token, AuthService
+│   │   ├── user/                 # Domain User/Role, UserService, UserRepository
+│   │   ├── llm/                  # Integrasi penyedia LLM
+│   │   └── dependencies.py       # Dependency provider untuk routes
 │   ├── models/                   # Database Entities / ORM Models (SQLAlchemy)
-│   │   └── __init__.py
 │   ├── schemas/                  # Request & Response DTOs / Data Validation (Pydantic)
-│   │   └── __init__.py
+│   │   └── auth.py
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
-│   │   └── __init__.py
+│   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
 │   ├── utils/                    # Helper functions & pure utilities
-│   │   └── __init__.py
 │   └── main.py                   # FastAPI Application Entry Point
 ├── tests/                        # Automated unit & integration tests (pytest)
-│   ├── test_config.py
-│   └── test_main.py
+│   ├── conftest.py               # Fixture bersama (session SQLite in-memory)
+│   ├── test_auth_postgres.py     # Integrasi authentication vs PostgreSQL sungguhan
+│   └── test_*.py                 # Unit & route test per modul
 ├── pyproject.toml                # Konfigurasi dependensi & tools (uv)
 ├── pytest.ini                    # Konfigurasi test runner pytest
 ├── uv.lock                       # Lockfile dependensi uv
@@ -164,6 +167,57 @@ Aturan Repository:
 1. Repository **hanya** berisi operasi data (query & mutasi) — tanpa aturan bisnis, kalkulasi domain, atau percabangan workflow.
 2. Repository hanya boleh dipanggil oleh `services/`. `routes/` dan `controllers/` **dilarang** memanggil repository secara langsung.
 3. Jika sebuah fitur belum membutuhkan query kompleks, repository **tidak perlu dibuat**. Service boleh langsung memakai `Session` — yang penting tanggung jawab tersebut tetap berada di layer service, bukan di router.
+
+---
+
+## 🔐 Authentication (BE-03.3)
+
+Authentication menjawab **"siapa User ini?"**. Keputusan boleh/tidaknya sebuah operasi dijalankan berada di authorization (BE-03.4), bukan di sini.
+
+### Endpoint
+
+| Method | Path | Keterangan |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/auth/login` | Verifikasi kredensial; mengembalikan `access_token`, `token_type`, dan identitas (`id`, `role`) |
+| `GET` | `/api/v1/auth/me` | Mengembalikan current user; membutuhkan header `Authorization: Bearer <access_token>` |
+
+`username` pada login adalah **email** user (email adalah identity attribute pada data model; User tidak memiliki atribut username terpisah).
+
+### Memakai authentication pada endpoint baru
+
+```python
+# src/routes/rps.py
+from fastapi import APIRouter, Depends
+
+from src.services.dependencies import get_current_user
+from src.services.user.domain import User
+
+router = APIRouter(prefix="/rps", tags=["RPS"])
+
+@router.post("")
+async def create_rps(current_user: User = Depends(get_current_user)):
+    ...  # current_user.role selalu berasal dari record User
+```
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Verifikasi kredensial, penerbitan/validasi token, current user | `src/services/auth/` |
+| DTO request/response | `src/schemas/auth.py` |
+| Endpoint HTTP | `src/routes/auth.py` |
+| Pemetaan error domain → 401 `AUTHENTICATION_FAILED` | `src/middlewares/error_handlers.py` |
+| Dependency provider (session, service, current user) | `src/services/dependencies.py` |
+| Infrastruktur engine & session | `src/config/database.py` |
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Dependency provider berada di dalam layer `services/`** (`src/services/dependencies.py`). Aturan layer sebelumnya menyisakan penempatan ini terbuka sampai database session didefinisikan; dengan penempatan ini router tetap **tidak** mengimpor SQLAlchemy dan cukup memakai `Depends(...)`.
+2. **`src/schemas/` boleh mengimpor enum role** dari `src.services.user.enums` (sumber tunggal nilai role/status). Alternatifnya adalah mendefinisikan ulang nilai role di DTO, yang justru melanggar aturan BE-03.1. Selain enum tersebut, schema tetap hanya berisi Pydantic dan bebas SQLAlchemy.
+3. **Role tidak pernah berasal dari client.** Role pada authentication state dibaca ulang dari record User setiap request (`AuthService.get_authenticated_user`), sehingga perubahan role atau deaktivasi langsung berlaku dan privilege tidak dapat dinaikkan lewat payload maupun klaim token.
+4. **Semua kegagalan authentication menghasilkan response identik** (401 `AUTHENTICATION_FAILED`) untuk email tidak terdaftar, password salah, user non-aktif, user tanpa credential lokal, dan token tidak valid — mencegah *user enumeration*. Detail penyebab hanya dicatat server-side, tanpa nilai credential/token.
+5. **`SECRET_KEY` produksi wajib berasal dari environment configuration yang aman.** Saat startup aplikasi mencatat peringatan (tanpa mencetak nilainya) bila `SECRET_KEY` lebih pendek dari 32 karakter; nilai contoh pada `.env.example` tidak layak dipakai di produksi.
+6. **Pengujian integrasi membutuhkan PostgreSQL sungguhan** dan otomatis dilewati bila database tidak tersedia — lihat `tests/test_auth_postgres.py`.
 
 ---
 

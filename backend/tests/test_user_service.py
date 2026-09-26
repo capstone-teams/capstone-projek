@@ -420,11 +420,17 @@ def test_application_layer_does_not_import_http_frameworks(module_name):
 @pytest.mark.parametrize("module_name", APPLICATION_MODULES)
 def test_application_layer_has_no_moodle_or_llm_logic(module_name):
     path = USER_PACKAGE_DIR / module_name
-    source = path.read_text(encoding="utf-8").lower()
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     modules = imported_modules(path)
 
-    assert "moodle" not in source
-    assert "llm" not in source
+    # Identifier yang benar-benar dipakai di kode (bukan sekadar disebut di
+    # docstring/komentar).
+    identifiers = {
+        node.id.lower() for node in ast.walk(tree) if isinstance(node, ast.Name)
+    } | {node.attr.lower() for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+
+    assert not any("moodle" in identifier for identifier in identifiers)
+    assert not any("llm" in identifier for identifier in identifiers)
     assert not any(module.startswith("src.services.llm") for module in modules)
 
 
