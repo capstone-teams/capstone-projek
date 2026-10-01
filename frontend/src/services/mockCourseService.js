@@ -1,4 +1,3 @@
-import type { CourseService } from './courseService.ts'
 import {
   DOSEN_COURSES,
   MAHASISWA_COURSES,
@@ -7,7 +6,8 @@ import {
   WEEKS_DATA,
 } from '../data/courseData.ts'
 
-export const mockCourseService: CourseService = {
+/** @type {import('./courseService.js').CourseService} */
+export const mockCourseService = {
   async listInstructorCourses() {
     return structuredClone(DOSEN_COURSES)
   },
