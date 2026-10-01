@@ -1,6 +1,8 @@
 import React from 'react'
 import type { AppPath, ModalType } from '../../types/navigation'
-import { DOSEN_COURSES } from '../../data/courseData'
+import { courseService } from '../../services'
+import { useServiceResource } from '../../services/useServiceResource'
+import { ServiceStatus } from '../../services/ServiceStatus'
 import styles from './DashboardPage.module.css'
 
 interface DashboardPageProps {
@@ -16,6 +18,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onShowToast,
   hasCourses = false,
 }) => {
+  const courses = useServiceResource(courseService.listInstructorCourses)
+
   const handleCourseClick = (code: string, name: string) => {
     if (code === 'IF201405' || code === 'IF403') {
       onNavigate('/course-plan')
@@ -64,9 +68,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </button>
           </div>
         </div>
+      ) : courses.status !== 'success' ? (
+        <ServiceStatus error={courses.error ?? undefined} onRetry={courses.retry} />
       ) : (
         <div className={styles.courseGrid}>
-          {DOSEN_COURSES.map((c) => (
+          {courses.data.map((c) => (
             <div
               key={c.code}
               className={styles.courseCard}

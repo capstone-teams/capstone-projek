@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import type { AppPath } from '../../types/navigation'
-import { RPS_ANALYSIS_DATA } from '../../data/courseData'
+import { courseService } from '../../services'
+import { useServiceResource } from '../../services/useServiceResource'
+import { ServiceStatus } from '../../services/ServiceStatus'
 import styles from './RpsAnalysisPage.module.css'
 
 interface RpsAnalysisPageProps {
@@ -14,6 +16,13 @@ export const RpsAnalysisPage: React.FC<RpsAnalysisPageProps> = ({
 }) => {
   const [selectedWeek, setSelectedWeek] = useState(1)
   const [showFullDetails, setShowFullDetails] = useState(false)
+  const analysis = useServiceResource(courseService.getRpsAnalysis)
+
+  if (analysis.status !== 'success') {
+    return <div className={styles.container}><ServiceStatus error={analysis.error ?? undefined} onRetry={analysis.retry} /></div>
+  }
+
+  const RPS_ANALYSIS_DATA = analysis.data
 
   const activePlan =
     RPS_ANALYSIS_DATA.weeklyPlans.find((p) => p.weekNumber === selectedWeek) ||

@@ -1,6 +1,8 @@
-import React from 'react'
+import React, { useCallback } from 'react'
 import type { AppPath } from '../../types/navigation'
-import { WEEKLY_MATERIALS_DATA } from '../../data/courseData'
+import { courseService } from '../../services'
+import { useServiceResource } from '../../services/useServiceResource'
+import { ServiceStatus } from '../../services/ServiceStatus'
 import styles from './MaterialViewPage.module.css'
 
 interface MaterialViewPageProps {
@@ -16,11 +18,16 @@ export const MaterialViewPage: React.FC<MaterialViewPageProps> = ({
   onNavigate,
   onShowToast,
 }) => {
-  const doc =
-    WEEKLY_MATERIALS_DATA[documentId] ||
-    (weekNumber === 2
-      ? WEEKLY_MATERIALS_DATA['doc-week2-pdf']
-      : WEEKLY_MATERIALS_DATA['doc-week3-pdf'])
+  const loadMaterial = useCallback(
+    () => courseService.getMaterial(documentId, weekNumber),
+    [documentId, weekNumber],
+  )
+  const material = useServiceResource(loadMaterial)
+  if (material.status !== 'success') {
+    return <div className={styles.container}><ServiceStatus error={material.error ?? undefined} onRetry={material.retry} /></div>
+  }
+
+  const doc = material.data
 
   const formattedWeek = doc.weekNumber < 10 ? `0${doc.weekNumber}` : doc.weekNumber
 

@@ -633,7 +633,7 @@ describe('Weekly Content Layouts & Material Viewer Reference Variations', () => 
       path.resolve(import.meta.dirname, '../src/features/weekly-content/MaterialViewPage.tsx'),
       'utf8'
     )
-    assert.match(file, /WEEKLY_MATERIALS_DATA/)
+    assert.match(file, /courseService\.getMaterial/)
     assert.match(file, /badgeType/)
     assert.match(file, /handleDownload/)
     assert.match(file, /handleCopySummary/)
@@ -642,7 +642,6 @@ describe('Weekly Content Layouts & Material Viewer Reference Variations', () => 
     assert.match(file, /exerciseCard/)
   })
 })
-
 
 
 

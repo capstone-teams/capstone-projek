@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import type { AppPath, ModalType } from '../../types/navigation'
 import type { CoursePlanStage, SyllabusWeek } from '../../types/course'
-import { WEEKS_DATA } from '../../data/courseData'
+import { courseService } from '../../services'
+import { useServiceResource } from '../../services/useServiceResource'
+import { ServiceStatus } from '../../services/ServiceStatus'
 import styles from './CoursePlanPage.module.css'
 
 interface CoursePlanPageProps {
@@ -25,6 +27,7 @@ export const CoursePlanPage: React.FC<CoursePlanPageProps> = ({
   onOpenModal,
   onShowToast,
 }) => {
+  const weeks = useServiceResource(courseService.listSyllabusWeeks)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationStep, setGenerationStep] = useState(1)
   const [progressPercent, setProgressPercent] = useState(25)
@@ -126,6 +129,11 @@ export const CoursePlanPage: React.FC<CoursePlanPageProps> = ({
     setIsBatchGenerating(true)
   }
 
+  if (weeks.status !== 'success') {
+    return <div className={styles.container}><ServiceStatus error={weeks.error ?? undefined} onRetry={weeks.retry} /></div>
+  }
+
+  const WEEKS_DATA = weeks.data
   const group1 = WEEKS_DATA.slice(0, 4)
   const group2 = WEEKS_DATA.slice(4, 8)
   const group3 = WEEKS_DATA.slice(8, 12)

@@ -1,7 +1,9 @@
 import React from 'react'
 import type { AppPath } from '../../types/navigation'
 import type { SyllabusWeek } from '../../types/course'
-import { WEEKS_DATA } from '../../data/courseData'
+import { courseService } from '../../services'
+import { useServiceResource } from '../../services/useServiceResource'
+import { ServiceStatus } from '../../services/ServiceStatus'
 import styles from './Student.module.css'
 
 interface StudentCourseDetailPageProps {
@@ -13,6 +15,12 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   onNavigate,
   onShowToast,
 }) => {
+  const weeks = useServiceResource(courseService.listSyllabusWeeks)
+  if (weeks.status !== 'success') {
+    return <div className={styles.container}><ServiceStatus error={weeks.error ?? undefined} onRetry={weeks.retry} /></div>
+  }
+
+  const WEEKS_DATA = weeks.data
   const group1 = WEEKS_DATA.slice(0, 4)
   const group2 = WEEKS_DATA.slice(4, 8)
   const group3 = WEEKS_DATA.slice(8, 12)
