@@ -1,10 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { AppPath, ModalType } from './types/navigation'
 import { APP_ROUTES } from './types/navigation'
-import type { UserRole, UserProfile } from './types/auth'
-import { DOSEN_PROFILE } from './types/auth'
+import type { AuthUser } from './types/auth'
 import type { CoursePlanStage, WeeklyContentStage } from './types/course'
-import { resolveAppPath } from './utils/navigation'
+import {
+  getDefaultPathForRole,
+  getPostLoginPath,
+  resolveAppPath,
+  resolveRouteAccess,
+} from './utils/navigation'
+import { useAuth } from './hooks/useAuth'
+import { getInitials } from './services/authService'
 
 import { AppLayout } from './components/layout/AppLayout'
 import type { ToastItem } from './components/ui/Toast'
@@ -29,6 +35,8 @@ import { MoodleSyncModal } from './features/weekly-content/components/MoodleSync
 import { StudentCoursesPage } from './features/student/StudentCoursesPage'
 import { StudentCourseDetailPage } from './features/student/StudentCourseDetailPage'
 import { StudentWeekDetailPage } from './features/student/StudentWeekDetailPage'
+import { NotFoundPage } from './features/errors/NotFoundPage'
+import { UnauthorizedPage } from './features/errors/UnauthorizedPage'
 
 function getInitialPath(): AppPath {
   return resolveAppPath(window.location.pathname)
@@ -61,12 +69,13 @@ function getInitialContentStage(): WeeklyContentStage {
 }
 
 export default function App() {
-  const [currentPath, setCurrentPath] = useState<AppPath>(getInitialPath)
-  const [dosenProfile, setDosenProfile] = useState<UserProfile>(DOSEN_PROFILE)
-  const [activeRole, setActiveRole] = useState<UserRole>(() => {
-    const route = APP_ROUTES[getInitialPath()]
-    return route?.role === 'mahasiswa' ? 'mahasiswa' : 'dosen'
-  })
+  const { user, logout, updateProfile } = useAuth()
+  // The path the user asked for. What is rendered is decided by the route guard,
+  // so a protected path stays remembered while the login page is shown.
+  const [requestedPath, setRequestedPath] = useState<AppPath>(getInitialPath)
+  const routeDecision = resolveRouteAccess(requestedPath, user)
+  const currentPath = routeDecision.path
+  const homePath = user ? getDefaultPathForRole(user.role) : '/login'
   const [hasCourses, setHasCourses] = useState<boolean>(getInitialHasCourses)
   const [activeModal, setActiveModal] = useState<ModalType>(null)
   const [coursePlanStage, setCoursePlanStage] = useState<CoursePlanStage>(getInitialPlanStage)
@@ -85,72 +94,56 @@ export default function App() {
   }, [])
 
   const navigate = useCallback((path: AppPath) => {
-    setCurrentPath(path)
-    const route = APP_ROUTES[path]
-    if (route) {
-      document.title = route.title
-      if (route.role === 'mahasiswa') {
-        setActiveRole('mahasiswa')
-      } else if (route.role === 'dosen') {
-        setActiveRole('dosen')
-      }
-    }
-    if (path === '/login') {
-      setHasCourses(false)
-      setCoursePlanStage('empty')
-      setWeeklyContentStage('empty')
-      setSelectedWeek(3)
-      setSelectedMaterialId('doc-week3-pdf')
-    }
+    setRequestedPath(path)
     window.history.pushState(null, '', path)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
 
-  const handleResetDemo = useCallback(() => {
+  const resetDemoState = useCallback(() => {
     setHasCourses(false)
     setCoursePlanStage('empty')
     setWeeklyContentStage('empty')
     setSelectedWeek(3)
     setSelectedMaterialId('doc-week3-pdf')
+  }, [])
+
+  const handleResetDemo = useCallback(() => {
+    resetDemoState()
     navigate('/dashboard')
     showToast('Alur demo berhasil direset ke kondisi awal.', 'info')
-  }, [navigate, showToast])
+  }, [navigate, resetDemoState, showToast])
 
-  // Sync initial address bar on first render if visiting root or unknown path
+  const handleLoginSuccess = useCallback(
+    (signedIn: AuthUser) => {
+      navigate(getPostLoginPath(signedIn, requestedPath))
+    },
+    [navigate, requestedPath],
+  )
+
+  const handleLogout = useCallback(async () => {
+    await logout()
+    resetDemoState()
+    navigate('/login')
+  }, [logout, navigate, resetDemoState])
+
+  // Keep the address bar and title in line with the guarded route.
+  // Unknown URLs keep their address while the not-found page is shown.
   useEffect(() => {
-    const initialPath = getInitialPath()
-    if (window.location.pathname !== initialPath) {
-      window.history.replaceState(null, '', initialPath)
+    if (resolveAppPath(window.location.pathname) !== currentPath) {
+      window.history.replaceState(null, '', currentPath)
     }
-  }, [])
+    document.title = APP_ROUTES[currentPath].title
+  }, [currentPath])
 
   // Listen to browser Back/Forward navigation
   useEffect(() => {
     const handlePopState = () => {
-      const targetPath = resolveAppPath(window.location.pathname)
-      setCurrentPath(targetPath)
-      const route = APP_ROUTES[targetPath]
-      if (route) {
-        document.title = route.title
-        if (route.role === 'mahasiswa') {
-          setActiveRole('mahasiswa')
-        } else if (route.role === 'dosen') {
-          setActiveRole('dosen')
-        }
-      }
+      setRequestedPath(resolveAppPath(window.location.pathname))
     }
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
-
-  // Update initial document title
-  useEffect(() => {
-    const route = APP_ROUTES[currentPath]
-    if (route) {
-      document.title = route.title
-    }
-  }, [currentPath])
 
   const closeModal = useCallback(() => {
     setActiveModal(null)
@@ -159,17 +152,29 @@ export default function App() {
   return (
     <AppLayout
       currentPath={currentPath}
-      activeRole={activeRole}
-      dosenProfile={dosenProfile}
+      currentUser={user}
       onNavigate={navigate}
-      onRoleChange={setActiveRole}
+      onLogout={handleLogout}
       onOpenModal={setActiveModal}
       toasts={toasts}
       onDismissToast={dismissToast}
     >
       {/* Route Views */}
       {currentPath === '/login' && (
-        <LoginPage onNavigate={navigate} onRoleChange={setActiveRole} />
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      )}
+
+      {currentPath === '/unauthorized' && (
+        <UnauthorizedPage
+          role={user?.role ?? null}
+          homePath={homePath}
+          onNavigate={navigate}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {currentPath === '/not-found' && (
+        <NotFoundPage homePath={homePath} onNavigate={navigate} />
       )}
 
       {currentPath === '/dashboard' && (
@@ -245,32 +250,24 @@ export default function App() {
       )}
 
       {/* Feature Modals */}
-      <ProfileModal
-        isOpen={activeModal === 'profile'}
-        onClose={closeModal}
-        profile={dosenProfile}
-        onShowToast={showToast}
-        onResetDemo={handleResetDemo}
-        onSave={(name, email, teachingApproach, aiInstructions) => {
-          setDosenProfile((prev) => {
-            const initials = name
-              .split(' ')
-              .map((part) => part[0])
-              .filter(Boolean)
-              .slice(0, 2)
-              .join('')
-              .toUpperCase() || 'MC'
-            return {
-              ...prev,
+      {user?.role === 'INSTRUCTOR' && (
+        <ProfileModal
+          isOpen={activeModal === 'profile'}
+          onClose={closeModal}
+          profile={user.profile}
+          onShowToast={showToast}
+          onResetDemo={handleResetDemo}
+          onSave={(name, email, teachingApproach, aiInstructions) => {
+            updateProfile({
               name,
               email,
-              avatarInitial: initials,
+              avatarInitial: getInitials(name),
               teachingApproach,
               aiInstructions,
-            }
-          })
-        }}
-      />
+            })
+          }}
+        />
+      )}
 
       <UploadRpsModal
         isOpen={activeModal === 'upload-rps'}

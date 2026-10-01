@@ -1,3 +1,5 @@
+import type { UserRole } from './auth.ts'
+
 export type AppPath =
   | '/login'
   | '/dashboard'
@@ -8,6 +10,8 @@ export type AppPath =
   | '/student/courses'
   | '/student/course'
   | '/student/week'
+  | '/unauthorized'
+  | '/not-found'
 
 export type ModalType =
   | 'upload-rps'
@@ -23,56 +27,101 @@ export type ModalType =
   | 'moodle-sync'
   | null
 
+/**
+ * - `public`: dapat dibuka siapa saja (sudah login atau belum).
+ * - `guest`: hanya untuk pengguna yang belum login (mis. halaman login).
+ * - `authenticated`: wajib login; dibatasi lagi oleh `roles` bila diisi.
+ */
+export type RouteAccess = 'public' | 'guest' | 'authenticated'
+
 export interface RouteMetadata {
   path: AppPath
   title: string
-  role: 'dosen' | 'mahasiswa' | 'public'
+  access: RouteAccess
+  /** Role yang boleh membuka route. Kosong berarti semua role yang sudah login. */
+  roles?: readonly UserRole[]
 }
 
 export const APP_ROUTES: Record<AppPath, RouteMetadata> = {
   '/login': {
     path: '/login',
     title: 'Masuk — LMS ITK',
-    role: 'public',
+    access: 'guest',
   },
   '/dashboard': {
     path: '/dashboard',
     title: 'Dashboard Dosen — LMS ITK',
-    role: 'dosen',
+    access: 'authenticated',
+    roles: ['INSTRUCTOR'],
   },
   '/rps-analysis': {
     path: '/rps-analysis',
     title: 'Hasil Analisis RPS — Aljabar Linear dan Geometri — LMS ITK',
-    role: 'dosen',
+    access: 'authenticated',
+    roles: ['INSTRUCTOR'],
   },
   '/course-plan': {
     path: '/course-plan',
     title: 'Aljabar Linear dan Geometri (Course Plan) — LMS ITK',
-    role: 'dosen',
+    access: 'authenticated',
+    roles: ['INSTRUCTOR'],
   },
   '/weekly-content': {
     path: '/weekly-content',
     title: 'Detail Konten Mingguan — LMS ITK',
-    role: 'dosen',
+    access: 'authenticated',
+    roles: ['INSTRUCTOR'],
   },
   '/material-view': {
     path: '/material-view',
     title: 'Penampil Dokumen Materi — LMS ITK',
-    role: 'public',
+    access: 'authenticated',
   },
   '/student/courses': {
     path: '/student/courses',
     title: 'Matakuliah Saya — LMS ITK',
-    role: 'mahasiswa',
+    access: 'authenticated',
+    roles: ['STUDENT'],
   },
   '/student/course': {
     path: '/student/course',
     title: 'Silabus Matakuliah — LMS ITK',
-    role: 'mahasiswa',
+    access: 'authenticated',
+    roles: ['STUDENT'],
   },
   '/student/week': {
     path: '/student/week',
     title: 'Materi Kuliah Minggu 03 — LMS ITK',
-    role: 'mahasiswa',
+    access: 'authenticated',
+    roles: ['STUDENT'],
   },
+  '/unauthorized': {
+    path: '/unauthorized',
+    title: 'Akses Ditolak — LMS ITK',
+    access: 'public',
+  },
+  '/not-found': {
+    path: '/not-found',
+    title: 'Halaman Tidak Ditemukan — LMS ITK',
+    access: 'public',
+  },
+}
+
+export interface NavItem {
+  label: string
+  path: AppPath
+}
+
+/**
+ * Menu navigasi utama untuk setiap role.
+ */
+export const ROLE_NAVIGATION: Record<UserRole, readonly NavItem[]> = {
+  INSTRUCTOR: [
+    { label: 'Dashboard', path: '/dashboard' },
+    { label: 'Course Plan', path: '/course-plan' },
+  ],
+  STUDENT: [
+    { label: 'Mata Kuliah', path: '/student/courses' },
+    { label: 'Silabus', path: '/student/course' },
+  ],
 }

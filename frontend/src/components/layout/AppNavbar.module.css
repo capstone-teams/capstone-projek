@@ -63,6 +63,41 @@
   margin-left: 4px;
 }
 
+.primaryNav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 32px;
+  margin-right: auto;
+}
+
+.navLink {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.navLink:hover {
+  background-color: #F1F5F9;
+  color: #0F172A;
+}
+
+.navLinkActive {
+  color: #1D4ED8;
+  background-color: #EFF6FF;
+  font-weight: 600;
+}
+
+.mobileNavSection {
+  display: none;
+}
+
 .userMenuContainer {
   position: relative;
 }
@@ -162,6 +197,12 @@
 @media (max-width: 768px) {
   .headerInner {
     padding: 0 16px;
+  }
+  .primaryNav {
+    display: none;
+  }
+  .mobileNavSection {
+    display: block;
   }
   .brandSubtitle {
     display: none;

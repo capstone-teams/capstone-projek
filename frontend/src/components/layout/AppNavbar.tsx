@@ -1,32 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react'
 import type { AppPath, ModalType } from '../../types/navigation'
-import type { UserRole, UserProfile } from '../../types/auth'
-import { DOSEN_PROFILE, MAHASISWA_PROFILE } from '../../types/auth'
+import type { AuthUser } from '../../types/auth'
+import { getDefaultPathForRole, getNavigationForRole } from '../../utils/navigation'
 import styles from './AppNavbar.module.css'
 
 interface AppNavbarProps {
   currentPath: AppPath
-  activeRole: UserRole
-  dosenProfile?: UserProfile
+  currentUser: AuthUser | null
   onNavigate: (path: AppPath) => void
-  onRoleChange: (role: UserRole) => void
+  onLogout: () => void
   onOpenModal: (modal: ModalType) => void
 }
 
 export const AppNavbar: React.FC<AppNavbarProps> = ({
   currentPath,
-  activeRole,
-  dosenProfile = DOSEN_PROFILE,
+  currentUser,
   onNavigate,
-  onRoleChange,
+  onLogout,
   onOpenModal,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const isLoginPage = currentPath === '/login'
-  const isDosen = activeRole === 'dosen'
-  const currentProfile = isDosen ? dosenProfile : MAHASISWA_PROFILE
+  const isDosen = currentUser?.role === 'INSTRUCTOR'
+  const navItems = currentUser ? getNavigationForRole(currentUser.role) : []
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -53,27 +51,12 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
   }, [dropdownOpen])
 
   const handleBrandClick = () => {
-    if (isLoginPage) {
-      onNavigate('/login')
-      return
-    }
-    if (isDosen) {
-      onNavigate('/dashboard')
-    } else {
-      onNavigate('/student/courses')
-    }
+    onNavigate(currentUser ? getDefaultPathForRole(currentUser.role) : '/login')
   }
 
-  const handleSwitchToDosen = () => {
+  const handleNavItemClick = (path: AppPath) => {
     setDropdownOpen(false)
-    onRoleChange('dosen')
-    onNavigate('/dashboard')
-  }
-
-  const handleSwitchToMahasiswa = () => {
-    setDropdownOpen(false)
-    onRoleChange('mahasiswa')
-    onNavigate('/student/courses')
+    onNavigate(path)
   }
 
   return (
@@ -98,7 +81,23 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
           <span className={styles.brandSubtitle}>· Institut Teknologi Kalimantan</span>
         </div>
 
-        {!isLoginPage ? (
+        {navItems.length > 0 && (
+          <nav className={styles.primaryNav} aria-label="Navigasi utama">
+            {navItems.map((item) => (
+              <button
+                key={item.path}
+                type="button"
+                className={`${styles.navLink} ${item.path === currentPath ? styles.navLinkActive : ''}`.trim()}
+                aria-current={item.path === currentPath ? 'page' : undefined}
+                onClick={() => onNavigate(item.path)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {currentUser ? (
           <div className={styles.userMenuContainer} ref={menuRef}>
             <button
               type="button"
@@ -107,13 +106,29 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
               aria-expanded={dropdownOpen}
               aria-haspopup="menu"
             >
-              <span className={styles.avatarBadge}>{currentProfile.avatarInitial}</span>
-              <span className={styles.userName}>{currentProfile.name}</span>
+              <span className={styles.avatarBadge}>{currentUser.profile.avatarInitial}</span>
+              <span className={styles.userName}>{currentUser.profile.name}</span>
               <span className={styles.dropdownArrow}>▾</span>
             </button>
 
             {dropdownOpen && (
               <div className={styles.dropdownMenu} role="menu">
+                <div className={styles.mobileNavSection}>
+                  <div className={styles.dropdownSection}>Navigasi</div>
+                  {navItems.map((item) => (
+                    <button
+                      key={item.path}
+                      type="button"
+                      className={styles.dropdownItem}
+                      role="menuitem"
+                      onClick={() => handleNavItemClick(item.path)}
+                    >
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                  <div className={styles.dropdownDivider} />
+                </div>
+
                 {isDosen && (
                   <button
                     type="button"
@@ -128,31 +143,7 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
                   </button>
                 )}
 
-                <div className={styles.dropdownDivider} />
-
-                <div className={styles.dropdownSection}>Ganti Perspektif</div>
-
-                <button
-                  type="button"
-                  className={styles.dropdownItem}
-                  role="menuitem"
-                  onClick={handleSwitchToDosen}
-                >
-                  <span>Dosen ({dosenProfile.name})</span>
-                  {isDosen && <span style={{ color: '#2563EB', fontWeight: 700 }}>✓</span>}
-                </button>
-
-                <button
-                  type="button"
-                  className={styles.dropdownItem}
-                  role="menuitem"
-                  onClick={handleSwitchToMahasiswa}
-                >
-                  <span>Mahasiswa ({MAHASISWA_PROFILE.name})</span>
-                  {!isDosen && <span style={{ color: '#2563EB', fontWeight: 700 }}>✓</span>}
-                </button>
-
-                <div className={styles.dropdownDivider} />
+                {isDosen && <div className={styles.dropdownDivider} />}
 
                 <button
                   type="button"
@@ -160,7 +151,7 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
                   role="menuitem"
                   onClick={() => {
                     setDropdownOpen(false)
-                    onNavigate('/login')
+                    onLogout()
                   }}
                 >
                   <span style={{ color: '#DC2626', fontWeight: 500 }}>Keluar (Logout)</span>
@@ -169,13 +160,15 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
             )}
           </div>
         ) : (
-          <button
-            type="button"
-            className={styles.userPill}
-            onClick={() => onNavigate('/login')}
-          >
-            <span>Masuk</span>
-          </button>
+          !isLoginPage && (
+            <button
+              type="button"
+              className={styles.userPill}
+              onClick={() => onNavigate('/login')}
+            >
+              <span>Masuk</span>
+            </button>
+          )
         )}
       </div>
     </header>

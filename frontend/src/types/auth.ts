@@ -1,4 +1,18 @@
-export type UserRole = 'dosen' | 'mahasiswa'
+/**
+ * Role pengguna. Nilainya mengikuti enum `UserRole` di backend
+ * (`backend/src/models/user.py`) agar payload auth dapat dipakai langsung.
+ */
+export type UserRole = 'INSTRUCTOR' | 'STUDENT'
+
+export const USER_ROLES = {
+  INSTRUCTOR: 'INSTRUCTOR',
+  STUDENT: 'STUDENT',
+} as const satisfies Record<UserRole, UserRole>
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  INSTRUCTOR: 'Dosen',
+  STUDENT: 'Mahasiswa',
+}
 
 export interface UserProfile {
   name: string
@@ -12,10 +26,40 @@ export interface UserProfile {
   aiInstructions?: string
 }
 
+/**
+ * Representasi pengguna yang sedang login.
+ */
+export interface AuthUser {
+  id: string
+  username: string
+  role: UserRole
+  profile: UserProfile
+}
+
+export interface LoginCredentials {
+  username: string
+  password: string
+}
+
+export type LoginField = keyof LoginCredentials
+
+/** Pesan error login; `field` menunjuk input yang salah, null bila tidak spesifik. */
+export interface AuthErrorInfo {
+  message: string
+  field: LoginField | null
+}
+
+export type AuthStatus = 'authenticated' | 'unauthenticated'
+
+export interface AuthState {
+  status: AuthStatus
+  user: AuthUser | null
+}
+
 export const DOSEN_PROFILE: UserProfile = {
   name: 'Muchammad Chandra Cahyo Utomo, S. Kom., M. Kom.',
   identifier: '198503152010122001',
-  role: 'dosen',
+  role: 'INSTRUCTOR',
   roleLabel: 'Dosen Pengampu',
   prodi: 'Informatika · Jurusan Sains & Teknologi Informasi',
   email: 'chandra.cahyo@itk.ac.id',
@@ -28,7 +72,7 @@ export const DOSEN_PROFILE: UserProfile = {
 export const MAHASISWA_PROFILE: UserProfile = {
   name: 'Noel Sipayung',
   identifier: '11211045',
-  role: 'mahasiswa',
+  role: 'STUDENT',
   roleLabel: 'Mahasiswa',
   prodi: 'Informatika 2021 · Semester 7',
   email: '11211045@student.itk.ac.id',

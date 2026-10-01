@@ -1,16 +1,15 @@
 import React from 'react'
 import type { AppPath, ModalType } from '../../types/navigation'
-import type { UserRole, UserProfile } from '../../types/auth'
+import type { AuthUser } from '../../types/auth'
 import { AppNavbar } from './AppNavbar'
 import { Toast, type ToastItem } from '../ui/Toast'
 import styles from './AppLayout.module.css'
 
 interface AppLayoutProps {
   currentPath: AppPath
-  activeRole: UserRole
-  dosenProfile?: UserProfile
+  currentUser: AuthUser | null
   onNavigate: (path: AppPath) => void
-  onRoleChange: (role: UserRole) => void
+  onLogout: () => void
   onOpenModal: (modal: ModalType) => void
   toasts: ToastItem[]
   onDismissToast: (id: string) => void
@@ -19,10 +18,9 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
   currentPath,
-  activeRole,
-  dosenProfile,
+  currentUser,
   onNavigate,
-  onRoleChange,
+  onLogout,
   onOpenModal,
   toasts,
   onDismissToast,
@@ -32,10 +30,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     <div className={styles.pageContainer}>
       <AppNavbar
         currentPath={currentPath}
-        activeRole={activeRole}
-        dosenProfile={dosenProfile}
+        currentUser={currentUser}
         onNavigate={onNavigate}
-        onRoleChange={onRoleChange}
+        onLogout={onLogout}
         onOpenModal={onOpenModal}
       />
       <div className={styles.mainContent}>{children}</div>

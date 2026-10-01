@@ -15,7 +15,7 @@ import { DOSEN_PROFILE, MAHASISWA_PROFILE } from '../src/types/auth.ts'
 import type { CoursePlanStage, WeeklyContentStage } from '../src/types/course.ts'
 import {
   resolveAppPath,
-  getRoleForPath,
+  getAllowedRoles,
   isPathAllowedForRole,
   getDefaultPathForRole,
   getBreadcrumbTrail,
@@ -28,9 +28,9 @@ import {
 } from '../src/utils/lifecycle.ts'
 
 describe('Domain-Driven Navigation & Semantic Routes', () => {
-  test('has exactly 9 semantic paths defined in APP_ROUTES', () => {
+  test('has exactly 11 semantic paths defined in APP_ROUTES', () => {
     const routes = Object.keys(APP_ROUTES) as AppPath[]
-    assert.equal(routes.length, 9)
+    assert.equal(routes.length, 11)
   })
 
   test('covers all standard application routes', () => {
@@ -44,6 +44,8 @@ describe('Domain-Driven Navigation & Semantic Routes', () => {
       '/student/courses',
       '/student/course',
       '/student/week',
+      '/unauthorized',
+      '/not-found',
     ]
 
     for (const p of expectedPaths) {
@@ -72,30 +74,39 @@ describe('Domain-Driven Navigation & Semantic Routes', () => {
     )
   })
 
-  test('categorizes routes into public, dosen, and mahasiswa roles', () => {
-    const publicRoutes = Object.values(APP_ROUTES).filter((r) => r.role === 'public')
-    const dosenRoutes = Object.values(APP_ROUTES).filter((r) => r.role === 'dosen')
-    const mhsRoutes = Object.values(APP_ROUTES).filter((r) => r.role === 'mahasiswa')
+  test('categorizes routes into public, guest, instructor, student, and shared routes', () => {
+    const routes = Object.values(APP_ROUTES)
+    const publicRoutes = routes.filter((r) => r.access === 'public')
+    const guestRoutes = routes.filter((r) => r.access === 'guest')
+    const instructorRoutes = routes.filter((r) => r.roles?.join() === 'INSTRUCTOR')
+    const studentRoutes = routes.filter((r) => r.roles?.join() === 'STUDENT')
+    const sharedRoutes = routes.filter((r) => r.access === 'authenticated' && !r.roles)
 
-    assert.equal(publicRoutes.length, 2) // /login, /material-view
-    assert.equal(dosenRoutes.length, 4) // /dashboard, /rps-analysis, /course-plan, /weekly-content
-    assert.equal(mhsRoutes.length, 3) // /student/courses, /student/course, /student/week
+    assert.equal(publicRoutes.length, 2) // /unauthorized, /not-found
+    assert.equal(guestRoutes.length, 1) // /login
+    assert.equal(instructorRoutes.length, 4) // /dashboard, /rps-analysis, /course-plan, /weekly-content
+    assert.equal(studentRoutes.length, 3) // /student/courses, /student/course, /student/week
+    assert.equal(sharedRoutes.length, 1) // /material-view
   })
 
   test('verifies role permissions and guards using navigation utils', () => {
-    assert.equal(isPathAllowedForRole('/login', 'dosen'), true)
-    assert.equal(isPathAllowedForRole('/login', 'mahasiswa'), true)
+    assert.equal(isPathAllowedForRole('/login', 'INSTRUCTOR'), true)
+    assert.equal(isPathAllowedForRole('/login', 'STUDENT'), true)
 
-    assert.equal(isPathAllowedForRole('/dashboard', 'dosen'), true)
-    assert.equal(isPathAllowedForRole('/dashboard', 'mahasiswa'), false)
+    assert.equal(isPathAllowedForRole('/dashboard', 'INSTRUCTOR'), true)
+    assert.equal(isPathAllowedForRole('/dashboard', 'STUDENT'), false)
 
-    assert.equal(isPathAllowedForRole('/student/courses', 'mahasiswa'), true)
-    assert.equal(isPathAllowedForRole('/student/courses', 'dosen'), false)
+    assert.equal(isPathAllowedForRole('/student/courses', 'STUDENT'), true)
+    assert.equal(isPathAllowedForRole('/student/courses', 'INSTRUCTOR'), false)
 
-    assert.equal(getDefaultPathForRole('dosen'), '/dashboard')
-    assert.equal(getDefaultPathForRole('mahasiswa'), '/student/courses')
-    assert.equal(getRoleForPath('/rps-analysis'), 'dosen')
-    assert.equal(getRoleForPath('/student/week'), 'mahasiswa')
+    assert.equal(isPathAllowedForRole('/material-view', 'INSTRUCTOR'), true)
+    assert.equal(isPathAllowedForRole('/material-view', 'STUDENT'), true)
+
+    assert.equal(getDefaultPathForRole('INSTRUCTOR'), '/dashboard')
+    assert.equal(getDefaultPathForRole('STUDENT'), '/student/courses')
+    assert.deepEqual(getAllowedRoles('/rps-analysis'), ['INSTRUCTOR'])
+    assert.deepEqual(getAllowedRoles('/student/week'), ['STUDENT'])
+    assert.equal(getAllowedRoles('/material-view'), null)
   })
 })
 
@@ -139,7 +150,7 @@ describe('Course Data & Syllabus Integrity', () => {
 describe('User Profiles & Institutional Personas', () => {
   test('defines valid Dosen persona for Muchammad Chandra Cahyo Utomo', () => {
     assert.equal(DOSEN_PROFILE.name, 'Muchammad Chandra Cahyo Utomo, S. Kom., M. Kom.')
-    assert.equal(DOSEN_PROFILE.role, 'dosen')
+    assert.equal(DOSEN_PROFILE.role, 'INSTRUCTOR')
     assert.equal(DOSEN_PROFILE.avatarInitial, 'MC')
     assert.ok(DOSEN_PROFILE.email.endsWith('@itk.ac.id'))
     assert.ok(DOSEN_PROFILE.identifier.length > 10)
@@ -147,7 +158,7 @@ describe('User Profiles & Institutional Personas', () => {
 
   test('defines valid Mahasiswa persona for Noel Sipayung', () => {
     assert.equal(MAHASISWA_PROFILE.name, 'Noel Sipayung')
-    assert.equal(MAHASISWA_PROFILE.role, 'mahasiswa')
+    assert.equal(MAHASISWA_PROFILE.role, 'STUDENT')
     assert.equal(MAHASISWA_PROFILE.avatarInitial, 'NS')
     assert.ok(MAHASISWA_PROFILE.email.includes('student.itk.ac.id'))
     assert.equal(MAHASISWA_PROFILE.identifier, '11211045')
@@ -235,13 +246,18 @@ describe('Path Resolution & Fallback Resilience', () => {
     assert.equal(resolveAppPath('/rps-analysis'), '/rps-analysis')
   })
 
-  test('falls back unknown, null, or empty paths to /dashboard', () => {
-    assert.equal(resolveAppPath(''), '/dashboard')
-    assert.equal(resolveAppPath(null), '/dashboard')
-    assert.equal(resolveAppPath(undefined), '/dashboard')
-    assert.equal(resolveAppPath('/unknown-screen'), '/dashboard')
-    assert.equal(resolveAppPath('/ITK-03'), '/dashboard')
-    assert.equal(resolveAppPath('/random/deep/path'), '/dashboard')
+  test('sends root, null, or empty paths to /login', () => {
+    assert.equal(resolveAppPath(''), '/login')
+    assert.equal(resolveAppPath('/'), '/login')
+    assert.equal(resolveAppPath(null), '/login')
+    assert.equal(resolveAppPath(undefined), '/login')
+  })
+
+  test('sends unknown paths to /not-found', () => {
+    assert.equal(resolveAppPath('/unknown-screen'), '/not-found')
+    assert.equal(resolveAppPath('/ITK-03'), '/not-found')
+    assert.equal(resolveAppPath('/random/deep/path'), '/not-found')
+    assert.equal(resolveAppPath('/toString'), '/not-found')
   })
 })
 
@@ -556,17 +572,17 @@ describe('Empty States & Dynamic Lifecycle Flow', () => {
     assert.match(file, /getInitialHasCourses/)
     assert.match(file, /hasCourses=\{hasCourses\}/)
     assert.match(file, /handleResetDemo/)
-    assert.match(file, /if \(path === '\/login'\)/)
+    assert.match(file, /const handleLogout = useCallback\(async \(\) => \{\s*await logout\(\)\s*resetDemoState\(\)/)
   })
 
-  test('LoginPage uses single Masuk button and determines role from username', () => {
+  test('LoginPage uses single Masuk button and logs in through the auth service', () => {
     const file = fs.readFileSync(
       path.resolve(import.meta.dirname, '../src/features/auth/LoginPage.tsx'),
       'utf8'
     )
-    assert.match(file, /cleanUsername\.includes\('mahasiswa'\)/)
-    assert.match(file, /cleanUsername\.includes\('dosen'\)/)
-    assert.match(file, /<button type="submit" className=\{styles\.btnPrimary\}[^>]*>\s*Masuk\s*<\/button>/)
+    assert.match(file, /useAuth\(\)/)
+    assert.match(file, /await login\(\{ username, password \}\)/)
+    assert.match(file, /<button\s+type="submit"\s+className=\{styles\.btnPrimary\}[^>]*>\s*\{isSubmitting \? 'Memproses…' : 'Masuk'\}\s*<\/button>/)
     assert.doesNotMatch(file, /Masuk sebagai Dosen/)
     assert.doesNotMatch(file, /Masuk Mahasiswa/)
   })
