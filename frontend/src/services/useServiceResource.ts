@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
-import { mapRequestError } from './apiError.js'
+import { ApiError, mapRequestError } from './apiError.ts'
 
-/**
- * @template T
- * @typedef {{ status: 'loading', data: null, error: null } |
- *   { status: 'success', data: T, error: null } |
- *   { status: 'error', data: null, error: import('./apiError.js').ApiError }} ResourceState
- */
+type ResourceState<T> =
+  | { status: 'loading'; data: null; error: null }
+  | { status: 'success'; data: T; error: null }
+  | { status: 'error'; data: null; error: ApiError }
 
-/** @template T @param {() => Promise<T>} load */
-export function useServiceResource(load) {
-  /** @type {[{ load: typeof load, attempt: number, state: ResourceState<T> } | null, Function]} */
-  const [result, setResult] = useState(null)
+export function useServiceResource<T>(load: () => Promise<T>) {
+  const [result, setResult] = useState<{
+    load: typeof load
+    attempt: number
+    state: ResourceState<T>
+  } | null>(null)
   const [attempt, setAttempt] = useState(0)
   const retry = useCallback(() => setAttempt((current) => current + 1), [])
-  /** @type {ResourceState<T>} */
-  const state = result?.load === load && result.attempt === attempt
+  const state: ResourceState<T> = result?.load === load && result.attempt === attempt
     ? result.state
     : { status: 'loading', data: null, error: null }
 
@@ -25,7 +24,7 @@ export function useServiceResource(load) {
       (data) => {
         if (active) setResult({ load, attempt, state: { status: 'success', data, error: null } })
       },
-      (error) => {
+      (error: unknown) => {
         if (active) setResult({ load, attempt, state: { status: 'error', data: null, error: mapRequestError(error) } })
       },
     )

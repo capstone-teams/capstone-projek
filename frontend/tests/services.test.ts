@@ -1,8 +1,8 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createApiClient } from '../src/services/apiClient.js'
-import { ApiError } from '../src/services/apiError.js'
-import { mockCourseService } from '../src/services/mockCourseService.js'
+import { createApiClient } from '../src/services/apiClient.ts'
+import { ApiError } from '../src/services/apiError.ts'
+import { mockCourseService } from '../src/services/mockCourseService.ts'
 
 describe('course service boundary', () => {
   test('mock data is available without a backend and is not shared by reference', async () => {
@@ -35,7 +35,7 @@ describe('API client', () => {
       },
     })
 
-    assert.deepEqual(await client.get('/courses/course-1'), { id: 'course-1' })
+    assert.deepEqual(await client.get<{ id: string }>('/courses/course-1'), { id: 'course-1' })
     assert.equal(requestedUrl, '/api/v1/courses/course-1')
     assert.equal(accept, 'application/json')
   })
@@ -51,7 +51,7 @@ describe('API client', () => {
       },
     })
 
-    assert.equal(await client.post('courses', { name: 'Aljabar Linear' }), undefined)
+    assert.equal(await client.post<void>('courses', { name: 'Aljabar Linear' }), undefined)
     assert.equal(requestBody, JSON.stringify({ name: 'Aljabar Linear' }))
     assert.equal(contentType, 'application/json')
   })
@@ -63,7 +63,7 @@ describe('API client', () => {
       }), { status: 422 }),
     })
 
-    await assert.rejects(client.get('rps/1'), (error) => {
+    await assert.rejects(client.get('rps/1'), (error: unknown) => {
       assert.ok(error instanceof ApiError)
       assert.equal(error.kind, 'validation')
       assert.equal(error.status, 422)
@@ -77,7 +77,7 @@ describe('API client', () => {
     const client = createApiClient({
       fetchImpl: async () => new Response('Service unavailable', { status: 503 }),
     })
-    await assert.rejects(client.get('courses/1'), (error) => {
+    await assert.rejects(client.get('courses/1'), (error: unknown) => {
       assert.ok(error instanceof ApiError)
       assert.equal(error.kind, 'server')
       assert.equal(error.status, 503)
@@ -87,19 +87,19 @@ describe('API client', () => {
 
   test('separates transport, cancelled, and invalid JSON responses', async () => {
     const networkClient = createApiClient({ fetchImpl: async () => { throw new TypeError('offline') } })
-    await assert.rejects(networkClient.get('courses/1'), (error) =>
+    await assert.rejects(networkClient.get('courses/1'), (error: unknown) =>
       error instanceof ApiError && error.kind === 'network')
 
     const abortedClient = createApiClient({ fetchImpl: async () => {
       throw new DOMException('aborted', 'AbortError')
     } })
-    await assert.rejects(abortedClient.get('courses/1'), (error) =>
+    await assert.rejects(abortedClient.get('courses/1'), (error: unknown) =>
       error instanceof ApiError && error.kind === 'cancelled')
 
     const badJsonClient = createApiClient({
       fetchImpl: async () => new Response('not JSON', { status: 200 }),
     })
-    await assert.rejects(badJsonClient.get('courses/1'), (error) =>
+    await assert.rejects(badJsonClient.get('courses/1'), (error: unknown) =>
       error instanceof ApiError && error.kind === 'invalid-response')
   })
 })

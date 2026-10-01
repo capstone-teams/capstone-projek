@@ -1,14 +1,23 @@
-import { ApiError, mapHttpError, mapRequestError } from './apiError.js'
+import { ApiError, mapHttpError, mapRequestError } from './apiError.ts'
 
-/** @param {{ baseUrl?: string, fetchImpl?: typeof fetch }} options */
+export interface ApiClient {
+  request<T>(path: string, init?: RequestInit): Promise<T>
+  get<T>(path: string, init?: RequestInit): Promise<T>
+  post<T>(path: string, body?: unknown, init?: RequestInit): Promise<T>
+}
+
+export interface ApiClientOptions {
+  baseUrl?: string
+  fetchImpl?: typeof fetch
+}
+
 export function createApiClient({
   baseUrl = '/api/v1',
   fetchImpl = fetch,
-} = {}) {
+}: ApiClientOptions = {}): ApiClient {
   const base = baseUrl.replace(/\/$/, '')
 
-  /** @param {string} path @param {RequestInit} init */
-  const request = async (path, init = {}) => {
+  const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
     const url = `${base}/${path.replace(/^\//, '')}`
     const headers = new Headers(init.headers)
     if (!headers.has('Accept')) headers.set('Accept', 'application/json')
@@ -16,7 +25,7 @@ export function createApiClient({
     try {
       const response = await fetchImpl(url, { ...init, headers })
       const text = await response.text()
-      let data
+      let data: unknown
 
       if (text) {
         try {
@@ -28,7 +37,7 @@ export function createApiClient({
       }
 
       if (!response.ok) throw mapHttpError(response.status, data)
-      return data
+      return data as T
     } catch (error) {
       throw mapRequestError(error)
     }
@@ -36,16 +45,14 @@ export function createApiClient({
 
   return {
     request,
-    /** @param {string} path @param {RequestInit} [init] */
-    get: (path, init) => request(path, { ...init, method: 'GET' }),
-    /** @param {string} path @param {unknown} [body] @param {RequestInit} [init] */
-    post: (path, body, init = {}) => {
+    get: <T>(path: string, init?: RequestInit) => request<T>(path, { ...init, method: 'GET' }),
+    post: <T>(path: string, body?: unknown, init: RequestInit = {}) => {
       const headers = new Headers(init.headers)
       const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
       if (body !== undefined && !isFormData && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json')
       }
-      return request(path, {
+      return request<T>(path, {
         ...init,
         method: 'POST',
         headers,

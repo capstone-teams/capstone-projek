@@ -1,6 +1,27 @@
+export type ApiErrorKind =
+  | 'validation'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'not-found'
+  | 'server'
+  | 'network'
+  | 'cancelled'
+  | 'invalid-response'
+  | 'unknown'
+
 export class ApiError extends Error {
-  /** @param {string} message @param {string} kind @param {number} [status] @param {string} [code] @param {unknown} [details] */
-  constructor(message, kind, status, code, details) {
+  readonly kind: ApiErrorKind
+  readonly status?: number
+  readonly code?: string
+  readonly details?: unknown
+
+  constructor(
+    message: string,
+    kind: ApiErrorKind,
+    status?: number,
+    code?: string,
+    details?: unknown,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.kind = kind
@@ -10,23 +31,30 @@ export class ApiError extends Error {
   }
 }
 
-/** @param {number} status @param {unknown} body */
-export function mapHttpError(status, body) {
-  /** @type {{ error?: { code?: unknown, message?: unknown, details?: unknown }, detail?: unknown }} */
-  const payload = body && typeof body === 'object' ? body : {}
+interface ApiErrorBody {
+  error?: {
+    code?: unknown
+    message?: unknown
+    details?: unknown
+  }
+  detail?: unknown
+}
+
+export function mapHttpError(status: number, body: unknown): ApiError {
+  const payload = body && typeof body === 'object' ? body as ApiErrorBody : {}
   const code = typeof payload.error?.code === 'string' ? payload.error.code : undefined
   const apiMessage = typeof payload.error?.message === 'string'
     ? payload.error.message
     : typeof payload.detail === 'string' ? payload.detail : undefined
 
-  const kind = status === 400 || status === 422 ? 'validation'
+  const kind: ApiErrorKind = status === 400 || status === 422 ? 'validation'
     : status === 401 ? 'unauthorized'
     : status === 403 ? 'forbidden'
     : status === 404 ? 'not-found'
     : status >= 500 ? 'server'
     : 'unknown'
 
-  const fallbackMessage = {
+  const fallbackMessage: Record<ApiErrorKind, string> = {
     validation: 'Permintaan tidak valid.',
     unauthorized: 'Sesi Anda perlu diperbarui.',
     forbidden: 'Anda tidak memiliki akses.',
@@ -41,8 +69,7 @@ export function mapHttpError(status, body) {
   return new ApiError(apiMessage || fallbackMessage[kind], kind, status, code, payload.error?.details)
 }
 
-/** @param {unknown} error */
-export function mapRequestError(error) {
+export function mapRequestError(error: unknown): ApiError {
   if (error instanceof ApiError) return error
   if (error instanceof Error && error.name === 'AbortError') {
     return new ApiError('Permintaan dibatalkan.', 'cancelled')
