@@ -1,3 +1,23 @@
+"""Entity User (BE-02).
+
+Kolom mengikuti atribut user Moodle (``core_user_create_users``): ``username``,
+``firstname``, ``lastname``, ``email``, dan ``password``. Dengan bentuk yang
+sama, sinkronisasi user ke Moodle tidak memerlukan tabel pemetaan tersendiri —
+perbedaannya hanya pada nilai ID lokal (ShortUUID).
+
+Dua hal yang perlu diperhatikan:
+
+- ``password`` menyimpan **hash** bcrypt dari ``src.services.auth.passwords``,
+  bukan password mentah. Password mentah hanya ada saat Moodle membuat user
+  (parameter API Moodle) dan tidak pernah disimpan di sini.
+- ``username`` adalah atribut Moodle. Login aplikasi tetap memakai ``email``
+  sebagai identity attribute (lihat ``backend/README.md``).
+
+Nilai role/status didefinisikan di sini karena sekaligus menjadi tipe kolom
+database (native enum PostgreSQL ``userrole``/``userstatus``) dan menjadi sumber
+tunggal nilainya untuk layer domain (lihat ``src.services.user.enums``).
+"""
+
 import enum
 
 from sqlalchemy import Enum, String
@@ -20,7 +40,18 @@ class UserStatus(str, enum.Enum):
 class User(BaseModel):
     __tablename__ = "users"
 
-    name: Mapped[str] = mapped_column(
+    username: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+    )
+
+    firstname: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    lastname: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
     )
@@ -31,7 +62,9 @@ class User(BaseModel):
         unique=True,
     )
 
-    password_hash: Mapped[str | None] = mapped_column(
+    # Hash bcrypt (kolom ``String(255)`` mengikuti panjang hash yang dihasilkan);
+    # ``NULL`` berarti user tidak memiliki credential lokal.
+    password: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
     )

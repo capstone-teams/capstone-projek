@@ -5,23 +5,39 @@ ke session test, sehingga kombinasi authentication → authorization → busines
 operation benar-benar terverifikasi: ADMIN diizinkan, role lain 403
 ``AUTHORIZATION_DENIED``, request tanpa authentication 401
 ``AUTHENTICATION_FAILED``, dan response tidak pernah memuat credential.
+
+Identifier user adalah ShortUUID 22 karakter; request dengan identifier yang
+salah bentuk ditolak sebagai 422 sebelum menyentuh service.
 """
 
 from __future__ import annotations
 
-import uuid
+import re
 
 import httpx
 import pytest
 import pytest_asyncio
+import shortuuid
 
 from src.main import create_app
 from src.services.auth import hash_password
 from src.services.dependencies import get_db_session
 from src.services.user import UserRole, UserService
+from src.services.user.validation import SHORTUUID_PATTERN
 
 PASSWORD = "SecretPassword123"
 ADMIN_USERS_URL = "/api/v1/admin/users"
+
+ADMIN_RESPONSE_FIELDS = {
+    "id",
+    "username",
+    "firstname",
+    "lastname",
+    "email",
+    "role",
+    "status",
+    "created_at",
+}
 
 
 @pytest_asyncio.fixture
@@ -43,12 +59,20 @@ async def user_service(db_session) -> UserService:
     return UserService.from_session(db_session)
 
 
-async def create_user(user_service: UserService, **overrides):
+async def create_user(user_service: UserService, *, username: str | None = None, **overrides):
+    """Buat user uji; username diturunkan dari local part email bila tidak diberikan.
+
+    ``users.username`` UNIQUE, sehingga setiap user uji memerlukan username
+    berbeda — sedangkan test ini lebih mementingkan email sebagai identity.
+    """
+    email = overrides.setdefault("email", "admin@itk.ac.id")
     payload = {
-        "name": "Pengguna Uji",
-        "email": "admin@itk.ac.id",
+        "username": username or email.split("@")[0],
+        "firstname": "Pengguna",
+        "lastname": "Uji",
+        "email": email,
         "role": UserRole.ADMIN,
-        "password_hash": hash_password(PASSWORD),
+        "password": hash_password(PASSWORD),
     }
     payload.update(overrides)
     return await user_service.create_user(**payload)
@@ -65,10 +89,8 @@ async def login(client: httpx.AsyncClient, *, username: str = "admin@itk.ac.id")
 @pytest.mark.asyncio
 async def test_admin_can_list_users(client, user_service):
     await create_user(user_service)
-    await create_user(user_service, name="Dosen ITK", email="dosen@itk.ac.id", role=UserRole.INSTRUCTOR)
-    await create_user(
-        user_service, name="Mahasiswa ITK", email="mhs@itk.ac.id", role=UserRole.STUDENT
-    )
+    await create_user(user_service, email="dosen@itk.ac.id", role=UserRole.INSTRUCTOR)
+    await create_user(user_service, email="mhs@itk.ac.id", role=UserRole.STUDENT)
 
     response = await client.get(ADMIN_USERS_URL, headers=await login(client))
 
@@ -83,22 +105,23 @@ async def test_admin_can_list_users(client, user_service):
     assert [user["role"] for user in users] == ["ADMIN", "INSTRUCTOR", "STUDENT"]
     assert {user["status"] for user in users} == {"ACTIVE"}
     assert all(user["created_at"] for user in users)
-    assert all(uuid.UUID(user["id"]) for user in users)
-    assert set(users[0]) == {"id", "name", "email", "role", "status", "created_at"}
+    assert all(re.fullmatch(SHORTUUID_PATTERN, user["id"]) for user in users)
+    assert set(users[0]) == ADMIN_RESPONSE_FIELDS
 
 
 @pytest.mark.asyncio
 async def test_admin_can_read_a_single_user(client, user_service):
     await create_user(user_service)
-    instructor = await create_user(
-        user_service, name="Dosen ITK", email="dosen@itk.ac.id", role=UserRole.INSTRUCTOR
-    )
+    instructor = await create_user(user_service, email="dosen@itk.ac.id", role=UserRole.INSTRUCTOR)
 
     response = await client.get(f"{ADMIN_USERS_URL}/{instructor.id}", headers=await login(client))
 
     assert response.status_code == 200
     body = response.json()
     assert body["id"] == str(instructor.id)
+    assert body["username"] == "dosen"
+    assert body["firstname"] == "Pengguna"
+    assert body["lastname"] == "Uji"
     assert body["email"] == "dosen@itk.ac.id"
     assert body["role"] == "INSTRUCTOR"
 
@@ -122,7 +145,7 @@ async def test_non_admin_roles_are_denied(client, user_service, role):
 
     responses = [
         await client.get(ADMIN_USERS_URL, headers=headers),
-        await client.get(f"{ADMIN_USERS_URL}/{uuid.uuid4()}", headers=headers),
+        await client.get(f"{ADMIN_USERS_URL}/{shortuuid.uuid()}", headers=headers),
     ]
 
     assert [response.status_code for response in responses] == [403, 403]
@@ -135,7 +158,7 @@ async def test_unauthenticated_requests_are_denied(client, user_service):
 
     responses = [
         await client.get(ADMIN_USERS_URL),
-        await client.get(f"{ADMIN_USERS_URL}/{uuid.uuid4()}"),
+        await client.get(f"{ADMIN_USERS_URL}/{shortuuid.uuid()}"),
     ]
 
     assert [response.status_code for response in responses] == [401, 401]
@@ -148,7 +171,7 @@ async def test_unauthenticated_requests_are_denied(client, user_service):
 async def test_unknown_user_is_reported_as_resource_not_found(client, user_service):
     await create_user(user_service)
 
-    response = await client.get(f"{ADMIN_USERS_URL}/{uuid.uuid4()}", headers=await login(client))
+    response = await client.get(f"{ADMIN_USERS_URL}/{shortuuid.uuid()}", headers=await login(client))
 
     assert response.status_code == 404
     assert response.json() == {
@@ -158,6 +181,20 @@ async def test_unknown_user_is_reported_as_resource_not_found(client, user_servi
             "details": [],
         }
     }
+
+
+@pytest.mark.parametrize(
+    "malformed_id",
+    ["bukan-id", "1234567890123456789012", "3f2504e0-4f89-41d3-9a0c-0305e82c3301"],
+)
+@pytest.mark.asyncio
+async def test_malformed_identifier_is_a_validation_error(client, user_service, malformed_id):
+    """Identifier bukan ShortUUID 22 karakter ditolak 422, bukan 500."""
+    await create_user(user_service)
+
+    response = await client.get(f"{ADMIN_USERS_URL}/{malformed_id}", headers=await login(client))
+
+    assert response.status_code == 422
 
 
 def test_admin_paths_are_part_of_the_api_spec():

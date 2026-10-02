@@ -8,7 +8,8 @@ Saran pemetaan HTTP untuk konsumen (BE-03.3/BE-03.4):
 
 - :class:`UserValidationError` → 422/400 (input tidak valid);
 - :class:`UserNotFoundError` → 404;
-- :class:`DuplicateEmailError` → 409.
+- :class:`DuplicateEmailError` → 409;
+- :class:`DuplicateUsernameError` → 409.
 """
 
 
@@ -32,7 +33,7 @@ class UserValidationError(UserDomainError):
 class UserNotFoundError(UserDomainError):
     """User yang diminta tidak ditemukan.
 
-    ``identifier`` dapat berupa UUID maupun email, tergantung operasi yang
+    ``identifier`` dapat berupa ShortUUID maupun email, tergantung operasi yang
     gagal, supaya pesan error konsisten untuk kedua jalur pencarian.
     """
 
@@ -47,3 +48,15 @@ class DuplicateEmailError(UserDomainError):
     def __init__(self, email: str) -> None:
         self.email = email
         super().__init__(f"email sudah terdaftar: {email}")
+
+
+class DuplicateUsernameError(UserDomainError):
+    """Username sudah dipakai user lain (``users.username`` UNIQUE).
+
+    Username adalah atribut yang dikirim ke Moodle saat user dibuat, sehingga
+    duplikatnya harus terdeteksi sebelum request integrasi dijalankan.
+    """
+
+    def __init__(self, username: str) -> None:
+        self.username = username
+        super().__init__(f"username sudah terdaftar: {username}")

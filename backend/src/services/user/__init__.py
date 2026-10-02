@@ -14,12 +14,17 @@ database, maupun HTTP layer:
 :class:`UserRole` / :class:`UserStatus` di-*re-export* dari
 ``src.models.user`` (sumber tunggal nilai role dan status). Seluruh error
 domain dipetakan ke HTTP oleh ``src.routes`` atau ``src.middlewares``.
+
+Field identity (``username``, ``firstname``, ``lastname``, ``email``,
+``password``) memakai nama atribut user Moodle; ``email`` tetap menjadi identity
+attribute untuk login aplikasi.
 """
 
 from src.services.user.domain import User
 from src.services.user.enums import UserRole, UserStatus
 from src.services.user.errors import (
     DuplicateEmailError,
+    DuplicateUsernameError,
     UserDomainError,
     UserNotFoundError,
     UserValidationError,
@@ -28,8 +33,10 @@ from src.services.user.repository import UserRepository
 from src.services.user.service import UserService
 from src.services.user.validation import (
     MAX_EMAIL_LENGTH,
-    MAX_NAME_LENGTH,
+    MAX_FIRSTNAME_LENGTH,
+    MAX_LASTNAME_LENGTH,
     MAX_PASSWORD_HASH_LENGTH,
+    MAX_USERNAME_LENGTH,
 )
 
 __all__ = [
@@ -42,7 +49,10 @@ __all__ = [
     "UserValidationError",
     "UserNotFoundError",
     "DuplicateEmailError",
-    "MAX_NAME_LENGTH",
+    "DuplicateUsernameError",
+    "MAX_USERNAME_LENGTH",
+    "MAX_FIRSTNAME_LENGTH",
+    "MAX_LASTNAME_LENGTH",
     "MAX_EMAIL_LENGTH",
     "MAX_PASSWORD_HASH_LENGTH",
 ]

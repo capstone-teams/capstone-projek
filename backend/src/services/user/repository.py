@@ -5,15 +5,14 @@ bisnis dan tanpa keputusan workflow. Operasi aplikasi (validasi lifecycle,
 aktivasi/deaktivasi, dsb.) berada di :mod:`src.services.user.service`.
 
 Repository ini juga bertanggung jawab menerjemahkan pelanggaran constraint
-database menjadi error domain (:class:`DuplicateEmailError`), karena hanya layer
-inilah yang mengetahui detail persistence. Unique constraint ``users.email``
+database menjadi error domain (:class:`DuplicateEmailError` /
+:class:`DuplicateUsernameError`), karena hanya layer inilah yang mengetahui
+detail persistence. Unique constraint ``users.email`` dan ``users.username``
 menjadi otoritas penentu duplicate identity agar aman terhadap race condition —
 service tidak melakukan pre-check yang bisa kalah cepat.
 """
 
 from __future__ import annotations
-
-import uuid
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import User as UserEntity
 from src.services.user.domain import User
-from src.services.user.errors import DuplicateEmailError
+from src.services.user.errors import DuplicateEmailError, DuplicateUsernameError
 from src.services.user.mappers import apply_to_entity, to_domain
 from src.services.user.validation import normalize_email
 
@@ -29,6 +28,9 @@ __all__ = ["UserRepository"]
 
 # Kode SQLSTATE PostgreSQL untuk unique_violation.
 _UNIQUE_VIOLATION_SQLSTATE = "23505"
+
+# Kolom ber-constraint UNIQUE yang pelanggarannya dipetakan ke error domain.
+_UNIQUE_FIELDS = ("username", "email")
 
 
 class UserRepository:
@@ -45,12 +47,12 @@ class UserRepository:
         """Simpan user baru dan kembalikan status hasil persist."""
         entity = apply_to_entity(user, UserEntity())
         self._session.add(entity)
-        await self._commit_or_raise_duplicate(user.email)
+        await self._commit_or_raise_duplicate(email=user.email, username=user.username)
         await self._session.refresh(entity)
         return to_domain(entity)
 
-    async def get_by_id(self, user_id: uuid.UUID) -> User | None:
-        """Ambil user berdasarkan identifier; ``None`` bila tidak ada."""
+    async def get_by_id(self, user_id: str) -> User | None:
+        """Ambil user berdasarkan identifier (ShortUUID); ``None`` bila tidak ada."""
         entity = await self._session.get(UserEntity, user_id)
         return to_domain(entity) if entity is not None else None
 
@@ -74,7 +76,7 @@ class UserRepository:
             return None
 
         apply_to_entity(user, entity)
-        await self._commit_or_raise_duplicate(user.email)
+        await self._commit_or_raise_duplicate(email=user.email, username=user.username)
         await self._session.refresh(entity)
         return to_domain(entity)
 
@@ -91,13 +93,20 @@ class UserRepository:
         entities = (await self._session.execute(statement)).scalars().all()
         return [to_domain(entity) for entity in entities]
 
-    async def _commit_or_raise_duplicate(self, email: str) -> None:
-        """Commit perubahan, petakan unique violation menjadi error domain."""
+    async def _commit_or_raise_duplicate(self, *, email: str, username: str) -> None:
+        """Commit perubahan, petakan unique violation menjadi error domain.
+
+        Kedua kolom ber-constraint UNIQUE (``email`` dan ``username``) dapat
+        memicu pelanggaran yang sama, sehingga kolom penyebabnya dibaca dari
+        pesan driver agar error yang dilaporkan tidak menyesatkan pemanggil.
+        """
         try:
             await self._session.commit()
         except IntegrityError as exc:
             await self._session.rollback()
             if _is_unique_violation(exc):
+                if _unique_violation_field(exc) == "username":
+                    raise DuplicateUsernameError(username) from exc
                 raise DuplicateEmailError(email) from exc
             raise
 
@@ -110,3 +119,17 @@ def _is_unique_violation(exc: IntegrityError) -> bool:
     if getattr(original, "pgcode", None) == _UNIQUE_VIOLATION_SQLSTATE:
         return True
     return "unique" in str(original).lower()
+
+
+def _unique_violation_field(exc: IntegrityError) -> str | None:
+    """Kolom penyebab unique violation, dibaca dari pesan driver.
+
+    PostgreSQL menyebut nama constraint (``users_username_key``) dan SQLite
+    menyebut kolomnya (``users.username``); keduanya memuat nama kolom, sehingga
+    pencocokan sederhana ini cukup untuk memilih error domain yang tepat.
+    """
+    message = str(getattr(exc, "orig", None) or exc).lower()
+    for field in _UNIQUE_FIELDS:
+        if field in message:
+            return field
+    return None

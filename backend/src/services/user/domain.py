@@ -6,27 +6,32 @@ Entity tabelnya tetap ``src.models.user.User`` (BE-02) yang diakses melalui
 User Service/User Repository (BE-03.2). Pemisahan ini menjaga agar perubahan
 persistence tidak menyebar ke application layer, dan sebaliknya.
 
-Model ini sengaja tidak memuat:
-- field spesifik Moodle (Moodle user adalah entity terpisah pada BE-04);
+Nama field identity mengikuti atribut user Moodle (``username``, ``firstname``,
+``lastname``, ``email``, ``password``) supaya sinkronisasi user ke Moodle tidak
+perlu penerjemahan nama field. Yang **tidak** ada di sini tetap sama seperti
+sebelumnya:
+
+- detail integrasi Moodle (base URL, token, ``moodle_user_id``, dsb. — BE-04);
 - identity/permission agent atau LLM;
 - apa pun dari HTTP layer (request/response/FastAPI).
 """
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
 from src.services.user.enums import UserRole, UserStatus
 from src.services.user.validation import (
     normalize_email,
+    normalize_firstname,
     normalize_identifier,
-    normalize_name,
-    normalize_password_hash,
+    normalize_lastname,
+    normalize_password,
     normalize_role,
     normalize_status,
     normalize_timestamp,
+    normalize_username,
 )
 
 __all__ = ["User"]
@@ -37,25 +42,33 @@ class User:
     """User aplikasi beserta role, status, dan metadata lifecycle-nya.
 
     Setiap ``User`` yang berhasil dibentuk sudah tervalidasi dan ternormalisasi
-    (name tanpa spasi di tepi, email lowercase, role/status berupa enum kanonik),
-    sehingga invariant domain tetap terjaga di seluruh application layer.
+    (username/nama tanpa spasi di tepi, email lowercase, role/status berupa enum
+    kanonik), sehingga invariant domain tetap terjaga di seluruh application
+    layer.
+
+    ``password`` adalah **hash** bcrypt, bukan password mentah: password hanya
+    ada pada saat provisioning ke Moodle dan tidak pernah disimpan.
     """
 
-    name: str
+    username: str
+    firstname: str
+    lastname: str
     email: str
     role: UserRole
     status: UserStatus = UserStatus.ACTIVE
-    id: uuid.UUID | None = None
-    password_hash: str | None = None
+    id: str | None = None
+    password: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        self.name = normalize_name(self.name)
+        self.username = normalize_username(self.username)
+        self.firstname = normalize_firstname(self.firstname)
+        self.lastname = normalize_lastname(self.lastname)
         self.email = normalize_email(self.email)
         self.role = normalize_role(self.role)
         self.status = normalize_status(self.status)
-        self.password_hash = normalize_password_hash(self.password_hash)
+        self.password = normalize_password(self.password)
         self.id = normalize_identifier(self.id)
         self.created_at = normalize_timestamp(self.created_at, "created_at")
         self.updated_at = normalize_timestamp(self.updated_at, "updated_at")
@@ -64,22 +77,27 @@ class User:
     def create(
         cls,
         *,
-        name: str,
+        username: str,
+        firstname: str,
+        lastname: str,
         email: str,
         role: UserRole | str,
-        password_hash: str | None = None,
+        password: str | None = None,
     ) -> "User":
         """Membentuk user baru yang belum dipersist.
 
         User baru selalu berstatus ``ACTIVE``; identifier dan timestamp
-        dibiarkan ``None`` karena dibentuk oleh database.
+        dibiarkan ``None`` karena dibentuk oleh database. ``password`` berisi
+        hash (lihat :mod:`src.services.auth.passwords`), bukan password mentah.
         """
         return cls(
-            name=name,
+            username=username,
+            firstname=firstname,
+            lastname=lastname,
             email=email,
             role=role,
             status=UserStatus.ACTIVE,
-            password_hash=password_hash,
+            password=password,
         )
 
     @property
@@ -91,10 +109,10 @@ class User:
     def uses_local_authentication(self) -> bool:
         """Apakah user punya credential lokal.
 
-        Relevan untuk authentication (BE-03.3): user tanpa ``password_hash``
+        Relevan untuk authentication (BE-03.3): user tanpa ``password``
         tidak dapat login dengan mekanisme credential lokal.
         """
-        return self.password_hash is not None
+        return self.password is not None
 
     def can_authenticate(self) -> bool:
         """Aturan lifecycle: hanya user ACTIVE yang boleh terautentikasi.
@@ -122,16 +140,17 @@ class User:
         self.role = normalize_role(role)
 
     def __str__(self) -> str:
-        # Jangan pernah menampilkan password_hash pada representasi user.
-        return f"User(id={self.id}, email={self.email}, role={self.role.value}, status={self.status.value})"
+        # Jangan pernah menampilkan credential pada representasi user.
+        return f"User(id={self.id}, username={self.username}, email={self.email}, role={self.role.value}, status={self.status.value})"
 
     def __repr__(self) -> str:
-        # Password hash tidak ikut direpresentasikan supaya credential tidak
-        # bocor melalui log, traceback, maupun pesan error.
-        password_hash = "set" if self.password_hash else "unset"
+        # Hash tidak ikut direpresentasikan supaya credential tidak bocor
+        # melalui log, traceback, maupun pesan error.
+        password = "set" if self.password else "unset"
         return (
-            f"User(id={self.id!r}, name={self.name!r}, email={self.email!r}, "
-            f"role={self.role.value!r}, status={self.status.value!r}, "
-            f"password_hash={password_hash}, created_at={self.created_at!r}, "
-            f"updated_at={self.updated_at!r})"
+            f"User(id={self.id!r}, username={self.username!r}, "
+            f"firstname={self.firstname!r}, lastname={self.lastname!r}, "
+            f"email={self.email!r}, role={self.role.value!r}, "
+            f"status={self.status.value!r}, password={password}, "
+            f"created_at={self.created_at!r}, updated_at={self.updated_at!r})"
         )

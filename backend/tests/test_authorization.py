@@ -103,10 +103,12 @@ async def user_service(db_session) -> UserService:
 
 async def create_user(user_service: UserService, *, role: UserRole, email: str) -> User:
     return await user_service.create_user(
-        name="Pengguna Uji",
+        username=email.split("@")[0],
+        firstname="Pengguna",
+        lastname="Uji",
         email=email,
         role=role,
-        password_hash=hash_password(PASSWORD),
+        password=hash_password(PASSWORD),
     )
 
 
@@ -127,7 +129,13 @@ def _imported_roots(path: Path) -> set[str]:
 
 
 def _domain_user(role: UserRole, email: str) -> User:
-    return User.create(name="Pengguna Uji", email=email, role=role)
+    return User.create(
+        username=email.split("@")[0],
+        firstname="Pengguna",
+        lastname="Uji",
+        email=email,
+        role=role,
+    )
 
 
 # ---------------------------------------------------------------------------

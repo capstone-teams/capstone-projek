@@ -11,13 +11,13 @@ tunggal nilai role/status — supaya schema tidak mendefinisikan ulang nilai rol
 
 from __future__ import annotations
 
-import uuid
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.services.auth.passwords import MAX_PASSWORD_LENGTH
 from src.services.user.enums import UserRole
+from src.services.user.validation import MAX_EMAIL_LENGTH
 
 __all__ = [
     "AuthenticatedUser",
@@ -26,29 +26,28 @@ __all__ = [
     "LoginResponse",
 ]
 
-# Panjang maksimum username/email mengikuti kolom users.email (String(255)).
-MAX_USERNAME_LENGTH = 255
-
 
 class LoginRequest(BaseModel):
     """Body ``POST /api/v1/auth/login``.
 
-    ``username`` mengikuti kontrak API dan dipetakan ke email User, karena
-    email adalah identity attribute pada data model.
+    Field ``username`` mengikuti kontrak API (design-api §5.1) dan **berisi
+    email** user, karena email adalah identity attribute untuk login aplikasi.
+    Ini bukan kolom ``users.username`` (username Moodle) — nilai username tidak
+    pernah dipakai untuk login lokal.
     """
 
     model_config = ConfigDict(
         json_schema_extra={"example": {"username": "dosen@itk.ac.id", "password": "rahasia123"}}
     )
 
-    username: str = Field(min_length=1, max_length=MAX_USERNAME_LENGTH)
+    username: str = Field(min_length=1, max_length=MAX_EMAIL_LENGTH)
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
 
 
 class AuthenticatedUser(BaseModel):
     """Identitas user minimum pada response login (design-api §5.1)."""
 
-    id: uuid.UUID
+    id: str
     role: UserRole
 
 
@@ -61,9 +60,15 @@ class LoginResponse(BaseModel):
 
 
 class CurrentUserResponse(BaseModel):
-    """Response ``GET /api/v1/auth/me`` (design-api §5.2)."""
+    """Response ``GET /api/v1/auth/me`` (design-api §5.2).
 
-    id: uuid.UUID
-    name: str
+    Field identity mengikuti atribut user Moodle (``username``, ``firstname``,
+    ``lastname``, ``email``); credential tidak pernah ikut dikembalikan.
+    """
+
+    id: str
+    username: str
+    firstname: str
+    lastname: str
     email: str
     role: UserRole

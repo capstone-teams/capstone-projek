@@ -3,6 +3,10 @@
 Cakupan: hashing password, penerbitan/validasi token, verifikasi kredensial,
 penolakan user non-aktif dan user tanpa credential lokal, serta pembacaan
 role/status dari record User (bukan dari klaim token).
+
+Login memakai **email** sebagai identity attribute; ``users.username`` (atribut
+Moodle) tidak dipakai untuk login lokal. Identifier user adalah ShortUUID
+(22 karakter), bukan UUID.
 """
 
 import ast
@@ -13,6 +17,7 @@ from pathlib import Path
 import jwt
 import pytest
 import pytest_asyncio
+import shortuuid
 
 from src.config.settings import settings
 from src.services.auth import (
@@ -44,10 +49,12 @@ async def auth_service(db_session) -> AuthService:
 
 async def create_user(user_service: UserService, **overrides) -> User:
     payload = {
-        "name": "Dosen ITK",
+        "username": "dosen.itk",
+        "firstname": "Dosen",
+        "lastname": "ITK",
         "email": "dosen@itk.ac.id",
         "role": UserRole.INSTRUCTOR,
-        "password_hash": hash_password(PASSWORD),
+        "password": hash_password(PASSWORD),
     }
     payload.update(overrides)
     return await user_service.create_user(**payload)
@@ -94,7 +101,7 @@ def test_hashing_enforces_password_length_policy(password):
 
 
 def test_access_token_round_trip_returns_subject():
-    user_id = uuid.uuid4()
+    user_id = shortuuid.uuid()
 
     token = create_access_token(user_id)
 
@@ -102,7 +109,7 @@ def test_access_token_round_trip_returns_subject():
 
 
 def test_expired_token_is_rejected():
-    token = create_access_token(uuid.uuid4(), expires_delta=timedelta(seconds=-1))
+    token = create_access_token(shortuuid.uuid(), expires_delta=timedelta(seconds=-1))
 
     with pytest.raises(InvalidTokenError):
         decode_access_token(token)
@@ -110,7 +117,7 @@ def test_expired_token_is_rejected():
 
 def test_token_signed_with_another_secret_is_rejected():
     foreign_token = jwt.encode(
-        {"sub": str(uuid.uuid4()), "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        {"sub": shortuuid.uuid(), "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
         "secret-yang-berbeda",
         algorithm=settings.JWT_ALGORITHM,
     )
@@ -127,7 +134,14 @@ def test_token_signed_with_another_secret_is_rejected():
         "a.b.c",
         jwt.encode({"exp": datetime.now(timezone.utc) + timedelta(minutes=5)}, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM),
         jwt.encode(
-            {"sub": "bukan-uuid", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+            {"sub": "bukan-shortuuid", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+            settings.SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        ),
+        # Token lama (identifier masih UUID) tidak lagi sah: identifier user
+        # sekarang ShortUUID 22 karakter.
+        jwt.encode(
+            {"sub": str(uuid.uuid4()), "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
             settings.SECRET_KEY,
             algorithm=settings.JWT_ALGORITHM,
         ),
@@ -140,7 +154,7 @@ def test_unusable_token_is_rejected(token):
 
 def test_token_does_not_carry_trusted_role_claim():
     """Role bukan klaim token: hanya identifier user yang dibawa."""
-    token = create_access_token(uuid.uuid4())
+    token = create_access_token(shortuuid.uuid())
 
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 
@@ -156,7 +170,7 @@ def test_token_does_not_carry_trusted_role_claim():
 async def test_valid_credentials_authenticate_the_user(auth_service, user_service):
     created = await create_user(user_service, role=UserRole.STUDENT)
 
-    authenticated = await auth_service.authenticate(username="dosen@itk.ac.id", password=PASSWORD)
+    authenticated = await auth_service.authenticate(email="dosen@itk.ac.id", password=PASSWORD)
 
     assert authenticated.id == created.id
     assert authenticated.role is UserRole.STUDENT
@@ -167,9 +181,18 @@ async def test_valid_credentials_authenticate_the_user(auth_service, user_servic
 async def test_email_lookup_is_case_insensitive_at_login(auth_service, user_service):
     await create_user(user_service)
 
-    authenticated = await auth_service.authenticate(username="DOSEN@ITK.AC.ID", password=PASSWORD)
+    authenticated = await auth_service.authenticate(email="DOSEN@ITK.AC.ID", password=PASSWORD)
 
     assert authenticated.email == "dosen@itk.ac.id"
+
+
+@pytest.mark.asyncio
+async def test_username_is_not_accepted_as_a_login_identity(auth_service, user_service):
+    """``username`` adalah atribut Moodle; login hanya lewat email."""
+    await create_user(user_service, username="dosen.itk", email="dosen@itk.ac.id")
+
+    with pytest.raises(InvalidCredentialsError):
+        await auth_service.authenticate(email="dosen.itk", password=PASSWORD)
 
 
 @pytest.mark.asyncio
@@ -177,21 +200,21 @@ async def test_wrong_password_is_rejected(auth_service, user_service):
     await create_user(user_service)
 
     with pytest.raises(InvalidCredentialsError):
-        await auth_service.authenticate(username="dosen@itk.ac.id", password="PasswordSalah123")
+        await auth_service.authenticate(email="dosen@itk.ac.id", password="PasswordSalah123")
 
 
 @pytest.mark.asyncio
 async def test_unknown_email_is_rejected(auth_service):
     with pytest.raises(InvalidCredentialsError):
-        await auth_service.authenticate(username="tidak-ada@itk.ac.id", password=PASSWORD)
+        await auth_service.authenticate(email="tidak-ada@itk.ac.id", password=PASSWORD)
 
 
 @pytest.mark.asyncio
 async def test_user_without_local_credential_cannot_login(auth_service, user_service):
-    await create_user(user_service, password_hash=None)
+    await create_user(user_service, password=None)
 
     with pytest.raises(InvalidCredentialsError):
-        await auth_service.authenticate(username="dosen@itk.ac.id", password=PASSWORD)
+        await auth_service.authenticate(email="dosen@itk.ac.id", password=PASSWORD)
 
 
 @pytest.mark.asyncio
@@ -200,25 +223,25 @@ async def test_inactive_user_is_rejected(auth_service, user_service):
     await user_service.deactivate_user(created.id)
 
     with pytest.raises(InactiveUserError):
-        await auth_service.authenticate(username="dosen@itk.ac.id", password=PASSWORD)
+        await auth_service.authenticate(email="dosen@itk.ac.id", password=PASSWORD)
 
 
 @pytest.mark.asyncio
 async def test_all_authentication_failures_share_one_public_response(auth_service, user_service):
     """Response publik identik untuk semua penyebab: mencegah user enumeration."""
-    await create_user(user_service, email="nonaktif@itk.ac.id")
+    await create_user(user_service, username="nonaktif", email="nonaktif@itk.ac.id")
     await user_service.deactivate_user((await user_service.get_user_by_email("nonaktif@itk.ac.id")).id)
-    await create_user(user_service, email="tanpa-hash@itk.ac.id", password_hash=None)
+    await create_user(user_service, username="tanpa.hash", email="tanpa-hash@itk.ac.id", password=None)
 
     failures = []
-    for username, password in (
+    for email, password in (
         ("tidak-ada@itk.ac.id", PASSWORD),
         ("dosen@itk.ac.id", "PasswordSalah123"),
         ("nonaktif@itk.ac.id", PASSWORD),
         ("tanpa-hash@itk.ac.id", PASSWORD),
     ):
         with pytest.raises(AuthDomainError) as error:
-            await auth_service.authenticate(username=username, password=password)
+            await auth_service.authenticate(email=email, password=password)
         failures.append((error.value.status_code, error.value.error_code, error.value.public_message))
 
     assert len(set(failures)) == 1
@@ -252,7 +275,7 @@ async def test_token_is_not_issued_for_inactive_user(auth_service, user_service)
 
 @pytest.mark.asyncio
 async def test_token_of_unknown_user_is_rejected(auth_service):
-    token = create_access_token(uuid.uuid4())
+    token = create_access_token(shortuuid.uuid())
 
     with pytest.raises(InvalidTokenError):
         await auth_service.get_authenticated_user(token)

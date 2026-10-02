@@ -3,6 +3,11 @@
 Pemetaan berada di layer service supaya domain tetap bebas SQLAlchemy, dan
 repository tetap menjadi satu-satunya tempat yang menyentuh entity persistence.
 
+Nama field identity sengaja sama persis di kedua sisi (``username``,
+``firstname``, ``lastname``, ``email``, ``password``, ``role``, ``status``),
+sehingga tidak ada terjemahan nama yang bisa menyimpang; satu-satunya nilai yang
+dibentuk persistence adalah ``id`` dan timestamp.
+
 Catatan: domain hanya dipetakan dari entity yang sudah dipersist (punya id dan
 timestamp). ``apply_to_entity`` dipakai untuk insert maupun update sehingga
 aturan penulisan kolom hanya didefinisikan di satu tempat.
@@ -24,11 +29,13 @@ def to_domain(entity: UserEntity) -> User:
     """
     return User(
         id=entity.id,
-        name=entity.name,
+        username=entity.username,
+        firstname=entity.firstname,
+        lastname=entity.lastname,
         email=entity.email,
         role=entity.role,
         status=entity.status,
-        password_hash=entity.password_hash,
+        password=entity.password,
         created_at=entity.created_at,
         updated_at=entity.updated_at,
     )
@@ -42,9 +49,11 @@ def apply_to_entity(user: User, entity: UserEntity) -> UserEntity:
     """
     if user.id is not None:
         entity.id = user.id
-    entity.name = user.name
+    entity.username = user.username
+    entity.firstname = user.firstname
+    entity.lastname = user.lastname
     entity.email = user.email
     entity.role = user.role
     entity.status = user.status
-    entity.password_hash = user.password_hash
+    entity.password = user.password
     return entity
