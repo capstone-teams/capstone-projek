@@ -1,9 +1,7 @@
 import enum
-import uuid
 
 from sqlalchemy import Enum, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import BaseModel

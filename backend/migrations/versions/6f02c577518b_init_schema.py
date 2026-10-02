@@ -30,7 +30,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name')
     )
@@ -46,7 +46,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email'),
     sa.UniqueConstraint('username')
@@ -61,7 +61,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id')
@@ -75,7 +75,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['reviewer_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -93,7 +93,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -117,7 +117,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['category'], ['categories.id'], ),
     sa.ForeignKeyConstraint(['instructor_id'], ['users.id'], ),
     sa.ForeignKeyConstraint(['rps_id'], ['rps.id'], ),
@@ -142,7 +142,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['rps_id'], ['rps.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -162,7 +162,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['course_id'], ['course.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -178,7 +178,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['agent_run_id'], ['agent_runs.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -217,7 +217,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['agent_run_id'], ['agent_runs.id'], ),
     sa.ForeignKeyConstraint(['course_id'], ['course.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -237,7 +237,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['agent_run_id'], ['agent_runs.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -273,7 +273,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['course_id'], ['course.id'], ),
     sa.ForeignKeyConstraint(['execution_id'], ['moodle_executions.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -290,7 +290,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['course_plan_week_id'], ['course_plan_weeks.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -307,7 +307,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(length=22), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('length(id) = 22', name='ck_user_id_length'),
+    sa.CheckConstraint('length(id) = 22', name='ck_id_length'),
     sa.ForeignKeyConstraint(['course_plan_week_id'], ['course_plan_weeks.id'], ),
     sa.ForeignKeyConstraint(['generated_by_agent_run_id'], ['agent_runs.id'], ),
     sa.PrimaryKeyConstraint('id')
