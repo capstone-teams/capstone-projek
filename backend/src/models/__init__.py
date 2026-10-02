@@ -18,6 +18,7 @@ from src.models.validation_result import (
     ValidationTargetType,
 )
 from src.models.verification import Verification, VerificationStatus
+from src.models.category import Category
 
 __all__ = [ "Base",
             "Activity",
@@ -28,6 +29,7 @@ __all__ = [ "Base",
             "AgentRunStatus",
             "AgentRunType",
             "BaseModel",
+            "Category",
             "Content",
             "ContentStatus",
             "ContentType",

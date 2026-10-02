@@ -1,9 +1,7 @@
 import enum
-import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import BaseModel
@@ -21,9 +19,11 @@ class MoodleExecutionStatus(str, enum.Enum):
 class MoodleExecution(BaseModel):
     __tablename__ = "moodle_executions"
 
-    course_id: Mapped[str] = mapped_column(
+    # Nullable karena tidak semua operasi Moodle harus memiliki
+    # course yang sudah tersedia, misalnya pembuatan category.
+    course_id: Mapped[str | None] = mapped_column(
         ForeignKey("course.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -37,15 +37,16 @@ class MoodleExecution(BaseModel):
         nullable=False,
     )
 
-    # Polymorphic reference (Course / Section / Content / Activity), so
-    # intentionally not a single-table foreign key.
+    # Menentukan jenis entity yang sedang diproses.
+    # Contoh: course, section, content, activity, category.
     target_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
     )
 
-    target_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True),
+    # ID entity lokal yang menggunakan ShortUUID.
+    target_id: Mapped[str] = mapped_column(
+        String(22),
         nullable=False,
     )
 

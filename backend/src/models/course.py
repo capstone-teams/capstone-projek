@@ -4,6 +4,8 @@ import uuid
 from sqlalchemy import Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime
+from sqlalchemy import DateTime
 
 from src.models.base import BaseModel
 
@@ -28,6 +30,17 @@ class Course(BaseModel):
         nullable=False,
     )
 
+    category: Mapped[str] = mapped_column(
+            ForeignKey("categories.id"),
+            nullable=False,
+            )
+    
+    course_format: Mapped[str] = mapped_column(
+            String(255),
+            nullable=False,
+            unique=True,
+            )
+
     sortorder: Mapped[int] = mapped_column(
         nullable=False,
     )
@@ -38,13 +51,9 @@ class Course(BaseModel):
     )
     
     shortname: Mapped[str] = mapped_column(
-        String(254),
+        String(255),
         nullable=False,
-    )
-
-    code: Mapped[str | None] = mapped_column(
-        String(50),
-        nullable=True,
+        unique=True,
     )
 
     description: Mapped[str | None] = mapped_column(
@@ -67,4 +76,14 @@ class Course(BaseModel):
         String(255),
         nullable=True,
         index=True,
+    )
+
+    start_date: Mapped[datetime | None] = mapped_column(
+            DateTime(timezone=True), 
+            nullable=True
+    )
+
+    end_date: Mapped[datetime | None] = mapped_column(
+            DateTime(timezone=True), 
+            nullable=True
     )
