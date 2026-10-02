@@ -183,9 +183,13 @@ Authentication menjawab **"siapa User ini?"**. Keputusan boleh/tidaknya sebuah o
 | Method | Path | Keterangan |
 | :--- | :--- | :--- |
 | `POST` | `/api/v1/auth/login` | Verifikasi kredensial; mengembalikan `access_token`, `token_type`, dan identitas (`id`, `role`) |
-| `GET` | `/api/v1/auth/me` | Mengembalikan current user; membutuhkan header `Authorization: Bearer <access_token>` |
+| `GET` | `/api/v1/auth/me` | Mengembalikan current user (`id`, `username`, `firstname`, `lastname`, `email`, `role`); membutuhkan header `Authorization: Bearer <access_token>` |
 
-`username` pada login adalah **email** user (email adalah identity attribute pada data model; User tidak memiliki atribut username terpisah).
+`username` pada login adalah **email** user (email adalah identity attribute untuk login aplikasi). Kolom `users.username` adalah atribut user Moodle — dipakai saat user dibuat/di-sinkronkan ke Moodle (BE-04) — dan **tidak** dipakai untuk login lokal.
+
+Field identity user (`username`, `firstname`, `lastname`, `email`, `password`) sengaja memakai nama atribut Moodle (`core_user_create_users`) supaya sinkronisasi tidak memerlukan tabel pemetaan tersendiri. `password` menyimpan **hash** bcrypt (lihat `src/services/auth/passwords.py`); password mentah tidak pernah disimpan.
+
+Identifier user memakai **ShortUUID** (`src/models/base.py`: `ID_LENGTH = 22`), bukan UUID: kolom `users.id` bertipe `String(22)` dan path parameter seperti `/api/v1/admin/users/{user_id}` divalidasi terhadap bentuk tersebut (422 bila salah bentuk), dengan aturan yang sama berlaku di domain (`src/services/user/validation.py`).
 
 ### Memakai authentication pada endpoint baru
 
@@ -424,6 +428,8 @@ Isi folder ini yang terlibat:
 | `Dockerfile` | `python:3.13-slim` + `uv 0.11.21`; memasang seluruh dependensi (termasuk grup `dev`, agar test suite dapat dijalankan di container); berjalan sebagai user non-root `app` |
 | `.dockerignore` | Mengecualikan `.env` (credential tidak pernah masuk image) dan artefak lokal; `.env.example` tetap disertakan karena Settings memakainya sebagai fallback konfigurasi |
 | `docker-entrypoint.sh` | Menunggu database siap, menjalankan `alembic upgrade head` (idempotent), lalu mengeksekusi perintah utama |
+
+> **Database dev perlu dibuat ulang sekali** setelah perubahan ini: revisi lama `c182a1549dc6_create_user_entity` digantikan oleh `6f02c577518b_init_schema` + `86ab20d2f2a8_integrate_into_moodle` (histori migrasi ditulis ulang, satu root). Database yang masih tercatat pada revisi lama akan gagal `alembic upgrade head` — hentikan dengan `docker compose down -v` (atau `DROP DATABASE`) lalu `docker compose up -d --build`.
 
 Perintah yang sering dipakai:
 

@@ -6,6 +6,11 @@ record User pada setiap request (lihat ``AuthService.get_authenticated_user``),
 sehingga perubahan role atau deaktivasi langsung berlaku dan client tidak dapat
 menentukan role-nya sendiri.
 
+``sub`` berisi ShortUUID user (22 karakter, sama dengan kolom ``users.id``).
+Nilainya divalidasi ulang saat decode memakai aturan domain yang sama seperti
+jalur lain (``src.services.user.validation``), sehingga token dengan ``sub``
+asal-asalan tidak pernah sampai ke query database.
+
 Konfigurasi (``SECRET_KEY``, ``JWT_ALGORITHM``, ``ACCESS_TOKEN_EXPIRE_MINUTES``)
 dibaca dari environment configuration, bukan dari kode.
 """
@@ -13,13 +18,14 @@ dibaca dari environment configuration, bukan dari kode.
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
 
 from src.config.settings import settings
 from src.services.auth.errors import InvalidTokenError
+from src.services.user.errors import UserValidationError
+from src.services.user.validation import normalize_identifier
 
 __all__ = [
     "MIN_SECRET_KEY_LENGTH",
@@ -43,7 +49,7 @@ def token_expiry() -> timedelta:
 
 
 def create_access_token(
-    subject: uuid.UUID,
+    subject: str,
     *,
     expires_delta: timedelta | None = None,
     issued_at: datetime | None = None,
@@ -60,11 +66,12 @@ def create_access_token(
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> uuid.UUID:
+def decode_access_token(token: str) -> str:
     """Ambil identifier user dari token; lempar :class:`InvalidTokenError` bila tidak valid.
 
     Signature, masa berlaku (``exp``), dan kelengkapan klaim wajib diverifikasi
-    oleh PyJWT; kegagalan apa pun dipetakan ke satu error domain.
+    oleh PyJWT; kegagalan apa pun dipetakan ke satu error domain — termasuk
+    ``sub`` yang bukan ShortUUID.
     """
     try:
         payload = jwt.decode(
@@ -77,9 +84,13 @@ def decode_access_token(token: str) -> uuid.UUID:
         raise InvalidTokenError(f"token ditolak: {type(exc).__name__}") from exc
 
     try:
-        return uuid.UUID(str(payload["sub"]))
-    except (KeyError, TypeError, ValueError) as exc:
+        subject = normalize_identifier(payload["sub"])
+    except (KeyError, TypeError, UserValidationError) as exc:
         raise InvalidTokenError("token ditolak: sub bukan identifier yang valid") from exc
+
+    if subject is None:
+        raise InvalidTokenError("token ditolak: sub bukan identifier yang valid")
+    return subject
 
 
 def warn_if_secret_is_weak() -> None:

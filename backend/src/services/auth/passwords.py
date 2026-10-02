@@ -1,8 +1,9 @@
 """Password hashing untuk local authentication (BE-03.3).
 
 Mekanisme authentication final aplikasi memakai credential lokal, sehingga
-``User.password_hash`` diisi hash bcrypt — password mentah tidak pernah
-disimpan. Modul ini tidak menyentuh database maupun HTTP.
+``User.password`` (kolom ``users.password``) diisi hash bcrypt — password mentah
+tidak pernah disimpan di database maupun di log. Modul ini tidak menyentuh
+database maupun HTTP.
 """
 
 from __future__ import annotations
@@ -21,13 +22,13 @@ MAX_PASSWORD_LENGTH = 72
 
 
 def hash_password(password: str) -> str:
-    """Bentuk hash bcrypt untuk disimpan pada ``User.password_hash``."""
+    """Bentuk hash bcrypt untuk disimpan pada ``User.password``."""
     _validate_password(password)
     return _password_context.hash(password)
 
 
 def verify_password(password: str, password_hash: str | None) -> bool:
-    """Verifikasi password terhadap hash tersimpan.
+    """Verifikasi password terhadap hash tersimpan (``User.password``).
 
     ``password_hash`` kosong berarti user tidak memiliki credential lokal
     (lihat catatan BE-03.1) dan selalu gagal. Dalam kasus itu verifikasi dummy

@@ -12,15 +12,16 @@ sehingga guard dapat dipakai ulang antar endpoint tanpa duplikasi logic.
 
 from __future__ import annotations
 
-import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 
 from src.schemas.admin import AdminUserListResponse, AdminUserResponse
 from src.services.dependencies import get_user_service, require_roles
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.service import UserService
+from src.services.user.validation import ID_LENGTH, SHORTUUID_PATTERN
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
@@ -28,12 +29,23 @@ router = APIRouter(prefix="/admin", tags=["Administration"])
 # pada router ini (maupun router lain yang membutuhkannya).
 admin_only = require_roles(UserRole.ADMIN)
 
+# Identifier pada path adalah ShortUUID (``users.id``). Polanya divalidasi di
+# layer HTTP supaya identifier yang salah bentuk menghasilkan 422 tanpa
+# menyentuh service; aturan yang sama tetap berlaku di domain sebagai backstop
+# bagi pemanggil non-HTTP.
+UserIdPath = Annotated[
+    str,
+    Path(min_length=ID_LENGTH, max_length=ID_LENGTH, pattern=SHORTUUID_PATTERN),
+]
+
 
 def _to_response(user: User) -> AdminUserResponse:
     """Petakan domain User ke DTO administrasi (tanpa atribut credential)."""
     return AdminUserResponse(
         id=user.id,
-        name=user.name,
+        username=user.username,
+        firstname=user.firstname,
+        lastname=user.lastname,
         email=user.email,
         role=user.role,
         status=user.status,
@@ -58,7 +70,7 @@ async def list_users(
 
 @router.get("/users/{user_id}", response_model=AdminUserResponse)
 async def get_user(
-    user_id: uuid.UUID,
+    user_id: UserIdPath,
     _admin: User = Depends(admin_only),
     service: UserService = Depends(get_user_service),
 ) -> AdminUserResponse:

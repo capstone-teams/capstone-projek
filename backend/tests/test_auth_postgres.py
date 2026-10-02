@@ -6,8 +6,8 @@ database tidak dapat dijangkau, sehingga ``pytest`` tetap hijau di lingkungan
 tanpa PostgreSQL.
 
 Tujuannya memverifikasi perilaku yang tidak dapat direpresentasikan SQLite:
-native enum ``userrole``/``userstatus``, unique constraint ``users_email_key``,
-dan default ``now()`` pada kolom timestamp.
+native enum ``userrole``/``userstatus``, unique constraint ``users_email_key``
+dan ``users_username_key``, serta default ``now()`` pada kolom timestamp.
 
 Menjalankan:
 
@@ -20,6 +20,7 @@ Menjalankan:
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import AsyncIterator
 
@@ -32,11 +33,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.config.settings import settings
 from src.main import create_app
-from src.models.base import Base
+from src.models.base import ID_LENGTH, Base
 from src.models.user import User as UserEntity
 from src.services.auth import hash_password
 from src.services.dependencies import get_db_session
-from src.services.user import DuplicateEmailError, UserRole, UserService, UserStatus
+from src.services.user import (
+    DuplicateEmailError,
+    DuplicateUsernameError,
+    UserRole,
+    UserService,
+    UserStatus,
+)
+from src.services.user.validation import SHORTUUID_PATTERN
 
 PASSWORD = "SecretPassword123"
 EMAIL_PREFIX = "auth-it-"
@@ -93,12 +101,21 @@ async def client(postgres_session) -> AsyncIterator[httpx.AsyncClient]:
     application.dependency_overrides.clear()
 
 
+def unique_identity() -> tuple[str, str]:
+    """Username dan email unik untuk satu user uji (keduanya kolom UNIQUE)."""
+    suffix = uuid.uuid4().hex[:8]
+    return f"{EMAIL_PREFIX}{suffix}", f"{EMAIL_PREFIX}{suffix}@itk.ac.id"
+
+
 async def create_user(service: UserService, **overrides):
+    username, email = unique_identity()
     payload = {
-        "name": "Dosen Integration Test",
-        "email": f"{EMAIL_PREFIX}{uuid.uuid4().hex[:8]}@itk.ac.id",
+        "username": username,
+        "firstname": "Dosen Integration Test",
+        "lastname": "ITK",
+        "email": email,
         "role": UserRole.INSTRUCTOR,
-        "password_hash": hash_password(PASSWORD),
+        "password": hash_password(PASSWORD),
     }
     payload.update(overrides)
     return await service.create_user(**payload)
@@ -114,7 +131,9 @@ async def test_user_round_trip_uses_native_postgres_enum_and_constraints(service
     assert stored.status is UserStatus.ACTIVE
     assert stored.created_at is not None
     assert stored.updated_at is not None
-    assert isinstance(stored.id, uuid.UUID)
+    assert isinstance(stored.id, str)
+    assert len(stored.id) == ID_LENGTH
+    assert re.fullmatch(SHORTUUID_PATTERN, stored.id)
 
 
 @pytest.mark.asyncio
@@ -125,6 +144,14 @@ async def test_duplicate_email_is_rejected_by_the_database_constraint(service):
         await create_user(service, email=created.email)
 
     assert await service.is_email_registered(created.email) is True
+
+
+@pytest.mark.asyncio
+async def test_duplicate_username_is_rejected_by_the_database_constraint(service):
+    created = await create_user(service)
+
+    with pytest.raises(DuplicateUsernameError):
+        await create_user(service, username=created.username)
 
 
 @pytest.mark.asyncio
@@ -148,7 +175,9 @@ async def test_login_and_me_flow_against_real_database(client, service):
     assert me_response.status_code == 200
     assert me_response.json() == {
         "id": str(created.id),
-        "name": created.name,
+        "username": created.username,
+        "firstname": created.firstname,
+        "lastname": created.lastname,
         "email": created.email,
         "role": "STUDENT",
     }

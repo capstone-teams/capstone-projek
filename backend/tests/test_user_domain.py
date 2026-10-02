@@ -2,28 +2,36 @@
 
 Domain model diuji tanpa database dan tanpa HTTP layer: seluruh aturan identity,
 role, status, dan lifecycle harus dapat diverifikasi sebagai pure Python.
+
+Field identity memakai nama atribut user Moodle (``username``, ``firstname``,
+``lastname``, ``email``, ``password``), sedangkan identifier memakai ShortUUID
+(22 karakter) — bukan lagi UUID.
 """
 
 import ast
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import shortuuid
 
+from src.models.base import ID_LENGTH
 from src.models.user import User as UserEntity
 from src.models.user import UserRole as OrmUserRole
 from src.models.user import UserStatus as OrmUserStatus
 from src.services.user import (
     MAX_EMAIL_LENGTH,
-    MAX_NAME_LENGTH,
+    MAX_FIRSTNAME_LENGTH,
+    MAX_LASTNAME_LENGTH,
+    MAX_USERNAME_LENGTH,
     User,
     UserDomainError,
     UserRole,
     UserStatus,
     UserValidationError,
 )
-from src.services.user import enums as domain_enums
 
 USER_PACKAGE_DIR = Path(__file__).resolve().parent.parent / "src" / "services" / "user"
 
@@ -33,7 +41,9 @@ FORBIDDEN_IMPORT_ROOTS = {"fastapi", "starlette"}
 def build_user(**overrides) -> User:
     """User valid dengan nilai default, dipakai sebagai basis tiap test."""
     payload = {
-        "name": "Dosen ITK",
+        "username": "dosen.itk",
+        "firstname": "Dosen",
+        "lastname": "ITK",
         "email": "dosen@itk.ac.id",
         "role": UserRole.INSTRUCTOR,
     }
@@ -56,6 +66,8 @@ def test_status_values_are_defined():
 
 def test_domain_enums_are_the_single_source_from_models():
     """Domain me-reuse enum BE-02, bukan mendefinisikan nilai baru."""
+    from src.services.user import enums as domain_enums
+
     assert domain_enums.UserRole is OrmUserRole
     assert domain_enums.UserStatus is OrmUserStatus
     assert UserRole.INSTRUCTOR is OrmUserRole.INSTRUCTOR
@@ -68,24 +80,37 @@ def test_domain_enums_are_the_single_source_from_models():
 
 
 def test_create_builds_active_user_without_identifier_or_timestamps():
-    user = User.create(name="Dosen ITK", email="dosen@itk.ac.id", role="instructor")
+    user = User.create(
+        username="dosen.itk",
+        firstname="Dosen",
+        lastname="ITK",
+        email="dosen@itk.ac.id",
+        role="instructor",
+    )
 
     assert user.id is None
     assert user.created_at is None
     assert user.updated_at is None
     assert user.status is UserStatus.ACTIVE
     assert user.role is UserRole.INSTRUCTOR
-    assert user.password_hash is None
+    assert user.password is None
 
 
 def test_identity_values_are_normalized():
-    user = build_user(name="  Dosen ITK  ", email="  DOSEN@ITK.AC.ID ")
+    user = build_user(
+        username="  dosen.itk  ",
+        firstname="  Dosen  ",
+        lastname="  ITK  ",
+        email="  DOSEN@ITK.AC.ID ",
+    )
 
-    assert user.name == "Dosen ITK"
+    assert user.username == "dosen.itk"
+    assert user.firstname == "Dosen"
+    assert user.lastname == "ITK"
     assert user.email == "dosen@itk.ac.id"
 
 
-def test_case_insensitive_identity_does_not_create_distinct_users():
+def test_case_insensitive_email_does_not_create_distinct_users():
     first = build_user(email="Dosen@ITK.ac.id")
     second = build_user(email="dosen@itk.ac.id")
 
@@ -107,13 +132,24 @@ def test_status_accepts_enum_and_case_insensitive_string(status_value):
 
 
 def test_lifecycle_metadata_from_persistence_is_accepted():
-    user_id = uuid.uuid4()
+    user_id = shortuuid.uuid()
     created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
-    user = build_user(id=str(user_id), created_at=created_at, updated_at=created_at)
+    user = build_user(id=user_id, created_at=created_at, updated_at=created_at)
 
     assert user.id == user_id
     assert user.created_at == created_at
+
+
+def test_generated_identifiers_are_short_uuids():
+    """Format ID yang dihasilkan database foundation sesuai yang divalidasi domain."""
+    pattern = re.compile(rf"^[2-9A-HJ-NP-Za-km-z]{{{ID_LENGTH}}}$")
+
+    identifiers = [shortuuid.uuid() for _ in range(1_000)]
+
+    assert all(pattern.match(identifier) for identifier in identifiers)
+    # Diterima domain tanpa error.
+    assert build_user(id=identifiers[0]).id == identifiers[0]
 
 
 # ---------------------------------------------------------------------------
@@ -121,28 +157,60 @@ def test_lifecycle_metadata_from_persistence_is_accepted():
 # ---------------------------------------------------------------------------
 
 
-def test_name_at_maximum_length_is_accepted():
-    user = build_user(name="a" * MAX_NAME_LENGTH)
+def test_username_at_maximum_length_is_accepted():
+    user = build_user(username="a" * MAX_USERNAME_LENGTH)
 
-    assert len(user.name) == MAX_NAME_LENGTH
+    assert len(user.username) == MAX_USERNAME_LENGTH
 
 
-@pytest.mark.parametrize("invalid_name", ["", "   ", "\t", None, 123, ["Dosen"]])
-def test_invalid_name_is_rejected(invalid_name):
+@pytest.mark.parametrize("invalid_username", ["", "   ", "\t", "dosen itk", None, 123, ["dosen"]])
+def test_invalid_username_is_rejected(invalid_username):
     with pytest.raises(UserValidationError) as error:
-        build_user(name=invalid_name)
+        build_user(username=invalid_username)
 
-    assert error.value.field == "name"
+    assert error.value.field == "username"
 
 
-def test_name_over_maximum_length_is_rejected():
+def test_username_over_maximum_length_is_rejected():
     with pytest.raises(UserValidationError):
-        build_user(name="a" * (MAX_NAME_LENGTH + 1))
+        build_user(username="a" * (MAX_USERNAME_LENGTH + 1))
 
 
-def test_name_with_control_characters_is_rejected():
+def test_username_with_control_characters_is_rejected():
     with pytest.raises(UserValidationError):
-        build_user(name="Dosen\nITK")
+        build_user(username="dosen\nitk")
+
+
+@pytest.mark.parametrize("field_name", ["firstname", "lastname"])
+def test_person_name_at_maximum_length_is_accepted(field_name):
+    maximum = MAX_FIRSTNAME_LENGTH if field_name == "firstname" else MAX_LASTNAME_LENGTH
+
+    user = build_user(**{field_name: "a" * maximum})
+
+    assert len(getattr(user, field_name)) == maximum
+
+
+@pytest.mark.parametrize("field_name", ["firstname", "lastname"])
+@pytest.mark.parametrize("invalid_name", ["", "   ", "\t", None, 123, ["Dosen"]])
+def test_invalid_person_name_is_rejected(field_name, invalid_name):
+    with pytest.raises(UserValidationError) as error:
+        build_user(**{field_name: invalid_name})
+
+    assert error.value.field == field_name
+
+
+@pytest.mark.parametrize("field_name", ["firstname", "lastname"])
+def test_person_name_over_maximum_length_is_rejected(field_name):
+    maximum = MAX_FIRSTNAME_LENGTH if field_name == "firstname" else MAX_LASTNAME_LENGTH
+
+    with pytest.raises(UserValidationError):
+        build_user(**{field_name: "a" * (maximum + 1)})
+
+
+@pytest.mark.parametrize("field_name", ["firstname", "lastname"])
+def test_person_name_with_control_characters_is_rejected(field_name):
+    with pytest.raises(UserValidationError):
+        build_user(**{field_name: "Dosen\nITK"})
 
 
 @pytest.mark.parametrize(
@@ -197,6 +265,36 @@ def test_email_over_maximum_length_is_rejected():
 
 
 # ---------------------------------------------------------------------------
+# Identifier: ShortUUID, bukan UUID lagi
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "invalid_identifier",
+    [
+        "",
+        "   ",
+        str(uuid.uuid4()),
+        "terlalu-pendek",
+        "a" * (ID_LENGTH + 1),
+        "0" * ID_LENGTH,  # '0' tidak ada di alfabet ShortUUID
+        None,
+        123,
+    ],
+)
+def test_identifier_must_be_a_short_uuid_when_present(invalid_identifier):
+    if invalid_identifier is None:
+        # ``None`` tetap sah: user yang belum dipersist belum punya ID.
+        assert build_user(id=invalid_identifier).id is None
+        return
+
+    with pytest.raises(UserValidationError) as error:
+        build_user(id=invalid_identifier)
+
+    assert error.value.field == "id"
+
+
+# ---------------------------------------------------------------------------
 # Role dan status tidak boleh berisi nilai arbitrary
 # ---------------------------------------------------------------------------
 
@@ -224,37 +322,37 @@ def test_role_and_status_errors_are_domain_errors():
 
 
 # ---------------------------------------------------------------------------
-# Password hash hanya relevan untuk local authentication
+# Credential (hash) hanya relevan untuk local authentication
 # ---------------------------------------------------------------------------
 
 
-def test_user_without_password_hash_does_not_use_local_authentication():
-    user = build_user(password_hash=None)
+def test_user_without_password_does_not_use_local_authentication():
+    user = build_user(password=None)
 
-    assert user.password_hash is None
+    assert user.password is None
     assert user.uses_local_authentication is False
 
 
 def test_user_with_password_hash_uses_local_authentication():
-    user = build_user(password_hash="$2b$12$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLM")
+    user = build_user(password="$2b$12$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLM")
 
     assert user.uses_local_authentication is True
 
 
 @pytest.mark.parametrize("invalid_hash", ["", "   ", "PasswordSuperRahasia 123", "a" * 256, 123])
-def test_invalid_password_hash_is_rejected(invalid_hash):
+def test_invalid_password_is_rejected(invalid_hash):
     with pytest.raises(UserValidationError) as error:
-        build_user(password_hash=invalid_hash)
+        build_user(password=invalid_hash)
 
-    assert error.value.field == "password_hash"
+    assert error.value.field == "password"
 
 
-def test_user_representation_does_not_leak_password_hash():
-    user = build_user(password_hash="$2b$12$secret-hash-value")
+def test_user_representation_does_not_leak_the_stored_hash():
+    user = build_user(password="$2b$12$secret-hash-value")
 
     assert "secret-hash-value" not in str(user)
     assert "secret-hash-value" not in repr(user)
-    assert "password_hash=set" in repr(user)
+    assert "password=set" in repr(user)
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +419,26 @@ def test_domain_model_does_not_duplicate_the_persistence_entity():
 @pytest.mark.parametrize("field_name", ["moodle_user_id", "moodle_password", "moodle_token", "agent_id", "permissions"])
 def test_domain_model_has_no_moodle_or_agent_fields(field_name):
     assert field_name not in User.__dataclass_fields__
+
+
+def test_domain_identity_fields_follow_moodle_attributes():
+    """Nama field identity sama dengan atribut user Moodle, tanpa field ``name`` terpisah."""
+    for field_name in ("username", "firstname", "lastname", "email", "password"):
+        assert field_name in User.__dataclass_fields__
+
+    assert "name" not in User.__dataclass_fields__
+    assert "password_hash" not in User.__dataclass_fields__
+
+
+def test_domain_fields_are_the_same_names_as_the_entity_columns():
+    """Satu nama untuk satu atribut, sehingga pemetaan tidak bisa menyimpang."""
+    from src.models.user import User as Entity
+
+    columns = set(Entity.__table__.columns.keys())
+    shared = {"username", "firstname", "lastname", "email", "password", "role", "status", "id"}
+
+    assert shared <= columns
+    assert shared <= set(User.__dataclass_fields__)
 
 
 def test_domain_package_does_not_import_http_frameworks():

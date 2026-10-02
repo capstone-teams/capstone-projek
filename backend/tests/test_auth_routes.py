@@ -3,6 +3,10 @@
 Endpoint diuji melalui ASGI app (httpx ASGITransport) dengan dependency
 override ke session test, sehingga kontrak HTTP, pemetaan error 401, dan
 response DTO benar-benar terverifikasi.
+
+Body login tetap memakai field ``username`` (kontrak API) yang berisi **email**
+user; response ``/auth/me`` memuat atribut identity Moodle (``username``,
+``firstname``, ``lastname``, ``email``).
 """
 
 from datetime import timedelta
@@ -43,10 +47,12 @@ async def user_service(db_session) -> UserService:
 
 async def create_user(user_service: UserService, **overrides):
     payload = {
-        "name": "Dosen ITK",
+        "username": "dosen.itk",
+        "firstname": "Dosen",
+        "lastname": "ITK",
         "email": "dosen@itk.ac.id",
         "role": UserRole.INSTRUCTOR,
-        "password_hash": hash_password(PASSWORD),
+        "password": hash_password(PASSWORD),
     }
     payload.update(overrides)
     return await user_service.create_user(**payload)
@@ -100,10 +106,10 @@ async def test_login_with_wrong_password_is_rejected(client, user_service):
 @pytest.mark.asyncio
 async def test_login_failures_are_indistinguishable(client, user_service):
     """Unknown user, wrong password, inactive, dan tanpa credential -> response sama."""
-    await create_user(user_service, email="nonaktif@itk.ac.id")
+    await create_user(user_service, username="nonaktif", email="nonaktif@itk.ac.id")
     inactive = await user_service.get_user_by_email("nonaktif@itk.ac.id")
     await user_service.deactivate_user(inactive.id)
-    await create_user(user_service, email="tanpa-hash@itk.ac.id", password_hash=None)
+    await create_user(user_service, username="tanpa.hash", email="tanpa-hash@itk.ac.id", password=None)
 
     responses = [
         await login(client, username="tidak-ada@itk.ac.id"),
@@ -139,6 +145,18 @@ async def test_login_ignores_client_supplied_role(client, user_service):
     assert response.json()["user"] == {"id": str(created.id), "role": "STUDENT"}
 
 
+@pytest.mark.asyncio
+async def test_login_body_username_carries_the_email(client, user_service):
+    """Field ``username`` pada body login berisi email, bukan kolom users.username."""
+    await create_user(user_service, username="dosen.itk", email="dosen@itk.ac.id")
+
+    accepted = await login(client, username="dosen@itk.ac.id")
+    rejected = await login(client, username="dosen.itk")
+
+    assert accepted.status_code == 200
+    assert rejected.status_code == 401
+
+
 # ---------------------------------------------------------------------------
 # GET /api/v1/auth/me
 # ---------------------------------------------------------------------------
@@ -154,7 +172,9 @@ async def test_me_returns_the_authenticated_user(client, user_service):
     assert response.status_code == 200
     assert response.json() == {
         "id": str(created.id),
-        "name": "Dosen ITK",
+        "username": "dosen.itk",
+        "firstname": "Dosen",
+        "lastname": "ITK",
         "email": "dosen@itk.ac.id",
         "role": "INSTRUCTOR",
     }

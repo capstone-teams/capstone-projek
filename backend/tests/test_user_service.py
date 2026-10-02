@@ -3,10 +3,14 @@
 Pengujian memakai SQLite in-memory (lihat ``tests/conftest.py``) sehingga
 lapisan ini dapat diverifikasi tanpa server PostgreSQL. Perilaku database
 spesifik PostgreSQL diuji pada pengujian integrasi terpisah.
+
+Field identity memakai nama atribut user Moodle (``username``, ``firstname``,
+``lastname``, ``email``, ``password``); ``email`` tetap menjadi identity
+attribute untuk login aplikasi.
 """
 
 import ast
-import uuid
+import shortuuid
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +19,7 @@ import pytest_asyncio
 
 from src.services.user import (
     DuplicateEmailError,
+    DuplicateUsernameError,
     User,
     UserDomainError,
     UserNotFoundError,
@@ -31,6 +36,11 @@ ROUTES_DIR = BACKEND_DIR / "src" / "routes"
 
 APPLICATION_MODULES = ["mappers.py", "repository.py", "service.py"]
 PASSWORD_HASH = "$2b$12$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLM"
+
+
+def missing_id() -> str:
+    """Identifier berformat benar yang tidak mungkin ada di database."""
+    return shortuuid.uuid()
 
 
 @pytest_asyncio.fixture
@@ -55,14 +65,26 @@ def imported_modules(path: Path) -> set[str]:
     return modules
 
 
-async def create_user(service: UserService, **overrides: Any):
+def user_fields(**overrides: Any) -> dict[str, Any]:
+    """Nilai identity valid sebagai basis setiap pembentukan user.
+
+    ``users.username`` UNIQUE, sehingga username default diturunkan dari local
+    part email: setiap user uji dengan email berbeda otomatis memakai username
+    berbeda. Test yang memang menguji duplikat username mengisinya eksplisit.
+    """
     payload: dict[str, Any] = {
-        "name": "Dosen ITK",
+        "firstname": "Dosen",
+        "lastname": "ITK",
         "email": "dosen@itk.ac.id",
         "role": UserRole.INSTRUCTOR,
     }
     payload.update(overrides)
-    return await service.create_user(**payload)
+    payload.setdefault("username", payload["email"].split("@")[0])
+    return payload
+
+
+async def create_user(service: UserService, **overrides: Any):
+    return await service.create_user(**user_fields(**overrides))
 
 
 # ---------------------------------------------------------------------------
@@ -73,11 +95,20 @@ async def create_user(service: UserService, **overrides: Any):
 @pytest.mark.asyncio
 async def test_create_persists_user_and_returns_persisted_state(repository):
     created = await repository.create(
-        User.create(name="  Dosen ITK  ", email="Dosen@ITK.ac.id", role=UserRole.INSTRUCTOR)
+        User.create(
+            username="  dosen.itk  ",
+            firstname="  Dosen  ",
+            lastname="  ITK  ",
+            email="Dosen@ITK.ac.id",
+            role=UserRole.INSTRUCTOR,
+        )
     )
 
     assert created.id is not None
-    assert created.name == "Dosen ITK"
+    assert len(created.id) == 22
+    assert created.username == "dosen.itk"
+    assert created.firstname == "Dosen"
+    assert created.lastname == "ITK"
     assert created.email == "dosen@itk.ac.id"
     assert created.status is UserStatus.ACTIVE
     assert created.created_at is not None
@@ -85,15 +116,40 @@ async def test_create_persists_user_and_returns_persisted_state(repository):
 
 
 @pytest.mark.asyncio
-async def test_create_rejects_duplicate_identity(repository, service):
+async def test_create_rejects_duplicate_email(repository, service):
     await create_user(service)
 
     with pytest.raises(DuplicateEmailError) as error:
         await repository.create(
-            User.create(name="Dosen Lain", email="DOSEN@itk.ac.id", role=UserRole.STUDENT)
+            User.create(
+                username="dosen.lain",
+                firstname="Dosen",
+                lastname="Lain",
+                email="DOSEN@itk.ac.id",
+                role=UserRole.STUDENT,
+            )
         )
 
     assert error.value.email == "dosen@itk.ac.id"
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_duplicate_username(repository, service):
+    """Username adalah atribut Moodle dan kolom UNIQUE, jadi duplikatnya ditolak domain."""
+    await create_user(service, username="dosen.itk")
+
+    with pytest.raises(DuplicateUsernameError) as error:
+        await repository.create(
+            User.create(
+                username="dosen.itk",
+                firstname="Dosen",
+                lastname="Lain",
+                email="dosen.lain@itk.ac.id",
+                role=UserRole.STUDENT,
+            )
+        )
+
+    assert error.value.username == "dosen.itk"
 
 
 @pytest.mark.asyncio
@@ -101,14 +157,14 @@ async def test_session_remains_usable_after_duplicate_identity(repository, servi
     await create_user(service)
 
     with pytest.raises(DuplicateEmailError):
-        await create_user(service, email="dosen@itk.ac.id")
+        await create_user(service, username="dosen.lain", email="dosen@itk.ac.id")
 
     assert await repository.exists_by_email("dosen@itk.ac.id") is True
 
 
 @pytest.mark.asyncio
 async def test_get_by_id_returns_none_when_missing(repository):
-    assert await repository.get_by_id(uuid.uuid4()) is None
+    assert await repository.get_by_id(missing_id()) is None
 
 
 @pytest.mark.asyncio
@@ -138,27 +194,29 @@ async def test_exists_by_email_reflects_stored_identity(repository, service):
 @pytest.mark.asyncio
 async def test_update_persists_changed_values(repository, service):
     created = await create_user(service)
-    created.name = "Dosen Pembaruan"
+    created.firstname = "Dosen Pembaruan"
     created.deactivate()
 
     updated = await repository.update(created)
 
     assert updated is not None
-    assert updated.name == "Dosen Pembaruan"
+    assert updated.firstname == "Dosen Pembaruan"
     assert updated.status is UserStatus.INACTIVE
-    assert (await repository.get_by_id(created.id)).name == "Dosen Pembaruan"
+    assert (await repository.get_by_id(created.id)).firstname == "Dosen Pembaruan"
 
 
 @pytest.mark.asyncio
 async def test_update_returns_none_when_row_is_missing(repository):
-    unsaved = User(id=uuid.uuid4(), name="Hilang", email="hilang@itk.ac.id", role=UserRole.ADMIN)
+    unsaved = User(
+        id=missing_id(), **user_fields(username="hilang", email="hilang@itk.ac.id")
+    )
 
     assert await repository.update(unsaved) is None
 
 
 @pytest.mark.asyncio
 async def test_update_requires_persisted_user(repository):
-    unsaved = User(name="Belum Ada", email="belum@itk.ac.id", role=UserRole.STUDENT)
+    unsaved = User(**user_fields(username="belum.ada", email="belum@itk.ac.id"))
 
     with pytest.raises(ValueError):
         await repository.update(unsaved)
@@ -174,6 +232,16 @@ async def test_update_to_taken_email_is_rejected(repository, service):
         await repository.update(second)
 
 
+@pytest.mark.asyncio
+async def test_update_to_taken_username_is_rejected(repository, service):
+    first = await create_user(service, username="pertama", email="pertama@itk.ac.id")
+    second = await create_user(service, username="kedua", email="kedua@itk.ac.id")
+    second.username = first.username
+
+    with pytest.raises(DuplicateUsernameError):
+        await repository.update(second)
+
+
 # ---------------------------------------------------------------------------
 # Service: operasi aplikasi
 # ---------------------------------------------------------------------------
@@ -181,10 +249,14 @@ async def test_update_to_taken_email_is_rejected(repository, service):
 
 @pytest.mark.asyncio
 async def test_create_user_returns_active_user_with_normalized_identity(service):
-    created = await create_user(service, name="  Dosen ITK  ", email="  DOSEN@ITK.AC.ID ")
+    created = await create_user(
+        service, username="  dosen.itk  ", email="  DOSEN@ITK.AC.ID "
+    )
 
     assert created.id is not None
-    assert created.name == "Dosen ITK"
+    assert created.username == "dosen.itk"
+    assert created.firstname == "Dosen"
+    assert created.lastname == "ITK"
     assert created.email == "dosen@itk.ac.id"
     assert created.role is UserRole.INSTRUCTOR
     assert created.status is UserStatus.ACTIVE
@@ -193,16 +265,16 @@ async def test_create_user_returns_active_user_with_normalized_identity(service)
 @pytest.mark.asyncio
 async def test_create_user_validates_domain_before_persistence(service):
     with pytest.raises(UserValidationError) as error:
-        await service.create_user(name="   ", email="dosen@itk.ac.id", role=UserRole.INSTRUCTOR)
+        await service.create_user(**user_fields(username="   "))
 
-    assert error.value.field == "name"
+    assert error.value.field == "username"
     assert await service.is_email_registered("dosen@itk.ac.id") is False
 
 
 @pytest.mark.asyncio
 async def test_create_user_rejects_arbitrary_role(service):
     with pytest.raises(UserValidationError) as error:
-        await service.create_user(name="Dosen", email="dosen@itk.ac.id", role="SUPERADMIN")
+        await service.create_user(**user_fields(role="SUPERADMIN"))
 
     assert error.value.field == "role"
 
@@ -212,7 +284,15 @@ async def test_create_user_rejects_duplicate_identity(service):
     await create_user(service)
 
     with pytest.raises(DuplicateEmailError):
-        await create_user(service, name="Dosen Lain")
+        await create_user(service, username="dosen.lain")
+
+
+@pytest.mark.asyncio
+async def test_create_user_rejects_duplicate_username(service):
+    await create_user(service, username="dosen.itk")
+
+    with pytest.raises(DuplicateUsernameError):
+        await create_user(service, username="dosen.itk", email="dosen.lain@itk.ac.id")
 
 
 @pytest.mark.asyncio
@@ -235,19 +315,28 @@ async def test_get_user_accepts_identifier_as_string(service):
 @pytest.mark.asyncio
 async def test_get_user_rejects_invalid_identifier(service):
     with pytest.raises(UserValidationError) as error:
-        await service.get_user("bukan-uuid")
+        await service.get_user("bukan-shortuuid")
+
+    assert error.value.field == "id"
+
+
+@pytest.mark.asyncio
+async def test_get_user_rejects_uuid_shaped_identifier(service):
+    """Identifier lama (UUID) bukan ShortUUID, sehingga ditolak sebelum query."""
+    with pytest.raises(UserValidationError) as error:
+        await service.get_user("3f2504e0-4f89-41d3-9a0c-0305e82c3301")
 
     assert error.value.field == "id"
 
 
 @pytest.mark.asyncio
 async def test_get_user_raises_consistent_not_found_error(service):
-    missing_id = uuid.uuid4()
+    unknown_id = missing_id()
 
     with pytest.raises(UserNotFoundError) as error:
-        await service.get_user(missing_id)
+        await service.get_user(unknown_id)
 
-    assert error.value.identifier == missing_id
+    assert error.value.identifier == unknown_id
 
 
 @pytest.mark.asyncio
@@ -273,19 +362,23 @@ async def test_find_user_by_email_returns_none_for_unknown_identity(service):
 
 @pytest.mark.asyncio
 async def test_find_user_by_id_returns_none_for_unknown_identifier(service):
-    assert await service.find_user_by_id(uuid.uuid4()) is None
+    assert await service.find_user_by_id(missing_id()) is None
 
 
 @pytest.mark.asyncio
 async def test_update_user_changes_only_given_fields(service):
-    created = await create_user(service, password_hash=PASSWORD_HASH)
+    created = await create_user(service, password=PASSWORD_HASH)
 
-    updated = await service.update_user(created.id, name="Dosen Baru", role=UserRole.ADMIN)
+    updated = await service.update_user(
+        created.id, firstname="Dosen Baru", role=UserRole.ADMIN
+    )
 
-    assert updated.name == "Dosen Baru"
+    assert updated.firstname == "Dosen Baru"
     assert updated.role is UserRole.ADMIN
+    assert updated.username == created.username
+    assert updated.lastname == created.lastname
     assert updated.email == created.email
-    assert updated.password_hash == PASSWORD_HASH
+    assert updated.password == PASSWORD_HASH
 
 
 @pytest.mark.asyncio
@@ -311,9 +404,20 @@ async def test_update_user_validates_email_before_persistence(service):
 
 
 @pytest.mark.asyncio
+async def test_update_user_validates_username_before_persistence(service):
+    created = await create_user(service)
+
+    with pytest.raises(UserValidationError) as error:
+        await service.update_user(created.id, username="dosen itk")
+
+    assert error.value.field == "username"
+    assert (await service.get_user(created.id)).username == created.username
+
+
+@pytest.mark.asyncio
 async def test_update_user_rejects_taken_email(service):
-    first = await create_user(service, email="pertama@itk.ac.id")
-    second = await create_user(service, email="kedua@itk.ac.id")
+    first = await create_user(service, username="pertama", email="pertama@itk.ac.id")
+    second = await create_user(service, username="kedua", email="kedua@itk.ac.id")
 
     with pytest.raises(DuplicateEmailError):
         await service.update_user(second.id, email=first.email)
@@ -322,24 +426,33 @@ async def test_update_user_rejects_taken_email(service):
 
 
 @pytest.mark.asyncio
-async def test_update_user_can_set_and_clear_password_hash(service):
+async def test_update_user_rejects_taken_username(service):
+    first = await create_user(service, username="pertama", email="pertama@itk.ac.id")
+    second = await create_user(service, username="kedua", email="kedua@itk.ac.id")
+
+    with pytest.raises(DuplicateUsernameError):
+        await service.update_user(second.id, username=first.username)
+
+    assert (await service.get_user(second.id)).username == "kedua"
+
+
+@pytest.mark.asyncio
+async def test_update_user_can_set_and_clear_password(service):
     created = await create_user(service)
     assert created.uses_local_authentication is False
 
-    with_hash = await service.update_user(created.id, password_hash=PASSWORD_HASH)
-    assert with_hash.uses_local_authentication is True
+    with_password = await service.update_user(created.id, password=PASSWORD_HASH)
+    assert with_password.uses_local_authentication is True
 
-    cleared = await service.update_user(created.id, password_hash=None)
-    assert cleared.password_hash is None
+    cleared = await service.update_user(created.id, password=None)
+    assert cleared.password is None
     assert cleared.uses_local_authentication is False
 
 
 @pytest.mark.asyncio
 async def test_update_user_raises_not_found(service):
-    missing_id = uuid.uuid4()
-
     with pytest.raises(UserNotFoundError):
-        await service.update_user(missing_id, name="Tidak Ada")
+        await service.update_user(missing_id(), firstname="Tidak Ada")
 
 
 @pytest.mark.asyncio
@@ -367,7 +480,7 @@ async def test_activate_user_restores_active_status(service):
 @pytest.mark.asyncio
 async def test_deactivate_user_raises_not_found(service):
     with pytest.raises(UserNotFoundError):
-        await service.deactivate_user(uuid.uuid4())
+        await service.deactivate_user(missing_id())
 
 
 @pytest.mark.asyncio
@@ -380,7 +493,7 @@ async def test_get_user_role_reads_role_from_the_record(service):
 @pytest.mark.asyncio
 async def test_get_user_role_raises_not_found(service):
     with pytest.raises(UserNotFoundError):
-        await service.get_user_role(uuid.uuid4())
+        await service.get_user_role(missing_id())
 
 
 @pytest.mark.asyncio

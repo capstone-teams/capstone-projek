@@ -2,8 +2,8 @@
 
 Alur yang disediakan:
 
-1. ``authenticate(username, password)`` — memverifikasi kredensial terhadap
-   record User dan mengembalikan user yang terautentikasi (atau error domain);
+1. ``authenticate(email, password)`` — memverifikasi kredensial terhadap record
+   User dan mengembalikan user yang terautentikasi (atau error domain);
 2. ``issue_access_token(user)`` — membentuk authentication state untuk request
    berikutnya;
 3. ``get_authenticated_user(token)`` — memulihkan current user dari token,
@@ -12,6 +12,12 @@ Alur yang disediakan:
 Authentication hanya menentukan "siapa User ini"; apakah User boleh menjalankan
 sebuah operasi adalah tanggung jawab authorization (BE-03.4). Tidak ada logika
 Moodle, agent, maupun fitur bisnis di sini.
+
+Catatan field: ``users.username`` adalah atribut Moodle (dipakai saat membuat
+user di Moodle), sedangkan **login aplikasi memakai email** sebagai identity
+attribute. Kontrak API ``POST /api/v1/auth/login`` mengirim field ``username``
+(design-api §5.1), dan nilainya adalah email — lihat
+:class:`src.schemas.auth.LoginRequest`.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from src.services.auth.errors import (
 from src.services.auth.passwords import verify_password
 from src.services.auth.tokens import create_access_token, decode_access_token
 from src.services.user.domain import User
+from src.services.user.errors import UserValidationError
 from src.services.user.service import UserService
 
 __all__ = ["AuthService"]
@@ -44,24 +51,32 @@ class AuthService:
         """Bangun service dengan User Service di atas session yang diberikan."""
         return cls(UserService.from_session(session))
 
-    async def authenticate(self, *, username: str, password: str) -> User:
+    async def authenticate(self, *, email: str, password: str) -> User:
         """Verifikasi kredensial dan kembalikan user yang terautentikasi.
 
-        ``username`` mengikuti kontrak API (design-api §5.1 dan dipetakan ke
-        ``User.email``, karena email adalah identity attribute pada data model —
-        User tidak memiliki atribut username terpisah.
+        ``email`` adalah identity attribute pada data model dan menjadi satu-
+        satunya jalur login; ``username`` (atribut Moodle) tidak dipakai untuk
+        login lokal.
 
         Semua penyebab kegagalan menghasilkan error publik yang sama: email
-        tidak terdaftar, password tidak cocok, user non-aktif, dan user tanpa
-        credential lokal (``password_hash`` kosong).
+        tidak terdaftar, email tidak berbentuk email yang valid, password tidak
+        cocok, user non-aktif, dan user tanpa credential lokal (``password``
+        kosong). Identifier yang salah bentuk karena itu tidak boleh menjadi
+        500 maupun membocorkan perbedaan perilaku.
         """
-        user = await self._users.find_user_by_email(username)
+        try:
+            user = await self._users.find_user_by_email(email)
+        except UserValidationError:
+            # Email yang tidak valid tidak mungkin cocok dengan record mana pun;
+            # diperlakukan seperti email tidak terdaftar.
+            user = None
+
         if user is None:
             # Verifikasi dummy agar waktu respons tidak membocorkan keberadaan email.
             verify_password(password, None)
             raise InvalidCredentialsError("login gagal: email tidak terdaftar")
 
-        if not verify_password(password, user.password_hash):
+        if not verify_password(password, user.password):
             raise InvalidCredentialsError(
                 f"login gagal: password tidak cocok untuk user {user.id}"
             )
