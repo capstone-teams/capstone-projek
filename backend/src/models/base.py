@@ -1,7 +1,7 @@
-import uuid
+import shortuuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, func, String, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -13,10 +13,10 @@ class Base(DeclarativeBase):
 class BaseModel(Base):
     __abstract__ = True
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+    id: Mapped[str] = mapped_column(
+        String(22),
         primary_key=True,
-        default=uuid.uuid4,
+        default=shortuuid.uuid,
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -30,4 +30,9 @@ class BaseModel(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+    __table_args__ = (
+        CheckConstraint("length(id) = 22", name="ck_user_id_length"),
     )
