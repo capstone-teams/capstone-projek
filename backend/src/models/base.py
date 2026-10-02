@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import shortuuid
 from datetime import datetime
 
@@ -31,7 +32,6 @@ class BaseModel(Base):
         onupdate=func.now(),
         nullable=False,
     )
-
 
     __table_args__ = (
         CheckConstraint("length(id) = 22", name="ck_user_id_length"),

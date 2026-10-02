@@ -23,13 +23,15 @@ ENV_EXAMPLE_PATH = Path(__file__).parent.parent / ".env.example"
 # Credential-ish setting names that must never reach the frontend.
 CREDENTIAL_SUFFIXES = ("API_KEY", "SECRET_KEY", "TOKEN", "PASSWORD")
 
-# Modules allowed to read credentials: the settings definition itself and the
-# provider implementations that turn them into provider requests. Agent, tool
-# and controller code must go through the service layer instead.
+# Modules allowed to read credentials: the settings definition itself, the
+# provider implementations that turn them into provider requests, and the
+# authentication token signer, which legitimately owns the JWT secret. Agent,
+# tool and controller code must go through the service layer instead.
 CREDENTIAL_OWNERS = {
     "src/config/settings.py",
     "src/services/llm/openai_provider.py",
     "src/services/llm/gemini_provider.py",
+    "src/services/auth/tokens.py",
 }
 
 # Credential *reads* to look for in the modules above: attribute access such as

@@ -58,3 +58,16 @@ def test_secrets_not_hardcoded_in_settings():
 
 def test_get_settings_caching():
     assert get_settings() is get_settings()
+
+
+def test_env_example_is_the_lowest_priority_env_file():
+    """Konfigurasi milik developer harus menang atas ``.env.example``.
+
+    pydantic-settings menggabungkan ``env_file`` secara berurutan dan file
+    terakhir yang menang. Bila ``.env.example`` tidak berada di urutan pertama,
+    nilai placeholder yang ter-commit (SECRET_KEY, DB_PASSWORD, token Moodle,
+    dsb.) akan menimpa ``.env`` lokal.
+    """
+    env_file_names = [Path(path).name for path in Settings.model_config["env_file"]]
+
+    assert env_file_names == [".env.example", ".env", ".env"]
