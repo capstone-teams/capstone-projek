@@ -20,7 +20,18 @@ class UserStatus(str, enum.Enum):
 class User(BaseModel):
     __tablename__ = "users"
 
-    name: Mapped[str] = mapped_column(
+    username: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+    )
+
+    firstname: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    
+    lastname: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
     )
@@ -31,7 +42,7 @@ class User(BaseModel):
         unique=True,
     )
 
-    password_hash: Mapped[str | None] = mapped_column(
+    password: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
     )
