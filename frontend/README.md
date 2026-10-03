@@ -40,6 +40,7 @@ Saat sengaja mengubah dependency, gunakan `npm install` lalu sertakan perubahan 
 | `npm run build` | Memeriksa TypeScript dan menghasilkan build di `dist/` |
 | `npm test` | Menguji helper navigasi, lifecycle, mock data, dan API client |
 | `npm run test:e2e` | Menguji halaman dan request state pada browser |
+| `npm run test:design` | Membandingkan visual/style dan navigasi dengan approved implemented mockup (#72) |
 | `npm run verify:foundation` | Lint, build/typecheck, unit test, browser test, dan pemeriksaan kesiapan FE-04.1 |
 | `npm run preview` | Menyajikan hasil build secara lokal pada port 3000 |
 
@@ -115,6 +116,23 @@ tersebut sesuai ekspektasi Playwright. **Hal itu belum berarti foundation siap.*
 `npm run verify:foundation` tetap mengembalikan exit code 1 ketika ada expected
 failure, skipped test, regression, atau hasil yang belum lengkap. Setelah dependency
 terintegrasi, hapus marker expected failure dan jalankan seluruh verifikasi lagi.
+
+### Perbandingan desain FE-04.2
+
+Jalankan `npm run test:design` untuk membandingkan source sekarang dengan implemented
+mockup yang disetujui pada commit `e9807a530771263dda11f460f59ed77653c6df71`.
+Suite ini memeriksa 18 halaman/state/overlay pada tiga viewport, serta alur navigasi
+mahasiswa. Screenshot referensi dibuat dari commit baseline, lalu dibandingkan dengan
+source saat ini pada browser yang sama.
+
+Git, `tar`, dan commit baseline perlu tersedia secara lokal. Dua server Vite memakai
+port 4173 dan 4174; kedua port harus kosong. Tidak ada backend atau dependency npm
+tambahan. Snapshot dan laporan berada di `.cache/design-conformance/`; buka
+`report/index.html` untuk melihat attachment baseline/current. Suite ini terpisah dari
+`test:e2e` dan tidak menimpa hasil readiness FE-04.1.
+
+Hasil, cakupan, perubahan tambahan, dan batas verifikasi tersedia pada
+[laporan kesesuaian desain](../docs/03.%20quality-plan/frontend-design-conformance.md).
 
 ## Troubleshooting: cache npm kehabisan ruang
 

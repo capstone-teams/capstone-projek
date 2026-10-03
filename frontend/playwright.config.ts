@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: '**/*.spec.ts',
+  testMatch: '**/foundation.spec.ts',
   forbidOnly: Boolean(process.env.CI),
   workers: 1,
   retries: 0,
