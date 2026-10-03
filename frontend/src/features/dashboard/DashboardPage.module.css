@@ -1,0 +1,246 @@
+.container {
+  padding: 32px 64px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex: 1;
+}
+
+.pageHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.headingText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pageTitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+}
+
+.pageSubtitle {
+  font-size: 14px;
+  color: #64748B;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btnPrimary {
+  background-color: #1D4ED8;
+  color: #FFFFFF;
+  border: 1px solid #1D4ED8;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btnPrimary:hover {
+  background-color: #1E40AF;
+  border-color: #1E40AF;
+}
+
+.btnSecondary {
+  background-color: #FFFFFF;
+  color: #1D4ED8;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btnSecondary:hover {
+  background-color: #F8FAFC;
+  border-color: #CBD5E1;
+}
+
+/* Empty State Card */
+.emptyCard {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 64px 32px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.emptyTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.emptyDesc {
+  font-size: 14px;
+  color: #64748B;
+  max-width: 560px;
+  line-height: 1.6;
+}
+
+/* Course Grid */
+.courseGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.courseCard {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 200px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.courseCard:hover {
+  border-color: #93C5FD;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.courseCardHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.courseCode {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.courseName {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.courseMeta {
+  font-size: 13px;
+  color: #64748B;
+}
+
+.courseCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid #F1F5F9;
+}
+
+.badgeDraft {
+  background-color: #F1F5F9;
+  color: #475569;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badgeSuccess {
+  background-color: #ECFDF5;
+  color: #047857;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badgeMoodle {
+  background-color: #EFF6FF;
+  color: #1D4ED8;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.emptyActions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1024px) {
+  .container {
+    padding: 24px 32px 48px;
+  }
+  .courseGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 20px 16px 36px;
+  }
+  .pageHeading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .pageTitle {
+    font-size: 22px;
+  }
+  .headerActions {
+    width: 100%;
+  }
+  .headerActions button {
+    width: 100%;
+    min-height: 44px;
+  }
+  .courseGrid {
+    grid-template-columns: 1fr;
+  }
+  .emptyCard {
+    padding: 32px 20px;
+  }
+  .emptyTitle {
+    font-size: 20px;
+  }
+  .emptyActions {
+    width: 100%;
+    flex-direction: column;
+  }
+  .emptyActions button {
+    width: 100% !important;
+    min-height: 44px;
+  }
+}

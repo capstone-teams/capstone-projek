@@ -1,0 +1,194 @@
+.loginWrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 60px 24px;
+  flex: 1;
+}
+
+.loginCard {
+  display: flex;
+  width: 100%;
+  max-width: 960px;
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.brandPanel {
+  width: 440px;
+  background-color: #1D4ED8;
+  color: #FFFFFF;
+  padding: 56px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.brandBadge {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  opacity: 0.9;
+  margin-bottom: 20px;
+}
+
+.brandHeroTitle {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #FFFFFF;
+}
+
+.brandFooter {
+  font-size: 14px;
+  opacity: 0.85;
+  font-weight: 500;
+}
+
+.formPanel {
+  flex: 1;
+  padding: 56px 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.formTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 24px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.formLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.formInput {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #0F172A;
+  background-color: #FFFFFF;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.formInput:focus {
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.buttonRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.btnPrimary {
+  flex: 1;
+  min-width: 160px;
+  height: 44px;
+  background-color: #1D4ED8;
+  color: #FFFFFF;
+  border: 1px solid #1D4ED8;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btnPrimary:hover {
+  background-color: #1E40AF;
+  border-color: #1E40AF;
+}
+
+.btnSecondary {
+  height: 44px;
+  background-color: #FFFFFF;
+  color: #1D4ED8;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btnSecondary:hover {
+  background-color: #F8FAFC;
+  border-color: #CBD5E1;
+}
+
+.helperText {
+  font-size: 13px;
+  color: #64748B;
+  margin-top: 12px;
+}
+
+@media (max-width: 768px) {
+  .loginCard {
+    flex-direction: column;
+  }
+  .brandPanel {
+    width: 100%;
+    padding: 32px 24px;
+    box-sizing: border-box;
+  }
+  .formPanel {
+    padding: 32px 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .loginWrapper {
+    padding: 20px 12px;
+  }
+  .brandPanel {
+    padding: 24px 16px;
+    gap: 16px;
+  }
+  .brandHeroTitle {
+    font-size: 22px;
+  }
+  .formPanel {
+    padding: 24px 16px;
+  }
+  .formTitle {
+    font-size: 20px;
+    margin-bottom: 18px;
+  }
+  .buttonRow {
+    flex-direction: column;
+  }
+  .btnPrimary,
+  .btnSecondary {
+    width: 100%;
+    min-height: 44px;
+  }
+}
