@@ -1,8 +1,8 @@
 // Data dummy untuk mode mock. Bentuk mengikuti contoh response di design-api.md.
 
 export const MOCK_USERS = [
-  { id: 'user_001', username: 'dosen', name: 'Muchammad Chandra Cahyo Utomo, S. Kom., M. Kom.', email: 'chandra.cahyo@itk.ac.id', role: 'instructor' },
-  { id: 'user_002', username: 'mahasiswa', name: 'Noel Sipayung', email: '11211045@student.itk.ac.id', role: 'student' },
+  { id: 'user_001', username: 'dosen', name: 'Dr. Rina Kartika', email: 'rina.kartika@lecturer.itk.ac.id', role: 'instructor' },
+  { id: 'user_002', username: 'mahasiswa', name: 'Andi Saputra', email: 'andi@student.itk.ac.id', role: 'student' },
 ];
 
 // Password apa pun diterima kecuali "salah" (untuk mencoba alur error login).

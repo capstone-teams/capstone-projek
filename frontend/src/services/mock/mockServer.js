@@ -6,6 +6,7 @@
  * Semua data hanya di memori dan hilang saat halaman di-reload.
  */
 import {
+  MOCK_INVALID_PASSWORD,
   MOCK_USERS,
   SAMPLE_TOPICS,
   buildPlanWeeks,
@@ -210,9 +211,14 @@ function startPlanning(course, instruction) {
 
 const handlers = {
   login(_p, { body }) {
-    const user = MOCK_USERS.find((u) => u.username === body?.username || u.email === body?.username);
-    if (!user || body?.password !== user.username + '123') {
+    if (!body?.username || !body?.password || body.password === MOCK_INVALID_PASSWORD) {
       return fail(401, 'AUTHENTICATION_FAILED', 'Username atau password salah.');
+    }
+    // Akun dosen Moodle mana pun diterima sebagai instructor.
+    let user = MOCK_USERS.find((u) => u.username === body.username);
+    if (!user) {
+      user = { id: `user_${body.username}`, username: body.username, name: body.username, email: '', role: 'instructor' };
+      MOCK_USERS.push(user);
     }
     return ok({ access_token: `mock-token:${user.id}`, token_type: 'bearer', user: { id: user.id, role: user.role } });
   },

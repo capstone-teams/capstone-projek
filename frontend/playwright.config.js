@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
     testDir: './tests/e2e',
-    testMatch: '**/foundation.spec.js',
+    testMatch: '**/rakha-runtime.spec.js',
     forbidOnly: Boolean(process.env.CI),
     workers: 1,
     retries: 0,
@@ -13,7 +13,7 @@ export default defineConfig({
     ],
     use: {
         browserName: 'chromium',
-        channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined),
+        channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'chrome' : undefined),
         baseURL: 'http://127.0.0.1:4173',
         viewport: { width: 1440, height: 900 },
         trace: 'retain-on-failure',

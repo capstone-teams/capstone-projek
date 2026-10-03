@@ -1,105 +1,91 @@
-# Penyelarasan approved UI dengan fondasi Rakha
+# Penyelarasan runtime Rakha dan tampilan yang disetujui
 
-Tanggal: 3 Oktober 2026. Branch lokal: `refactor/frontend-foundation-alignment`.
+Tanggal: 3 Oktober 2026. Branch: `refactor/frontend-foundation-alignment`.
 
-## Acuan dan keputusan
+## Keputusan terbaru pengguna
 
-- Approved implemented mockup: `e9807a530771263dda11f460f59ed77653c6df71`.
-- Pekerjaan frontend sebelumnya: FE-03.2, FE-04.1 (`fb88a88`), FE-04.2 (`3c4c1e0`).
-- Sumber fondasi Rakha: `origin/feature/frontend-setup`, commit
-  `accbc21035d378c5d3d9775728354ce2093bf244`.
-- Pengguna menyetujui penyelarasan dengan JS/JSX Rakha sambil mempertahankan UI.
+Pengguna meminta routing, login, akses Moodle dan data mengikuti Rakha karena
+penyelarasan sebelumnya mengubah terlalu banyak bagian fungsional.
+Laporan ini menggantikan hasil integrasi selektif pada commit `713f886`.
 
-Integrasi dilakukan selektif terhadap source fondasi. Seluruh UI Moodle replica
-Rakha tidak diambil. Tidak ada merge atau push langsung ke `develop`.
+Sumber Rakha: `origin/feature/frontend-setup`, commit
+`accbc21035d378c5d3d9775728354ce2093bf244`.
+Desain sebelumnya: implemented mockup `e9807a530771263dda11f460f59ed77653c6df71`.
 
-## Perubahan
+## Yang dikembalikan ke implementasi Rakha
 
-1. Source, konfigurasi aktif, dan pengujian frontend menjadi JS/JSX. Build memakai
-   Vite; Vitest menggantikan node test runner TypeScript. CSS Modules dipertahankan.
-2. BrowserRouter menggantikan manipulasi history manual. URL semantik tetap ada;
-   `/my` dan `/ai` memberi jalur masuk yang kompatibel dengan fondasi Rakha.
-3. AuthProvider memulihkan session melalui backend `/auth/me`, memvalidasi login,
-   mengambil role dari user, serta menghapus session pada logout/401. Respons
-   lama tidak dapat memulihkan session setelah logout atau login berikutnya.
-4. Guard mengarahkan pengguna anonim ke login, menolak role yang salah, dan
-   menampilkan halaman tidak ditemukan untuk route yang tidak terdaftar.
-   Halaman materi merupakan route bersama yang tetap memerlukan session.
-   Aksi kembali/breadcrumb penampil materi mahasiswa menuju halaman mahasiswa,
-   dengan layout dan label baseline tetap dipertahankan.
-5. Service JS, mock backend workflow, hooks, dan helpers dari Rakha tersedia.
-   API facade disambungkan ke validasi/error mapping HTTP FE-03.2. Request state
-   pada approved pages menggunakan `useApi` bersama dengan cleanup request lama.
-6. Auth aplikasi mengikuti dokumentasi `moodle-integration.md`: frontend menuju
-   backend. Client Moodle browser dan token Moodle dari UI Rakha tidak diambil.
-   Login backend nyata memakai email pada field `username` sesuai schema backend.
+- Route tree App.jsx dan main.jsx.
+- AuthProvider/RequireAuth: login/token.php Moodle, resolveSession dan role Moodle,
+  sesi Moodle, percobaan login backend terpisah untuk dosen, logout.
+- Seluruh hooks, API client, services dan fixture mock asli Rakha.
+- Halaman aktif di pages/: data Moodle, RPS, project, preferensi, generate plan,
+  approval, generation content, review, execution dan verification.
+- Konfigurasi env Moodle + backend, proxy Vite, Tailwind dan DOMPurify.
 
-## Perubahan visual yang diperlukan
+Aksi fitur sekarang terhubung dengan service Rakha. Fixture Aljabar dan controller
+simulasi lokal lama tidak menjadi sumber aplikasi. Route lama tidak dibuat alias.
 
-- Petunjuk login berisi akun/password demo yang sekarang divalidasi. Jumlah
-  karakter password dan wrapping petunjuk berubah, sehingga posisi vertikal
-  kartu login dapat bergeser. Tipografi, warna, ukuran kontrol, dan CSS tetap.
-- Menu akun tidak lagi menyediakan tombol untuk mengganti role. Menu menampilkan
-  role akun aktif, profil dosen, dan logout dengan style yang sudah ada.
+## Perubahan pada tampilan
 
-Tidak ditambahkan sidebar atau navigasi utama baru. Halaman fitur, upload modal,
-dan profile modal dibandingkan langsung dengan baseline yang disetujui.
+- Header Agentic LMS + ITK, nama akun dan dropdown memakai CSS desain sebelumnya.
+  Link menu menggunakan route Rakha; logout menggunakan provider Rakha.
+- Form login menggunakan dua panel desain sebelumnya. Handler login, error
+  Moodle, pemulihan password dan tujuan navigasi tetap mengikuti Rakha.
+- Kartu kursus memakai CSS Modules desain sebelumnya, dengan field data Moodle.
+- Warna, font, margin dan kontrol mengikuti token desain sebelumnya.
+- Navbar utama dan drawer tidak dibuat. Sidebar kursus diganti indeks expandable
+  dalam konten; API, context Outlet dan tautan kursus tidak berubah.
+- Dashboard dan pemilih minggu ditata dalam konten, tanpa sidebar.
 
-## Batas integrasi
+Halaman fitur memakai markup fungsional Rakha dengan tema desain sebelumnya.
+Hasilnya belum dinyatakan identik pixel dengan mockup lama. Data dan kelengkapan
+fitur Rakha membuat beberapa isi/tata letak berbeda dan perlu review visual tim.
 
-- Mata kuliah/silabus/materi masih memakai presentation fixture FE-03.2.
-- Upload RPS, proses AI, perubahan profil, course plan, dan publish Moodle pada
-  approved UI masih simulasi lokal; state workflow belum persisten pada backend.
-- Mock backend Rakha memiliki fixture dan response shape berbeda. Adapter data
-  dan penyambungan aksi fitur perlu dikerjakan per issue agar visual tetap sama.
-- Mode mock tidak membutuhkan Docker. Mode auth nyata memerlukan backend dan
-  CORS; Moodle Docker hanya diperlukan untuk pengujian Moodle nyata melalui
-  backend. Compose repository saat ini menyediakan backend dan database.
-- Mekanisme auth WebSocket nyata belum menjadi kontrak final. Service monitoring
-  yang diambil dari Rakha belum digunakan pada approved UI.
+## Source lama dan riwayat
 
-## Verifikasi
+Controller/facade lama dipertahankan sebagai source tidak aktif. Routing hanya
+mengimpor pages Rakha. Penghapusan massal ditolak oleh automatic approval review;
+revisi ini menggunakan perubahan file spesifik tanpa menghapus source tersebut.
+Pekerjaan lama juga tersedia pada commit/branch sebelumnya.
 
-Hasil final pada Node.js 22.16.0 dan Microsoft Edge (Playwright):
+## Moodle, backend dan Docker
+
+Mode default: dua mock, tanpa Docker. VITE_MOODLE_MOCK=false menghubungkan browser
+langsung ke Web Service Moodle. VITE_USE_MOCK=false mengaktifkan backend AI nyata.
+Moodle biasanya pada 8080; proxy backend Vite menuju 8000 sesuai env Rakha.
+Login Moodle dapat berhasil walaupun login backend AI gagal; ini perilaku Rakha.
+Mock backend hanya in-memory, sehingga reload mengembalikan fixture awal.
+
+Dokumen arsitektur sebelumnya menjelaskan Moodle lewat backend. Pengguna memilih
+runtime Rakha sebagai dasar saat ini; perbedaan dokumen/implementasi perlu dibahas
+tim saat review. Tidak dilakukan perubahan backend atau Moodle server.
+
+## Verifikasi revisi ini
+
+Hasil final revisi ini:
 
 | Pemeriksaan | Hasil |
 | --- | --- |
-| `npm run lint` | Lulus tanpa error/warning |
-| `npm run build` | Lulus, 82 modules |
-| `npm test` | 86 tes lulus pada 5 file |
-| `npm run test:e2e` | 32 tes lulus, tidak ada expected failure atau skip |
-| `node scripts/check-foundation-readiness.mjs` | Exit 0; 0 blocker, 0 incomplete |
-| `npm run test:design` | 55 tes lulus pada tiga viewport |
-| `git diff --cached --check` | Lulus |
+| npm run lint | Lulus, tanpa error/warning |
+| npm run build | Lulus, 83 modules; warning dynamic import yang juga ada pada source Rakha |
+| npm test | 50 tes Rakha lulus, 4 file |
+| npm run test:e2e | 17 tes lulus, tanpa skip/expected failure |
+| npm run test:design | 9 pemeriksaan presentasi lulus pada 375/768/1440 px |
+| Perbandingan source | 54 file source identik dengan Rakha setelah normalisasi newline; 6 file berbeda untuk presentasi |
 
-Gate dijalankan per tahap; tahap readiness membaca hasil full suite browser.
-Pengujian mencakup credential invalid, restore session, logout/Back, role guard,
-deep link, navigasi materi mahasiswa, race respons lama, HTTP Bearer/error mapping,
-mock workflow, dan perbandingan desain. Lima blocker auth/routing pada laporan
-FE-04.1 lama kini lulus sebagai tes normal.
+Enam file presentasi: MoodleLayout, CourseCard, LoginPage, Moodle CourseLayout,
+Moodle DashboardPage dan global.css. CSS Modules desain sebelumnya ditambahkan
+sebagai aset presentasi. Controller lama tetap tidak aktif.
 
-Pengujian HTTP memakai fetch stub; belum dilakukan login ke backend nyata atau
-pengujian Moodle nyata. Hasil ini memverifikasi fondasi frontend dengan mock.
+Screenshot lokal untuk review ada di frontend/.cache/review-1440-login.png,
+review-1440-dashboard.png, review-1440-content.png dan review-375-content.png.
+Pemeriksaan desain menguji style dan batas konten, bukan kesamaan pixel dengan
+mockup lama. Belum ada persetujuan visual baru dari pengguna.
 
-Desain diuji pada 375, 768, dan 1440 px. Sebanyak 48 kasus tetap memakai
-perbandingan screenshot nol perbedaan dan computed style terhadap commit
-approved. Enam kasus login/menu mencatat pengecualian fungsi di atas: login
-memeriksa style, ukuran dan posisi horizontal; menu memeriksa aksi yang tersedia.
-Satu kasus tambahan membandingkan flow navigasi mahasiswa.
+Alur login pada pengujian browser berakhir di /my seperti runtime Rakha, termasuk
+ketika masuk dari halaman yang terproteksi. Tidak ditambahkan pengubahan redirect.
+Suite sebelumnya 86 unit/32 browser/55 design bukan bukti untuk revisi ini.
+Browser suite memakai Chrome terisolasi. Pengujian memakai mock; Moodle dan backend
+nyata serta deployment belum diverifikasi.
 
-Perbandingan visual selesai sebelum penyesuaian callback navigasi balik materi
-mahasiswa; penyesuaian itu tidak mengubah render/CSS. Gate browser final memeriksa
-callback tersebut bersama seluruh 31 kasus lainnya. Screenshot dan HTML report
-tersimpan pada `frontend/.cache/design-conformance/` dan `.cache/playwright/`.
-
-## Status publikasi dan aturan integrasi
-
-Perubahan pada branch ini belum dipush. Draft PR #85 tetap mengacu pada branch
-FE-03.2 lama, sehingga PR tersebut belum memuat penyelarasan ini. Branch lama
-disimpan sebagai riwayat; tidak dilakukan revert massal atau penghapusan branch.
-
-Sebelum integrasi tim: sinkronkan dengan `develop`, review perbedaan dengan branch
-Rakha, lalu ajukan PR yang jelas sumbernya. Ikuti `aturan.md`: review/approval
-anggota lain, gate lulus, konflik diselesaikan, dan squash merge ke `develop`.
-Jangan merge seluruh branch UI Rakha sesudah penyelarasan ini tanpa rekonsiliasi,
-karena kedua branch mengubah source frontend yang sama dengan desain berbeda.
+Tidak ada push, merge develop atau perubahan PR draft #85 pada revisi ini.

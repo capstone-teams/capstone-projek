@@ -1,177 +1,133 @@
 # Frontend — Agentic LMS
 
-Frontend React + JavaScript/JSX dengan Vite, npm, ESLint, React Router, dan Vitest.
-Tampilan memakai implemented mockup yang disetujui. Fondasi routing, authentication,
-session, hooks, dan service diselaraskan dengan pekerjaan Rakha (`accbc21`).
-Data mata kuliah dan workflow feature masih memakai mock.
+Runtime React + JavaScript/JSX mengikuti Rakha di `origin/feature/frontend-setup`,
+commit `accbc21035d378c5d3d9775728354ce2093bf244`. Routing, AuthProvider, hooks,
+service, data mock, dan aksi fitur menggunakan implementasi tersebut.
+Penyesuaian kita ada pada presentasi: warna/typography, header akun, form login,
+kartu kursus dan tata letak tanpa navbar utama/sidebar.
 
-Keputusan migrasi dan batas integrasi dicatat pada
-[laporan penyelarasan](../docs/03.%20quality-plan/frontend-rakha-alignment.md).
+## Menjalankan
 
-Hasil dan dependensi verifikasi FE-04.1 tersedia pada
-[laporan verifikasi](../docs/03.%20quality-plan/frontend-foundation-verification.md).
-
-## Prasyarat
-
-- Node.js 22.13+ pada seri 22, atau >=24 (setup ini diverifikasi dengan Node.js 22.16.0).
-- npm >=10 (setup ini menggunakan npm 10.9.2).
-- Backend tidak diperlukan untuk menjalankan aplikasi dalam mode mock.
-
-## Setup lokal
-
-Dari root repository:
-
-```bash
+```powershell
 cd frontend
 npm ci
 npm run dev
 ```
 
-Buka http://localhost:3000. Hentikan server dengan Ctrl+C.
-Vite menggunakan port 3000 agar sesuai dengan origin development pada `backend/.env.example`.
-Jika port sudah digunakan, hentikan proses yang menggunakan port tersebut. Server tidak otomatis berpindah port.
+Buka http://localhost:3000. Jika sebelumnya ada Vite yang berjalan, restart setelah
+perubahan dependency atau `.env.local`. Port 3000 tidak berganti otomatis.
 
-Gunakan `npm ci` untuk instalasi bersih sesuai `package-lock.json`.
-Saat sengaja mengubah dependency, gunakan `npm install` lalu sertakan perubahan manifest dan lockfile dalam PR.
+Mode default tidak membutuhkan backend atau Moodle Docker:
 
-## Perintah
-
-| Perintah | Fungsi |
-| --- | --- |
-| `npm run dev` | Development server dengan hot reload |
-| `npm run lint` | Memeriksa JavaScript/JSX, React Hooks, dan Fast Refresh |
-| `npm run build` | Menghasilkan build production di `dist/` |
-| `npm test` | Vitest: navigasi, lifecycle, session, API client, dan mock workflow |
-| `npm run test:e2e` | Menguji halaman dan request state pada browser |
-| `npm run test:design` | Membandingkan visual/style dan navigasi dengan approved implemented mockup (#72) |
-| `npm run verify:foundation` | Lint, build, unit test, browser test, dan pemeriksaan kesiapan FE-04.1 |
-| `npm run preview` | Menyajikan hasil build secara lokal pada port 3000 |
-
-Jalankan preview setelah build dan setelah menghentikan development server. Preview bukan server deployment production.
-
-## Struktur
-
-```text
-frontend/
-  public/            # Aset statis yang disalin apa adanya
-  src/
-    assets/          # Aset yang diimpor source code
-    components/      # Komponen UI reusable
-    hooks/           # Custom React hooks
-    features/        # Halaman dan komponen per domain
-    services/        # API client, service contract, mock adapter, dan request state
-    styles/          # CSS global baseline UI
-    utils/           # Fungsi utilitas
-    context/         # AuthProvider dan session aplikasi
-    App.jsx          # Routing dan komposisi halaman UI yang disetujui
-    main.jsx         # Entry point React, BrowserRouter, AuthProvider
-  tests/             # Unit test dan browser test (e2e/)
-  scripts/           # Pemeriksaan readiness dari hasil browser test
-  playwright.config.js # Browser, laporan, dan server pengujian
-  index.html         # Dokumen HTML dan mount point
-  vite.config.js     # Plugin React, Vitest, dan port server
-  eslint.config.js   # Konfigurasi lint
-  package.json       # Dependency dan scripts
-  package-lock.json  # Versi dependency yang dikunci
-```
-
-Folder kosong dilacak dengan `.gitkeep`; hapus placeholder ketika menambahkan file pertama.
-
-## Konfigurasi dan batas integrasi
-
-Mode mock berjalan tanpa `.env`, backend, atau Docker. Akun demo:
-
-| Username | Password | Role |
+| Akun Moodle mock | Kata sandi | Nama |
 | --- | --- | --- |
-| `dosen` | `dosen123` | Dosen |
-| `mahasiswa` | `mahasiswa123` | Mahasiswa |
+| dosen | dosen123 | Rina Kartika |
+| mahasiswa | mahasiswa123 | Andi Saputra |
 
-Password divalidasi. Role berasal dari `/auth/me`; pergantian role dilakukan dengan
-logout lalu login ke akun lain. Semua feature page memerlukan session. Materi dapat
-dibuka kedua role, sedangkan halaman dosen/mahasiswa memiliki guard masing-masing.
-Route `/my` menuju beranda akun, `/ai` menuju halaman dosen, dan route yang tidak
-terdaftar menampilkan halaman tidak ditemukan setelah login.
+Mata kuliah Pemrograman Web/Basis Data berasal dari fixture Rakha. Nama dan isi
+halaman dapat berbeda dari mockup lama, karena sekarang halaman memakai sumber
+data Rakha, bukan fixture Aljabar di UI lama.
 
-Untuk authentication backend nyata, salin `.env.example` ke `.env.local`, set
-`VITE_USE_MOCK=false`, dan sesuaikan `VITE_API_BASE_URL`. Restart Vite. Isi kolom
-Username dengan **email** user backend: kontrak login menamai field-nya `username`,
-tetapi backend memverifikasi email. Akun demo tidak tersedia pada backend nyata.
-Backend perlu berjalan dan mengizinkan origin `http://localhost:3000` pada CORS.
+## Routing Rakha
 
-Token aplikasi disimpan oleh AuthProvider pada `agentic-lms.token`. Session dicek
-kembali saat reload dan dihapus saat logout atau respons 401. Frontend tidak
-mengirim request langsung ke Moodle dan tidak menyimpan token Moodle.
-Variabel Vite berawalan `VITE_` masuk ke bundle browser sehingga hanya boleh berisi konfigurasi publik, bukan secret.
-Frontend berkomunikasi dengan Backend API; prefix yang tertulis pada spesifikasi adalah `/api/v1`. Credential Moodle dan provider LLM tetap dikelola backend.
+| URL | Fungsi |
+| --- | --- |
+| `/login` | Login Moodle |
+| `/` | Mengarah ke `/my` setelah login |
+| `/my` | Dasbor Moodle |
+| `/my/courses` | Kursus yang diikuti/diajar |
+| `/user/profile` | Profil pengguna Moodle |
+| `/course/:courseId` | Isi kursus Moodle |
+| `/course/:courseId/participants` | Peserta |
+| `/course/:courseId/grades` | Nilai |
+| `/course/:courseId/mod/:cmid` | Materi/aktivitas Moodle |
+| `/ai` | Project Generator AI, khusus dosen |
+| `/ai/rps` dan `/ai/rps/:rpsId` | RPS dan analisis |
+| `/ai/profile` | Preferensi mengajar |
+| `/ai/courses/new` | Membuat project |
+| `/ai/courses/:courseId` | Ringkasan project |
+| `/ai/courses/:courseId/plan`, `/content`, `/review`, `/moodle` | Tahapan workflow di bawah project yang sama |
 
-## Keputusan awal issue #18 dan perubahan berikutnya
+URL lama seperti `/dashboard`, `/course-plan`, dan `/student/...` tidak dipasang
+sebagai alias. Navigasi antarfungsi tersedia melalui menu akun dan tab halaman.
+Tidak ada navbar utama atau sidebar baru.
 
-- Setup awal React + TypeScript mengikuti acceptance criteria issue #18.
-- Vite dipakai sebagai build tool untuk web client yang terpisah dari backend FastAPI.
-- npm dan lockfile digunakan untuk instalasi konsisten antar anggota tim.
-- Pada 3 Oktober 2026, pengguna menyetujui penyelarasan dengan source JS/JSX Rakha
-  sambil mempertahankan desain yang sudah diimplementasikan. Konfigurasi TypeScript
-  diganti dengan lint JS/JSX dan Vitest; CSS Modules yang disetujui dipertahankan.
-- React Router dan AuthProvider menangani navigasi dan session. Service async
-  memakai hook bersama; feature workflow lokal tetap simulasi UI sampai adapter
-  response backend dan endpoint fitur disambungkan.
+## Login, Moodle, dan backend
 
-Acuan: [Vite Getting Started](https://vite.dev/guide/), [System Design](../docs/02.%20design/design-system.md), [API Specification](../docs/02.%20design/design-api.md), dan [aturan kerja](../aturan.md).
+1. AuthProvider meminta token Moodle lewat `login/token.php`, kemudian mengambil
+   user dan peran dari hak akses kursus Moodle. Token sesi disimpan di
+   `agentic-lms.moodle-session` seperti implementasi Rakha.
+2. Untuk dosen, provider juga mencoba login ke backend capstone dan menyimpan
+   token backend terpisah pada `agentic-lms.token`. Kegagalan login backend tidak
+   menggagalkan login Moodle. Login Moodle berhasil belum menjamin fitur AI pada
+   backend nyata bisa dipakai.
+3. Kursus, peserta, nilai, timeline, profil dan aktivitas menggunakan
+   `services/moodle/`. Fitur RPS, project, rencana, konten, review, eksekusi dan
+   verifikasi menggunakan service backend Rakha. Aksi UI memanggil service itu.
+4. Logout menghapus kedua sesi. Semua ini mengikuti Rakha; perubahan auth
+   backend-only pada commit `713f886` sudah digantikan.
 
-## Verifikasi sebelum PR
+Salin `.env.example` ke `.env.local` untuk memilih koneksi:
 
-1. Jalankan `npm ci` pada checkout bersih.
-2. Jalankan `npm run verify:foundation`.
-3. Periksa laporan HTML di `.cache/playwright/report/index.html` dan laporan verifikasi FE-04.1.
-4. Jalankan `npm run dev`, buka http://localhost:3000, dan review UI terhadap baseline yang disetujui.
-5. Catat hasil, dependency, dan known blocking issue pada PR yang merujuk issue terkait.
+| Variabel | Default | Fungsi |
+| --- | --- | --- |
+| `VITE_MOODLE_MOCK` | true | false memakai Web Service Moodle nyata |
+| `VITE_MOODLE_URL` | http://localhost:8080 | Alamat Moodle dan tautan Buka Moodle |
+| `VITE_MOODLE_SERVICE` | moodle_mobile_app | Service login/token.php |
+| `VITE_USE_MOCK` | true | false memakai backend capstone nyata |
+| `VITE_API_BASE_URL` | /api/v1 | Prefix API backend |
+| `VITE_BACKEND_URL` | http://localhost:8000 | Tujuan proxy Vite untuk /api |
 
-### Browser test FE-04.1
+Untuk integrasi nyata, server, akun, izin web service dan CORS perlu disiapkan.
+Tidak cukup hanya mengubah satu flag: mock Moodle dan mock backend dikontrol
+secara terpisah. Jangan memasukkan secret deployment ke variabel VITE_*.
+Dokumen arsitektur sebelumnya mendeskripsikan akses Moodle melalui backend;
+perbedaan dengan runtime Rakha ini dicatat di laporan penyelarasan untuk review tim.
 
-Pada Windows, konfigurasi memakai Microsoft Edge yang sudah terpasang. Pada sistem
-lain, pasang Chromium untuk Playwright dengan `npx playwright install chromium`.
-Channel dapat dipilih melalui environment variable `PLAYWRIGHT_CHANNEL`, misalnya
-`msedge` atau `chrome`; browser tersebut perlu terpasang.
+Mock backend berjalan di memori dan workflow kembali ke fixture awal saat reload.
+Persistensi dan eksekusi Moodle nyata belum diverifikasi.
 
-Playwright menjalankan server Vite sendiri di `127.0.0.1:4173` dan menutupnya setelah
-tes selesai. Port tersebut harus kosong. Server development port 3000 dapat tetap
-berjalan. Browser menggunakan context terisolasi dan service mock tanpa Backend.
-Laporan, screenshot, dan trace tersimpan di `.cache/playwright/`, yang diabaikan Git.
+## Struktur aktif
 
-Lima kasus authentication/role/route yang sebelumnya expected failure kini menjadi
-tes normal. `npm run verify:foundation` mengembalikan exit code 1 jika ada expected
-failure, skipped test, regression, atau hasil yang belum lengkap; gate ini tidak
-menganggap expected failure sebagai bukti kesiapan.
+- `src/App.jsx`: route tree Rakha.
+- `src/pages/`: seluruh halaman aktif, termasuk login.
+- `src/context/`, `src/hooks/`, `src/services/`: runtime Rakha.
+- `src/components/MoodleLayout.jsx`: header desain lama dengan session Rakha.
+- `src/styles/`: Tailwind untuk komponen Rakha serta token desain yang disetujui.
+- CSS Modules login/header/kartu kursus lama digunakan kembali.
 
-### Perbandingan desain FE-04.2
+Controller JS/JSX lama di `src/features/`, `src/components/layout/` dan facade
+`services/index.js`/`mockCourseService.js` tidak dipakai oleh aplikasi aktif.
+File tersebut tetap tersimpan sebagai referensi; entry point hanya memakai pages
+Rakha. Jangan menyambungkan fitur baru ke controller/facade lama tersebut.
 
-Jalankan `npm run test:design` untuk membandingkan source sekarang dengan implemented
-mockup yang disetujui pada commit `e9807a530771263dda11f460f59ed77653c6df71`.
-Suite ini memeriksa 18 halaman/state/overlay pada tiga viewport, serta alur navigasi
-mahasiswa. Screenshot referensi dibuat dari commit baseline, lalu dibandingkan dengan
-source saat ini pada browser yang sama. Sebanyak 48 kasus memakai perbandingan
-pixel/style penuh; enam kasus login/menu memeriksa perubahan fungsi yang dicatat
-di laporan penyelarasan. Alur navigasi mahasiswa menjadi kasus ke-55.
-
-Git, `tar`, dan commit baseline perlu tersedia secara lokal. Dua server Vite memakai
-port 4173 dan 4174; kedua port harus kosong. Tidak ada backend atau dependency npm
-tambahan. Snapshot dan laporan berada di `.cache/design-conformance/`; buka
-`report/index.html` untuk melihat attachment baseline/current. Suite ini terpisah dari
-`test:e2e` dan tidak menimpa hasil readiness FE-04.1.
-
-Hasil, cakupan, perubahan tambahan, dan batas verifikasi tersedia pada
-[laporan kesesuaian desain](../docs/03.%20quality-plan/frontend-design-conformance.md).
-
-## Troubleshooting: cache npm kehabisan ruang
-
-Jika instalasi menampilkan `ENOSPC` karena drive cache npm penuh, gunakan cache lokal pada drive repository. Dari folder frontend, jalankan di PowerShell:
+## Verifikasi
 
 ```powershell
-$env:npm_config_cache = Join-Path (Get-Location) '.cache/npm'
-$env:TEMP = Join-Path (Get-Location) '.cache/tmp'
-$env:TMP = $env:TEMP
-New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
-npm ci
+npm run lint
+npm run build
+npm test
+npm run test:e2e
+npm run test:design
 ```
 
-Pengaturan tersebut hanya berlaku pada sesi terminal itu. Folder `.cache/` sudah diabaikan Git.
+Unit test menjalankan suite API/Moodle/workflow/pages Rakha. Browser test aktif:
+`rakha-runtime.spec.js` untuk route/login/workflow, `rakha-presentation.spec.js`
+untuk style dan batas konten pada 375/768/1440 px, dengan screenshot review.
+`verify:foundation` memeriksa lint/build/unit/browser dan hasil readiness.
+
+Ini bukan perbandingan pixel penuh dengan mockup lama: data, route dan isi fitur
+sekarang mengikuti Rakha. Suite lama foundation/design-conformance tetap tersimpan
+sebagai referensi historis dan tidak dijalankan oleh konfigurasi saat ini.
+Laporan sebelumnya (86/32/55 tes) tidak berlaku untuk revisi ini.
+
+Di Windows browser test memakai Chrome terisolasi. `PLAYWRIGHT_CHANNEL` bisa
+mengubah channel; pada sistem lain pasang Chromium menggunakan
+`npx playwright install chromium`. Server pengujian memakai port 4173, bukan 3000.
+Laporan ada di `.cache/playwright/` dan `.cache/design-conformance/`.
+
+Jika cache npm di drive C penuh, gunakan `npm ci --cache .cache/npm`.
+
+Lihat [laporan penyelarasan](../docs/03.%20quality-plan/frontend-rakha-alignment.md)
+dan [aturan kerja](../aturan.md). Semua perubahan saat ini di branch
+`refactor/frontend-foundation-alignment`; tidak push langsung ke develop.

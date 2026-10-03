@@ -1,3 +1,5 @@
+> Catatan riwayat: laporan ini merekam revisi sebelum runtime Rakha dipulihkan. Hasil dan metode pengujian terbaru ada di [laporan penyelarasan](frontend-rakha-alignment.md).
+
 # FE-04.1 — Frontend Foundation Verification
 
 > Laporan historis untuk branch verifikasi TS/TSX. Untuk hasil setelah integrasi

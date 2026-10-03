@@ -1,3 +1,5 @@
+> Catatan riwayat: laporan ini merekam revisi sebelum runtime Rakha dipulihkan. Hasil dan metode pengujian terbaru ada di [laporan penyelarasan](frontend-rakha-alignment.md).
+
 # FE-04.2 — Verify M01 Design Conformance
 
 > Laporan historis sebelum integrasi authentication. Verifikasi JS/JSX terbaru

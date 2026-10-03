@@ -1,8 +1,9 @@
 import { api, setToken } from './apiClient';
 
-// design-api.md §5; real Backend expects email in the field named "username".
+// design-api.md §5
 export async function login(username, password) {
   const data = await api.post('/auth/login', { username, password });
+  setToken(data.access_token);
   return data;
 }
 

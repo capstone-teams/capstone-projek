@@ -6,30 +6,25 @@ import { useLatest } from './useLatest';
  * Mengembalikan { data, error, loading, reload, setData }.
  */
 export function useApi(fetcher, deps = []) {
-  const [state, setState] = useState({ data: null, error: null, loading: true, dependencies: null });
+  const [state, setState] = useState({ data: null, error: null, loading: true });
   const fetcherRef = useLatest(fetcher);
-  const depsRef = useLatest(deps);
   const callId = useRef(0);
 
   const reload = useCallback(async ({ silent = false } = {}) => {
     const id = ++callId.current;
-    const dependencies = depsRef.current;
-    if (!silent) setState({ data: null, loading: true, error: null, dependencies });
+    if (!silent) setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const data = await fetcherRef.current();
-      if (id === callId.current) setState({ data, error: null, loading: false, dependencies });
+      if (id === callId.current) setState({ data, error: null, loading: false });
       return data;
     } catch (error) {
-      if (id === callId.current) setState((s) => ({ ...s, error, loading: false, dependencies }));
+      if (id === callId.current) setState((s) => ({ ...s, error, loading: false }));
       return null;
     }
-  }, [fetcherRef, depsRef]);
+  }, [fetcherRef]);
 
   useEffect(() => {
     reload();
-    // This is a request generation counter, not a DOM ref; invalidate the latest request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { callId.current++; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
@@ -37,9 +32,7 @@ export function useApi(fetcher, deps = []) {
     setState((s) => ({ ...s, data: typeof updater === 'function' ? updater(s.data) : updater }));
   }, []);
 
-  const current = state.dependencies?.length === deps.length
-    && deps.every((value, index) => Object.is(value, state.dependencies[index]));
-  return { ...(current ? state : { data: null, error: null, loading: true }), reload, setData };
+  return { ...state, reload, setData };
 }
 
 /**

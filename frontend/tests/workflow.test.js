@@ -1,6 +1,5 @@
-// Adapted from Rakha accbc21: validated demo credentials and provider-owned token.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setToken, ApiError } from '../src/services/apiClient';
+import { ApiError } from '../src/services/apiClient';
 import * as auth from '../src/services/authService';
 import * as rps from '../src/services/rpsService';
 import * as courses from '../src/services/courseService';
@@ -15,12 +14,10 @@ beforeEach(async () => {
   configureMock({ latencyMs: 0, stepMs: 10 });
   resetMockDb();
   localStorage.clear();
-  setToken((await auth.login('dosen', 'dosen123')).access_token);
+  await auth.login('dosen', 'rahasia');
 });
 
 afterEach(() => {
-  auth.logout();
-  resetMockDb();
   vi.useRealTimers();
 });
 
@@ -34,7 +31,7 @@ async function expectApiError(promise, status, code) {
 describe('auth', () => {
   it('mengembalikan user setelah login', async () => {
     const me = await auth.getCurrentUser();
-    expect(me).toMatchObject({ name: 'Muchammad Chandra Cahyo Utomo, S. Kom., M. Kom.', role: 'instructor' });
+    expect(me).toMatchObject({ name: 'Dr. Rina Kartika', role: 'instructor' });
   });
 
   it('menolak password salah dengan format error standar', async () => {
@@ -47,7 +44,7 @@ describe('auth', () => {
   });
 
   it('menolak mahasiswa untuk operasi dosen (authorization matrix)', async () => {
-    setToken((await auth.login('mahasiswa', 'mahasiswa123')).access_token);
+    await auth.login('mahasiswa', 'x');
     expect((await auth.getCurrentUser()).role).toBe('student');
     await expectApiError(courses.listCourses(), 403, 'AUTHORIZATION_DENIED');
   });

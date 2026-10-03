@@ -1,54 +1,76 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './authContext';
-import * as authService from '../services/authService';
-import { getToken, setToken, onUnauthorized } from '../services/apiClient';
+import { onMoodleTokenInvalid, requestToken, setMoodleToken } from '../services/moodle/moodleClient';
+import { resolveSession } from '../services/moodle/moodleApi';
+import * as backendAuth from '../services/authService';
+import { MOODLE_SESSION_KEY } from '../services/config';
 
-function normalizeUser(user) {
-  const role = { instructor: 'dosen', student: 'mahasiswa' }[user.role] ?? user.role;
-  const name = user.name ?? [user.firstname, user.lastname].filter(Boolean).join(' ');
-  return { ...user, role, name };
+function readStoredToken() {
+  try {
+    return JSON.parse(localStorage.getItem(MOODLE_SESSION_KEY))?.token ?? null;
+  } catch {
+    return null;
+  }
 }
 
-/** Rakha's provider/session pattern, adapted to the documented Backend boundary. */
+function storeToken(token) {
+  try {
+    if (token) localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token }));
+    else localStorage.removeItem(MOODLE_SESSION_KEY);
+  } catch {
+    // localStorage tidak tersedia: sesi hanya hidup selama tab terbuka.
+  }
+}
+
+/**
+ * Sesi login memakai akun Moodle (login/token.php).
+ * Peran dosen/mahasiswa diturunkan dari hak akses user di course Moodle.
+ */
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [initializing, setInitializing] = useState(() => Boolean(getToken()));
-  const generation = useRef(0);
+  const [session, setSession] = useState(null);
+  const [initializing, setInitializing] = useState(() => !!readStoredToken());
+
   const logout = useCallback(() => {
-    generation.current++;
-    authService.logout();
-    setUser(null);
-    setInitializing(false);
+    setMoodleToken(null);
+    storeToken(null);
+    backendAuth.logout();
+    setSession(null);
   }, []);
+
   useEffect(() => {
-    let active = true;
-    const epoch = generation.current;
-    onUnauthorized(logout);
-    if (getToken()) {
-      authService.getCurrentUser().then((next) => {
-        if (active && epoch === generation.current) setUser(normalizeUser(next));
-      }).catch(() => {
-        if (active && epoch === generation.current) logout();
-      }).finally(() => { if (active && epoch === generation.current) setInitializing(false); });
-    }
-    return () => { active = false; onUnauthorized(null); };
+    onMoodleTokenInvalid(logout);
+    const token = readStoredToken();
+    if (!token) return;
+    setMoodleToken(token);
+    resolveSession()
+      .then(setSession)
+      .catch(() => logout())
+      .finally(() => setInitializing(false));
   }, [logout]);
+
   const login = useCallback(async (username, password) => {
-    const epoch = ++generation.current;
-    const session = await authService.login(username.trim(), password);
-    if (epoch !== generation.current) throw new Error('Login dibatalkan.');
-    setToken(session.access_token);
+    const token = await requestToken(username, password);
+    setMoodleToken(token);
+    let next;
     try {
-      const next = normalizeUser(await authService.getCurrentUser());
-      if (epoch !== generation.current) throw new Error('Login dibatalkan.');
-      setUser(next);
-      setInitializing(false);
-      return next;
-    } catch (error) {
-      if (epoch === generation.current) logout();
-      throw error;
+      next = await resolveSession();
+    } catch (e) {
+      setMoodleToken(null);
+      throw e;
     }
-  }, [logout]);
-  const value = useMemo(() => ({ user, initializing, login, logout }), [user, initializing, login, logout]);
+    storeToken(token);
+    setSession(next);
+
+    // Fitur Generator AI memakai backend capstone; kegagalannya tidak menghalangi akses Moodle.
+    if (next.user.role === 'dosen') {
+      backendAuth.login(username, password).catch(() => {});
+    }
+    return next;
+  }, []);
+
+  const value = useMemo(
+    () => ({ session, user: session?.user ?? null, site: session?.site ?? null, initializing, login, logout }),
+    [session, initializing, login, logout],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
