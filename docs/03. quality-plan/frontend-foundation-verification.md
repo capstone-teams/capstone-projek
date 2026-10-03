@@ -1,154 +1,149 @@
-> Catatan riwayat: laporan ini merekam revisi sebelum runtime Rakha dipulihkan. Hasil dan metode pengujian terbaru ada di [laporan penyelarasan](frontend-rakha-alignment.md).
+# FE-04.1 — Verify Frontend Foundation (#71)
 
-# FE-04.1 — Frontend Foundation Verification
+Issue: [#71](https://github.com/capstone-teams/capstone-projek/issues/71).
+Tanggal: 3 Oktober 2026. Branch: `refactor/frontend-foundation-alignment`.
 
-> Laporan historis untuk branch verifikasi TS/TSX. Untuk hasil setelah integrasi
-> fondasi Rakha dan migrasi JS/JSX, lihat [laporan penyelarasan](frontend-rakha-alignment.md).
+Baseline runtime Rakha: `accbc21035d378c5d3d9775728354ce2093bf244`.
+Baseline lokal sebelum verifikasi: `f3b0a38` (runtime/presentasi), `5fab886` (keputusan desain).
+Pengguna memilih mempertahankan tampilan sekarang dan melanjutkan #71 pada branch ini.
 
-Issue: [#71 — Verify Frontend Foundation](https://github.com/capstone-teams/capstone-projek/issues/71)
-
-Tanggal: 3 Oktober 2026
-
-Branch: `codex/fe-04-1-foundation-verification`
-
-Baseline: `a55d35d` dari FE-03.2, ditambah perbaikan dan tes pada branch verifikasi ini.
+Laporan ini menggantikan hasil verifikasi TS/TSX lama. Lima blocker pada laporan
+lama tidak berlaku pada runtime Rakha yang sekarang: akses anonymous, password
+salah, role mahasiswa, logout/Back, dan unknown route sudah diuji sebagai kasus
+normal, tanpa expected failure. Riwayat laporan lama tetap tersedia di Git.
 
 ## Status
 
-**Verifikasi UI/service selesai untuk source yang tersedia; foundation belum siap dinyatakan selesai.**
-Masih ada lima perilaku authentication/role/routing yang gagal karena implementasinya
-belum terintegrasi pada source yang diuji. Gate readiness mengembalikan exit code 1.
+**Verifikasi teknis foundation mode mock lulus dan siap direview.**
+Issue tetap memerlukan PR, review, dan merge sesuai `aturan.md` sebelum disebut DONE.
+Tidak ada push ke `develop`, merge, atau penutupan issue dalam pekerjaan ini.
 
-Issue #65, #66, dan #77 milik Rakha sudah berstatus closed di GitHub pada waktu
-pemeriksaan. Status tersebut belum tercermin pada branch ini atau `develop`.
-[PR #83](https://github.com/capstone-teams/capstone-projek/pull/83) ditutup tanpa merge,
-dan branch `feature-navigation-auth-role` tidak ada pada remote. Commit implementasi
-Rakha `8c28119e3925b9ff11ea1dd2069a8775f5824e38` masih dapat dibaca lewat PR tersebut.
-Versi final dan jalur integrasinya perlu dicocokkan sebelum verifikasi gabungan.
+| Acceptance criterion #71 | Hasil |
+| --- | --- |
+| Seluruh foundation dapat digunakan tanpa blocking issue | Lulus dalam cakupan mock yang diuji; readiness gate tidak menemukan blocker |
+| Semua major state dapat diuji | Loading/initializing, error, empty, success, pending/retry dan session/access diuji pada hooks, halaman dan browser sebagaimana rincian di bawah |
+| Aplikasi dapat dijalankan dengan mock service | Lulus; browser memakai Moodle mock dan backend mock tanpa server eksternal |
 
-## Hasil pemeriksaan
+## Hasil akhir
 
-Lingkungan: Node.js 22.16.0, npm 10.9.2, Playwright Test 1.63.0, Microsoft Edge headless
-di Windows. Vite berjalan pada `127.0.0.1:4173` dengan context browser terisolasi.
-Backend, credential, dan layanan eksternal tidak diperlukan.
+`npm run verify:foundation` selesai dengan exit code **0** pada 3 Oktober 2026.
 
 | Pemeriksaan | Hasil |
 | --- | --- |
-| `npm run lint` | Lulus |
-| TypeScript aplikasi, konfigurasi Vite, konfigurasi Playwright, dan browser tests | Lulus melalui `npm run build` |
-| Vite production build | Lulus; 62 modules transformed |
-| `npm test` | 59 tes lulus |
-| Browser checks UI/service | 24 lulus |
-| Browser checks authentication/role/routing yang belum terintegrasi | 5 expected failures; tetap merupakan blocker |
-| Unexpected browser failures / skipped / flaky | 0 / 0 / 0 |
-| `npm run verify:foundation` | Exit code 1 karena lima known blockers |
+| Lint | Lulus, tanpa error/warning ESLint |
+| Production build | Lulus, 83 modules; warning dynamic import Moodle yang sudah ada pada baseline Rakha |
+| Unit/component tests | 68 lulus, 6 file (50 baseline + 18 tambahan) |
+| Browser tests | 39 lulus (17 runtime + 22 foundation), tanpa retry/skip/expected failure |
+| Readiness gate | 39 checks passed, 0 known blockers, 0 other incomplete checks |
+| Review screenshot | Form course baru dan rencana pada 375 px diperiksa; konten dan kontrol tetap di viewport, tab dapat digulir horizontal |
 
-Playwright melaporkan total `29 passed` karena expected failures dianggap sesuai
-ekspektasi test runner. Itu **bukan** berarti 29 perilaku aplikasi berhasil.
-`scripts/check-foundation-readiness.mjs` memisahkannya menjadi 24 checks yang berhasil
-dan 5 blockers, lalu menolak kesiapan FE-04.1.
+Suite presentasi #72 tidak dijalankan ulang pada pekerjaan #71; hasil 9 tes di
+laporan penyelarasan merupakan bukti revisi baseline sebelumnya.
 
 ## Cakupan requirement
 
-| Requirement #71 | Bukti dan hasil | Status |
-| --- | --- | --- |
-| Layout | Kesembilan development routes render, heading terlihat, dan tidak ada exception browser pada smoke tests | Lulus untuk baseline demo |
-| Routing | Navigasi course melalui keyboard serta browser Back/Forward memperbarui halaman, URL, dan title | Sebagian; protected/not-found behavior belum lulus |
-| Authentication | Demo username dosen/mahasiswa dan feedback username tidak dikenal berjalan | Sebagian; auth service/session belum terintegrasi |
-| Role | Demo landing page sesuai username; helper role juga diuji oleh unit tests | Sebagian; role guard aplikasi belum lulus |
-| Shared component | Modal focus trap/Escape/scroll lock/focus return, input login berlabel, Card untuk empty state, feedback yang dapat ditutup | Lulus untuk skenario yang diuji |
-| State | Perubahan profil memperbarui header; state modal dan request berubah melalui interaksi; completion request setelah pindah halaman tidak menimpa halaman baru | Sebagian; current-user/session dan shared application state FE-03.1 perlu verifikasi gabungan |
-| Service abstraction | Service binding diubah hanya di context pengujian; halaman dan hook production tetap dipakai untuk loading/error/retry/success/empty | Lulus untuk read service yang diuji |
-| Mock data | Halaman dapat berjalan tanpa Backend/API request pada smoke tests; integrity dan clone isolation diuji unit tests | Lulus untuk mock domain yang tersedia; mock auth/state FE-03.3 perlu integrasi |
-| Responsive behavior | Sembilan routes dan dialog upload diuji pada 375×812, 768×1024, dan 1440×900; document/heading/dialog berada dalam batas viewport | Lulus pada tiga ukuran yang diuji |
+| Requirement #71 | Bukti pengujian |
+| --- | --- |
+| Layout | Sebelas route dosen render tanpa page exception; header, halaman Moodle dan halaman AI tetap memakai UI sekarang; tanpa navbar utama/sidebar |
+| Routing | Anonymous diarahkan ke login; link menu, Back/Forward, URL halaman dan not-found diuji di browser |
+| Authentication | Login benar/salah, pemulihan sesi setelah reload, token invalid, logout, respons sesi/login yang terlambat, dan backend login terpisah |
+| Role | Akun mahasiswa melihat data Moodle; menu AI tidak tersedia; akses langsung `/ai` ditolak; authorization mock backend juga diuji |
+| Shared component | Label login, spinner, error alert, empty state, feedback sukses, tombol pending, dropdown/Escape, dialog revisi dan pengembalian fokus |
+| State | `useApi` loading/error/reload/success; hasil request lama diabaikan; `useAction` pending/error/clear/retry; perubahan profil tersedia setelah client navigation |
+| Service abstraction | Halaman memakai service Rakha; API HTTP diuji dengan fetch tiruan; Moodle REST/form encoding, error, role resolution dan file token diuji |
+| Mock data | Moodle dan backend mock aktif; pencarian/filter serta workflow approval → generate → review → execution → verification memakai service mock |
+| Responsive | Lima halaman tambahan di 375/768/1440 px; bounds main, input/select/textarea dan dropdown; lima screenshot mobile untuk review |
 
-Source pengujian browser: [foundation.spec.ts](../../frontend/tests/e2e/foundation.spec.ts).
-Unit tests yang sebelumnya memeriksa metadata dan isi source tidak dianggap sebagai
-bukti bahwa protected route/session authentication benar-benar bekerja di browser.
+### Major state yang diverifikasi
 
-## Perbaikan dari temuan browser
+- **Initializing/loading:** sesi tersimpan belum selesai dipulihkan, daftar kursus
+  menunggu service, hook menunggu request, aksi simpan pending dan tombol disabled.
+- **Error:** credential salah, sesi expired, service unavailable, kegagalan simpan,
+  token backend invalid, network failure, JSON backend rusak, serta recovery/retry.
+- **Empty:** response daftar kursus `[]` dan hasil pencarian/filter tanpa kecocokan.
+- **Success:** login, pemulihan sesi, daftar kursus, simpan profil, retry request,
+  dan workflow mock rencana/konten/review/eksekusi/verifikasi.
+- **Access/session:** anonymous, dosen, mahasiswa, forbidden AI page, logout/Back,
+  not-found dan respons async yang selesai setelah sesi berganti.
 
-Empat kasus berikut gagal sebelum perbaikan dan lulus setelah perbaikan:
+State loading/error deterministik diuji dengan React DOM/jsdom dan promise yang
+dikendalikan melalui mock binding service. Komponen halaman dan hooks production
+tetap digunakan; tidak ada fault injection pada source production. Browser memakai
+dua mock Rakha, termasuk error token backend dan filter kosong.
 
-1. **Label input login:** label Username dan Kata sandi belum terhubung ke input.
-   Ditambahkan pasangan `htmlFor`/`id` sehingga browser dan pembaca layar mengenali
-   nama input; tampilan form tetap menggunakan style yang sama.
-2. **Focus return modal:** setelah Escape menutup dialog Upload RPS, fokus hilang ke body.
-   Modal menyimpan elemen yang sebelumnya aktif dan mengembalikan fokus ketika dialog
-   ditutup, selama elemen itu masih ada.
-3. **Daftar mahasiswa kosong:** response service `[]` menampilkan grid kosong.
-   Halaman kini menampilkan Card “Belum ada mata kuliah” dengan penjelasan.
-4. **Daftar dosen kosong:** ketika `hasCourses=true` tetapi service menghasilkan `[]`,
-   grid juga kosong. Halaman kini menggunakan empty state yang sudah ada pada baseline.
+## Temuan dan perbaikan
 
-Server data, API endpoint, authentication implementation, dan workflow domain baru
-tidak ditambahkan pada perbaikan tersebut.
+Kasus berikut gagal sebelum perbaikan, lalu diverifikasi kembali:
 
-## Blockers yang direproduksi
+1. **Pemulihan/login lama setelah logout:** respons lama dapat mengaktifkan user
+   atau menyimpan credential kembali. `AuthProvider` sekarang menggunakan generasi
+   sesi; logout dan cleanup membatalkan hak respons lama untuk memperbarui sesi.
+2. **Error pemulihan lama setelah login baru:** error dari sesi lama dapat menghapus
+   sesi mahasiswa yang baru berhasil login. Guard yang sama melindungi sesi terbaru.
+3. **Login backend yang terlambat:** token backend dapat tersimpan setelah sesi
+   Moodle sudah berakhir. `authService.login` menerima guard sesi dari provider
+   sebelum menyimpan token; pemanggilan lama dengan dua argumen tetap didukung.
+4. **Moodle invalidtoken dari request lama:** callback global dapat mengeluarkan
+   sesi baru. Moodle client menangkap generasi token saat request dimulai dan hanya
+   menjalankan callback untuk generasi aktif, termasuk jika nilai token digunakan ulang.
+5. **JSON sukses yang rusak:** HTTP 200 berisi JSON tidak valid sebelumnya menjadi
+   `null` dan terlihat seperti data kosong. API client sekarang melempar
+   `INVALID_RESPONSE`; respons kosong yang sah (204) tetap diterima.
 
-Masing-masing kasus memiliki browser test dengan marker expected failure dan alasan
-dependensi. Kegagalan tersebut tetap memblokir readiness.
+Routing, penentuan role Moodle, dua sesi Moodle/backend, endpoint, fixture data,
+markup halaman dan CSS tidak diubah oleh perbaikan #71. Perubahan fungsional di atas
+terbatas pada bug async/error yang direproduksi oleh tes.
 
-| Kasus | Langkah reproduksi | Hasil pada source yang diuji | Perilaku yang dibutuhkan | Dependensi |
-| --- | --- | --- | --- | --- |
-| Anonymous access | Context baru → buka `/dashboard` | Halaman dosen terbuka langsung | Login/protected-route handling | FE-02.1 #65, FE-02.2 #66 |
-| Invalid password | Login `dosen` dengan `wrong-password` | Masuk ke dashboard karena form demo mengabaikan password | Mock auth service memproses credential dan error state | FE-02.2 #66 |
-| Student role bypass | Login `mahasiswa` → buka `/dashboard` langsung | Aplikasi berubah ke role dosen berdasarkan URL | Role dibaca dari current user; akses instructor ditolak | FE-02.3 #77, FE-03.1 #68 |
-| Logout + Back | Login dosen → Logout → browser Back | Halaman dosen terbuka lagi | Protected route merespons unauthenticated state | FE-02.1 #65, FE-02.2 #66 |
-| Unknown route | Buka `/route-that-does-not-exist` | Redirect ke dashboard dosen | Not-found handling tanpa memberi akses instructor | FE-02.1 #65 |
-
-Ini merupakan gap integrasi foundation pada baseline demo. Backend authentication
-nyata tidak menjadi prasyarat: mock auth/role foundation pun harus dapat menegakkan
-perilaku tersebut.
+Tes dialog awal terlalu ketat karena menganggap setiap Tab harus berakhir pada
+elemen halaman. Chrome dapat menyerahkan fokus ke kontrol browser sehingga
+`document.activeElement` menjadi body. Tes diperbaiki untuk memastikan kontrol
+halaman belakang tidak menerima fokus, Tab berikutnya kembali ke dialog, Shift+Tab
+juga aman, dan Escape mengembalikan fokus ke tombol pemicu. Komponen dialog tidak diubah.
 
 ## Menjalankan ulang
 
-Dari directory `frontend`:
+Dari directory `frontend` setelah dependencies terpasang:
 
-```bash
-npm ci
+```powershell
 npm run verify:foundation
 ```
 
-Pada Windows, suite memakai Microsoft Edge yang sudah terpasang. Untuk Chromium
-bundled di sistem lain:
+Pipeline menjalankan lint, build, unit/component tests, browser tests, lalu
+`scripts/check-foundation-readiness.mjs`. Readiness menolak expected failure,
+skipped/flaky/incomplete checks dan error runner, walaupun Playwright menganggap
+expected failure sebagai hasil sesuai ekspektasi.
 
-```bash
-npx playwright install chromium
-npm run verify:foundation
-```
+Browser suite aktif: `tests/e2e/rakha-runtime.spec.js` (17 tes) dan
+`tests/e2e/foundation-71.spec.js` (22 tes). Konfigurasi memaksa
+`VITE_MOODLE_MOCK=true` dan `VITE_USE_MOCK=true` hanya pada server pengujian,
+sehingga `.env.local` pengguna tidak mengubah mode suite.
 
-`npm run test:e2e` dapat dipakai saat memperbaiki browser test, tetapi kesiapan issue
-ditentukan dari full pipeline `npm run verify:foundation`. Port 4173 harus kosong;
-port development 3000 dapat tetap berjalan. Artefak di `.cache/playwright/` diabaikan Git:
+Lingkungan: Node 22.16.0, npm 10.9.2, Windows, Chrome headless terisolasi melalui
+Playwright 1.63.0. Server pengujian memakai `127.0.0.1:4173`; port 3000 untuk pengguna
+tetap terpisah. Chrome tersedia lokal; sistem lain dapat memakai Chromium bundled.
 
-- `report/index.html`: laporan HTML.
-- `results.json`: hasil yang dibaca readiness gate.
-- `results/`: screenshot/trace dan attachment responsive dari pengujian.
+Artefak lokal (diabaikan Git):
 
-Service overrides dilakukan lewat interception modul binding service hanya di browser
-context test. Loading ditahan sampai event pengujian dilepas; error tetap gagal sampai
-event recovery dan pengguna menekan “Coba lagi”. Fixture tidak mengandalkan jumlah
-pemanggilan loader, sehingga tetap deterministik saat React StrictMode menjalankan
-effect lebih dari sekali.
+- `frontend/.cache/playwright/report/index.html`: laporan browser.
+- `frontend/.cache/playwright/results.json`: input readiness gate.
+- `frontend/.cache/playwright/results/`: screenshot mobile dan trace jika gagal.
 
-Konfigurasi mengikuti [Playwright test configuration](https://playwright.dev/docs/test-configuration),
-[web server](https://playwright.dev/docs/test-webserver), dan
-[dukungan Chrome/Edge](https://playwright.dev/docs/browsers#google-chrome--microsoft-edge).
+## Batas verifikasi dan langkah sesudah review
 
-## Batas verifikasi dan tindak lanjut
-
-- Browser engine yang diuji adalah Chromium melalui Edge. Firefox/Safari belum diuji.
-- Pemeriksaan responsive mengukur bounds dan memakai screenshot; pixel comparison
-  terhadap approved design berada pada FE-04.2.
-- Backend/API feature nyata dan eksekusi Agent/Moodle masih berada di milestone terkait.
-- Versi final authentication/role Rakha perlu dicocokkan dan diintegrasikan bersama
-  state/mock foundation FE-03.1 (#68) dan FE-03.3 (#78).
-- Setelah authentication terintegrasi, smoke/request-state tests perlu memakai session
-  mock dengan role yang sesuai. Jalankan kelima kasus yang gagal tanpa expected-failure
-  marker setelah perilakunya terverifikasi.
-- Source FE-03.2 masih berada pada [PR #85](https://github.com/capstone-teams/capstone-projek/pull/85).
-  Review, merge, dan verifikasi gabungan masih menjadi langkah berikutnya.
-
-Acceptance criterion “seluruh foundation tanpa blocking issue” dan “semua major state”
-belum terpenuhi. Issue #71 belum layak ditutup berdasarkan hasil ini.
+- Hasil berlaku untuk foundation **mode mock** pada skenario di atas. Backend AI,
+  Moodle Docker, deployment, persistensi nyata dan publikasi konten nyata belum diuji.
+- Mock backend berada di memori; client navigation mempertahankan perubahan,
+  full reload mengembalikan fixture awal. Sesi login tersimpan diuji terpisah.
+- Login dari protected route tetap berakhir di `/my` mengikuti perilaku Rakha;
+  tidak ditambahkan pengubahan redirect ke URL semula.
+- Ketidaksesuaian username Moodle/email backend dan boundary Moodle browser vs
+  dokumen backend masih perlu keputusan integrasi tim. Ini tidak menghalangi mock
+  foundation, tetapi menghalangi klaim integrasi nyata lengkap.
+- Preview body materi yang dihasilkan AI belum tersedia pada UI saat ini; kebutuhan
+  fitur tersebut dicatat pada [laporan penyelarasan](frontend-rakha-alignment.md).
+  Kelulusan #71 tidak menyatakan seluruh PRD/MVP sudah selesai.
+- Firefox/Safari, semua breakpoint, seluruh state tiap feature page, dan kesamaan
+  pixel terhadap desain lama tidak tercakup. Kesesuaian desain #72 adalah review terpisah
+  dengan keputusan pengguna mempertahankan tampilan saat ini sebagai acuan.
+- Sebelum PR/merge, ikuti `aturan.md`: dependency baseline disertakan dalam review,
+  perbarui terhadap develop terbaru, review tim dan squash merge melalui PR.

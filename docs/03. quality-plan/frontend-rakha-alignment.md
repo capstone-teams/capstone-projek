@@ -62,7 +62,7 @@ tim saat review. Tidak dilakukan perubahan backend atau Moodle server.
 
 ## Verifikasi revisi ini
 
-Hasil final revisi ini:
+Hasil revisi pemulihan runtime pada commit `f3b0a38` (sebelum perbaikan #71):
 
 | Pemeriksaan | Hasil |
 | --- | --- |
@@ -121,4 +121,19 @@ Pemeriksaan source terhadap PRD dan issue #69/#71/#72 menunjukkan:
 
 Rekomendasi berikutnya: melengkapi preview materi dalam tampilan sekarang, lalu
 memverifikasi seluruh major state dan integrasi nyata saat dependensi tersedia.
-Belum dilakukan perubahan kode runtime sebagai bagian dari pemeriksaan ini.
+Belum dilakukan perubahan kode runtime sebagai bagian dari pemeriksaan kebutuhan pada commit `5fab886`.
+
+## Verifikasi foundation #71 sesudah keputusan desain
+
+Pekerjaan #71 menggunakan tampilan sekarang dan runtime Rakha pada branch ini.
+Tes tambahan mereproduksi bug respons sesi/login lama, token invalid Moodle dari
+request lama, serta JSON backend rusak yang terlihat sebagai data kosong.
+Perbaikan terbatas pada AuthProvider, authService, API client dan Moodle client;
+route tree, role Moodle, endpoint, halaman dan CSS tetap menggunakan baseline ini.
+Karena perbaikan tersebut, angka 54 file identik/6 presentasi di atas hanya
+menjelaskan snapshot `f3b0a38`, bukan perbandingan setelah #71.
+
+Hasil terbaru, cakupan major state, cara menjalankan dan batas verifikasi ada di
+[laporan #71](frontend-foundation-verification.md). Preview materi tetap merupakan
+kebutuhan feature page berikutnya; kelulusan foundation mock tidak berarti semua
+fitur MVP atau integrasi nyata telah selesai.

@@ -2,7 +2,8 @@
 
 Runtime React + JavaScript/JSX mengikuti Rakha di `origin/feature/frontend-setup`,
 commit `accbc21035d378c5d3d9775728354ce2093bf244`. Routing, AuthProvider, hooks,
-service, data mock, dan aksi fitur menggunakan implementasi tersebut.
+service, data mock, dan aksi fitur menggunakan implementasi tersebut, dengan
+perbaikan penanganan respons sesi yang terlambat dan JSON invalid pada issue #71.
 Penyesuaian kita ada pada presentasi: warna/typography, header akun, form login,
 kartu kursus dan tata letak tanpa navbar utama/sidebar.
 
@@ -64,7 +65,8 @@ Tidak ada navbar utama atau sidebar baru.
 3. Kursus, peserta, nilai, timeline, profil dan aktivitas menggunakan
    `services/moodle/`. Fitur RPS, project, rencana, konten, review, eksekusi dan
    verifikasi menggunakan service backend Rakha. Aksi UI memanggil service itu.
-4. Logout menghapus kedua sesi. Semua ini mengikuti Rakha; perubahan auth
+4. Logout menghapus kedua sesi. Guard sesi pada #71 mencegah respons login/pemulihan
+   lama memulihkan sesi atau menghapus sesi yang lebih baru. Alur mengikuti Rakha; perubahan auth
    backend-only pada commit `713f886` sudah digantikan.
 
 Salin `.env.example` ke `.env.local` untuk memilih koneksi:
@@ -111,8 +113,11 @@ npm run test:e2e
 npm run test:design
 ```
 
-Unit test menjalankan suite API/Moodle/workflow/pages Rakha. Browser test aktif:
-`rakha-runtime.spec.js` untuk route/login/workflow, `rakha-presentation.spec.js`
+Unit test menjalankan suite API/Moodle/workflow/pages Rakha, ditambah lifecycle sesi,
+request state dan recovery halaman untuk #71. Browser test aktif:
+`rakha-runtime.spec.js` untuk route/login/workflow dan `foundation-71.spec.js`
+untuk pemulihan sesi, shared state, keyboard, empty/error serta responsive.
+`rakha-presentation.spec.js` dijalankan terpisah melalui `test:design`
 untuk style dan batas konten pada 375/768/1440 px, dengan screenshot review.
 `verify:foundation` memeriksa lint/build/unit/browser dan hasil readiness.
 
@@ -128,6 +133,7 @@ Laporan ada di `.cache/playwright/` dan `.cache/design-conformance/`.
 
 Jika cache npm di drive C penuh, gunakan `npm ci --cache .cache/npm`.
 
-Lihat [laporan penyelarasan](../docs/03.%20quality-plan/frontend-rakha-alignment.md)
+Lihat [laporan verifikasi #71](../docs/03.%20quality-plan/frontend-foundation-verification.md),
+[laporan penyelarasan](../docs/03.%20quality-plan/frontend-rakha-alignment.md)
 dan [aturan kerja](../aturan.md). Semua perubahan saat ini di branch
 `refactor/frontend-foundation-alignment`; tidak push langsung ke develop.
