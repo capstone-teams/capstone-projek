@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from './authContext';
 import { onMoodleTokenInvalid, requestToken, setMoodleToken } from '../services/moodle/moodleClient';
 import { resolveSession } from '../services/moodle/moodleApi';
@@ -29,41 +29,59 @@ function storeToken(token) {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [initializing, setInitializing] = useState(() => !!readStoredToken());
+  const generation = useRef(0);
 
   const logout = useCallback(() => {
+    generation.current += 1;
     setMoodleToken(null);
     storeToken(null);
     backendAuth.logout();
     setSession(null);
+    setInitializing(false);
   }, []);
 
   useEffect(() => {
+    const id = ++generation.current;
+    const isCurrent = () => id === generation.current;
     onMoodleTokenInvalid(logout);
     const token = readStoredToken();
-    if (!token) return;
-    setMoodleToken(token);
-    resolveSession()
-      .then(setSession)
-      .catch(() => logout())
-      .finally(() => setInitializing(false));
+    if (token) {
+      setMoodleToken(token);
+      resolveSession()
+        .then((next) => { if (isCurrent()) setSession(next); })
+        .catch(() => { if (isCurrent()) logout(); })
+        .finally(() => { if (isCurrent()) setInitializing(false); });
+    }
+    return () => {
+      generation.current += 1;
+      onMoodleTokenInvalid(null);
+    };
   }, [logout]);
 
   const login = useCallback(async (username, password) => {
+    const id = ++generation.current;
+    const isCurrent = () => id === generation.current;
+    const ensureCurrent = () => {
+      if (!isCurrent()) throw new DOMException('Permintaan login tidak lagi aktif.', 'AbortError');
+    };
     const token = await requestToken(username, password);
+    ensureCurrent();
     setMoodleToken(token);
     let next;
     try {
       next = await resolveSession();
     } catch (e) {
-      setMoodleToken(null);
+      if (isCurrent()) setMoodleToken(null);
       throw e;
     }
+    ensureCurrent();
     storeToken(token);
     setSession(next);
+    setInitializing(false);
 
     // Fitur Generator AI memakai backend capstone; kegagalannya tidak menghalangi akses Moodle.
     if (next.user.role === 'dosen') {
-      backendAuth.login(username, password).catch(() => {});
+      backendAuth.login(username, password, { isCurrent }).catch(() => {});
     }
     return next;
   }, []);

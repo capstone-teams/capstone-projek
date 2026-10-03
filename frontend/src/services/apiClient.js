@@ -86,6 +86,7 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
     try {
       data = JSON.parse(text);
     } catch {
+      if (response.ok) throw new ApiError(response.status, 'INVALID_RESPONSE', 'Respons JSON backend tidak valid.');
       data = null;
     }
   }
