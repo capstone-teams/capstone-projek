@@ -80,7 +80,7 @@ sebagai aset presentasi. Controller lama tetap tidak aktif.
 Screenshot lokal untuk review ada di frontend/.cache/review-1440-login.png,
 review-1440-dashboard.png, review-1440-content.png dan review-375-content.png.
 Pemeriksaan desain menguji style dan batas konten, bukan kesamaan pixel dengan
-mockup lama. Belum ada persetujuan visual baru dari pengguna.
+mockup lama. Pengguna kemudian memilih mempertahankan tampilan saat ini sebagai acuan pengerjaan.
 
 Alur login pada pengujian browser berakhir di /my seperti runtime Rakha, termasuk
 ketika masuk dari halaman yang terproteksi. Tidak ditambahkan pengubahan redirect.
@@ -89,3 +89,36 @@ Browser suite memakai Chrome terisolasi. Pengujian memakai mock; Moodle dan back
 nyata serta deployment belum diverifikasi.
 
 Tidak ada push, merge develop atau perubahan PR draft #85 pada revisi ini.
+
+## Keputusan tampilan dan pemeriksaan kebutuhan berikutnya
+
+Pengguna memilih tampilan saat ini, sehingga tidak direncanakan pemulihan layout
+mockup lama. Acuan lokal saat keputusan: commit f3b0a38. Keputusan ini belum
+berarti seluruh requirement proyek/MVP telah terpenuhi.
+
+Pemeriksaan source terhadap PRD dan issue #69/#71/#72 menunjukkan:
+
+- UI tersedia untuk upload/proses RPS, analisis, profil mengajar, prompt tambahan,
+  course target, konfigurasi aktivitas, rencana/revisi/approval, generate konten,
+  validasi/review, monitoring, eksekusi/verifikasi dan akses mahasiswa.
+- Kekurangan utama: WeekDetail pada pages/ai/course/CourseContentPage.jsx tidak
+  merender week.materials atau body_markdown. Data mock sudah memiliki materi;
+  UI hanya memperlihatkan tujuan, tugas/kuis dan sumber belajar. Review materi
+  lengkap sebelum execution (PRD FR-042/FR-043/AC-006) belum tercakup.
+- Tes yang lulus menguji mode mock. Persistensi, real AI, publikasi Moodle dan
+  akses mahasiswa ke hasil publikasi yang sama belum terbukti end-to-end.
+- Checkout backend lokal baru meregistrasikan health/auth/admin; endpoint RPS, course dan workflow AI belum terdaftar di backend/src/routes/__init__.py. Ketersediaan pada branch backend lain belum diperiksa dalam audit ini.
+- AuthProvider memakai username/password Moodle yang sama untuk mencoba login
+  backend. Backend lokal memakai email sebagai identitas login. Keselarasan akun
+  dan feedback jika login backend gagal perlu diverifikasi, tanpa mengubah
+  autentikasi/routing Rakha secara sepihak.
+- Moodle browser client/token berbeda dengan dokumen moodle-integration.md
+  section 3.2/3.3 yang menetapkan boundary backend. Catat perbedaan pada review
+  tim sebelum menyatakan kesesuaian arsitektur penuh.
+- Issue #72 masih menamai baseline M01. Pilihan tampilan terbaru dan perbedaan
+  terhadap M01 perlu dicatat pada laporan/PR; sembilan pemeriksaan presentasi
+  bukan verifikasi semua halaman dan semua major state.
+
+Rekomendasi berikutnya: melengkapi preview materi dalam tampilan sekarang, lalu
+memverifikasi seluruh major state dan integrasi nyata saat dependensi tersedia.
+Belum dilakukan perubahan kode runtime sebagai bagian dari pemeriksaan ini.
