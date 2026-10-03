@@ -1,0 +1,360 @@
+@import 'tailwindcss';
+@import './moodle-icon-filters.css';
+
+/* Nilai diambil dari moodle/public/theme/boost/style/moodle.css (Moodle 5.3, token --mds-*). */
+@theme {
+  --font-sans: 'Noto Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Liberation Sans', Arial, sans-serif;
+
+  --color-primary: #0f6cbf;
+  --color-primary-dark: #0d5ca2; /* --bs-btn-hover-bg */
+  --color-primary-light: #e7f0f9;
+  --color-ink: #1d2125; /* --mds-text-default */
+  --color-ink-subtle: #495057; /* --mds-text-subtle */
+  --color-muted: #6a737b; /* --mds-text-muted */
+  --color-line: #dee2e6; /* --mds-border-default / gray-300 */
+  --color-line-subtle: #e9ecef; /* --mds-border-subtle / gray-200 */
+  --color-surface: #f8f9fa; /* --mds-bg-surface-subtle / body-bg */
+  --color-success: #357a32;
+  --color-success-light: #d7e6d6;
+  --color-warning: #8a5300;
+  --color-warning-light: #fcefdc;
+  --color-danger: #ca3120;
+  --color-danger-light: #f4d6d2;
+
+  /* Warna purpose aktivitas (MOD_PURPOSE_*) */
+  --color-act-administration: #da58ef;
+  --color-act-assessment: #f90086;
+  --color-act-collaboration: #5b40ff;
+  --color-act-communication: #eb6200;
+  --color-act-content: #0099ad;
+  --color-act-interactive: #8d3d1b;
+  --color-act-other: #6a737b;
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-surface text-base leading-normal text-ink antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-bold leading-tight;
+  }
+  a {
+    @apply text-primary;
+  }
+  a:hover {
+    @apply text-primary-dark;
+  }
+  input,
+  select,
+  textarea {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-1.5 text-ink outline-none;
+  }
+  input:focus,
+  select:focus,
+  textarea:focus {
+    @apply border-primary ring-4 ring-primary/20;
+  }
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply w-auto accent-primary;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+  dialog::backdrop {
+    @apply bg-black/50;
+  }
+}
+
+/* Komponen (gaya tombol, tabel, dsb. meniru Bootstrap di tema Boost). */
+@layer components {
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-line bg-white px-3 py-1.5 font-normal text-ink no-underline transition-colors hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn--primary {
+    @apply border-primary bg-primary text-white hover:border-primary-dark hover:bg-primary-dark hover:text-white;
+  }
+  .btn--secondary {
+    @apply border-[#ced4da] bg-[#ced4da] text-ink hover:border-[#b8bfc6] hover:bg-[#b8bfc6];
+  }
+  /* Ukuran h1 Bootstrap/Boost: calc(1.375rem + 1.5vw), maks 2.5rem. */
+  .moodle-h1 {
+    @apply text-[calc(1.375rem+1.5vw)] font-bold xl:text-[2.5rem];
+  }
+  .btn--ghost {
+    @apply border-transparent bg-transparent text-primary hover:bg-primary-light hover:text-primary-dark;
+  }
+  .btn--danger {
+    @apply border-danger bg-danger text-white hover:bg-[#a32819] hover:text-white;
+  }
+  .btn--danger-ghost {
+    @apply border-danger bg-transparent text-danger hover:bg-danger-light hover:text-danger;
+  }
+  .btn--sm {
+    @apply px-2 py-1 text-sm;
+  }
+  .btn--block {
+    @apply w-full;
+  }
+
+  .muted {
+    @apply text-muted;
+  }
+
+  .grid--2 {
+    @apply grid items-start gap-4 md:grid-cols-2;
+  }
+  .grid--sidebar {
+    @apply grid items-start gap-4 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)];
+  }
+  .stack {
+    @apply flex flex-col gap-4;
+  }
+
+  .form {
+    @apply flex flex-col gap-4;
+  }
+  .form__actions {
+    @apply flex flex-wrap justify-end gap-2;
+  }
+  .checks {
+    @apply m-0 flex flex-col gap-2 border-0 p-0;
+  }
+  .check {
+    @apply flex items-start gap-2;
+  }
+  .segmented {
+    @apply mb-3 flex flex-wrap gap-4;
+  }
+  .segmented label {
+    @apply flex items-center gap-1.5;
+  }
+
+  .table-wrap {
+    @apply overflow-x-auto;
+  }
+  .table {
+    @apply w-full border-collapse text-sm;
+  }
+  .table th {
+    @apply border-b-2 border-line px-3 py-2 text-left align-bottom font-bold;
+  }
+  .table td {
+    @apply border-b border-line px-3 py-2 align-top;
+  }
+  .table tbody tr:hover {
+    @apply bg-black/[0.03];
+  }
+  .table__actions {
+    @apply flex justify-end gap-1.5;
+  }
+
+  .list {
+    @apply m-0 flex list-none flex-col p-0;
+  }
+  .list > li {
+    @apply border-b border-line py-2 last:border-b-0;
+  }
+  .list__split {
+    @apply flex items-center justify-between gap-3;
+  }
+  .compact {
+    @apply my-1 list-disc pl-5;
+  }
+  .is-answer {
+    @apply font-semibold text-success;
+  }
+  .chips {
+    @apply flex flex-wrap gap-1;
+  }
+  .note {
+    @apply mt-1 text-xs text-warning;
+  }
+  .dl {
+    @apply m-0 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5;
+  }
+  .dl dt {
+    @apply text-muted;
+  }
+  .dl dd {
+    @apply m-0 break-words;
+  }
+  .quote {
+    @apply mt-4 rounded-r-md border-l-4 border-primary bg-surface px-4 py-2.5;
+  }
+  .next-step {
+    @apply mb-3 flex flex-col items-start gap-2.5;
+  }
+  .section-title {
+    @apply mt-5 mb-2 text-base;
+  }
+
+  .stats {
+    @apply mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4;
+  }
+  .stat {
+    @apply flex flex-col rounded-lg border border-line bg-white px-4 py-3;
+  }
+  .stat__value {
+    @apply text-2xl font-bold;
+  }
+  .stat__label {
+    @apply text-sm text-muted;
+  }
+
+  .event-log {
+    @apply m-0 list-none p-0;
+  }
+  .event-log li {
+    @apply flex gap-2.5 border-b border-line py-1.5 text-sm;
+  }
+  .event-log time {
+    @apply shrink-0 text-muted tabular-nums;
+  }
+  .issues {
+    @apply m-0 list-none p-0;
+  }
+  .issues li {
+    @apply flex flex-wrap items-center gap-2.5 border-b border-line py-2;
+  }
+  .issues li > span:nth-child(2) {
+    @apply min-w-48 flex-1;
+  }
+  .checklist {
+    @apply m-0 flex list-none flex-col gap-1.5 p-0;
+  }
+  .checklist__item {
+    @apply flex items-center gap-2;
+  }
+  .checklist__item--passed > span {
+    @apply font-bold text-success;
+  }
+  .checklist__item--failed > span {
+    @apply font-bold text-danger;
+  }
+
+  .stepper {
+    @apply mb-4 flex list-none gap-2 overflow-x-auto rounded-lg border border-line bg-white px-4 py-3;
+  }
+  .stepper__item {
+    @apply flex min-w-max flex-1 items-center gap-2 text-muted;
+  }
+  .stepper__item:not(:last-child)::after {
+    @apply h-0.5 min-w-3 flex-1 bg-line content-[''];
+  }
+  .stepper__dot {
+    @apply grid size-6 shrink-0 place-items-center rounded-full border-2 border-line text-xs font-bold;
+  }
+  .stepper__item--done .stepper__dot {
+    @apply border-success bg-success text-white;
+  }
+  .stepper__item--done:not(:last-child)::after {
+    @apply bg-success;
+  }
+  .stepper__item--current {
+    @apply font-semibold text-ink;
+  }
+  .stepper__item--current .stepper__dot {
+    @apply border-primary text-primary;
+  }
+  .stepper__label {
+    @apply max-sm:hidden;
+  }
+  .stepper__item--current .stepper__label {
+    @apply max-sm:inline;
+  }
+
+  /* Navigasi sekunder (.secondary-navigation .moremenu) */
+  .tabs {
+    @apply mb-4 flex overflow-x-auto border-b border-line;
+  }
+  .tabs__link {
+    @apply flex h-[60px] items-center whitespace-nowrap border-b-[3px] border-transparent px-4 text-ink no-underline hover:bg-surface hover:text-ink;
+  }
+  .tabs__link.active {
+    @apply border-b-primary bg-surface;
+  }
+
+  .week-nav {
+    @apply m-0 flex max-h-[70vh] list-none flex-col gap-0.5 overflow-y-auto p-0;
+  }
+  .week-nav__btn {
+    @apply flex w-full cursor-pointer items-center gap-2.5 rounded-md border-0 bg-transparent px-2.5 py-2 text-left text-ink hover:bg-surface;
+  }
+  .week-nav__btn--active {
+    @apply bg-primary-light text-primary;
+  }
+  .week-nav__num {
+    @apply grid size-6 shrink-0 place-items-center rounded bg-surface text-xs font-bold;
+  }
+  .week-nav__topic {
+    @apply flex-1 truncate text-sm;
+  }
+  .week-picker {
+    @apply mb-3 grid grid-cols-[repeat(auto-fill,minmax(44px,1fr))] gap-1.5;
+  }
+  .week-picker__item {
+    @apply relative grid cursor-pointer place-items-center rounded-md border border-line py-2 font-semibold focus-within:outline-2 focus-within:outline-primary;
+  }
+  .week-picker__item input {
+    @apply pointer-events-none absolute opacity-0;
+  }
+  .week-picker__item.is-on {
+    @apply border-primary bg-primary text-white;
+  }
+
+  .upload {
+    @apply flex flex-col gap-3;
+  }
+  .dropzone {
+    @apply relative flex cursor-pointer flex-col items-center gap-1 break-all rounded-lg border-2 border-dashed border-line px-3 py-7 text-center hover:border-primary hover:bg-primary-light focus-within:border-primary focus-within:bg-primary-light;
+  }
+  .dropzone input {
+    @apply absolute size-px opacity-0;
+  }
+  .dropzone__title {
+    @apply font-semibold;
+  }
+
+  .material {
+    @apply mt-4 border-t border-line;
+  }
+  .activity {
+    @apply mt-4 rounded-md border border-line bg-surface p-3.5;
+  }
+
+  /* Konten HTML dari Moodle / Markdown */
+  .prose-moodle h3,
+  .prose-moodle h4,
+  .prose-moodle h5,
+  .prose-moodle h6 {
+    @apply mt-4 mb-1.5;
+  }
+  .prose-moodle p {
+    @apply my-2;
+  }
+  .prose-moodle ul,
+  .prose-moodle ol {
+    @apply my-2 pl-6;
+  }
+  .prose-moodle ul {
+    @apply list-disc;
+  }
+  .prose-moodle ol {
+    @apply list-decimal;
+  }
+  .prose-moodle img {
+    @apply h-auto max-w-full;
+  }
+  .prose-moodle table {
+    @apply my-2 border-collapse;
+  }
+  .prose-moodle td,
+  .prose-moodle th {
+    @apply border border-line px-2 py-1;
+  }
+}
