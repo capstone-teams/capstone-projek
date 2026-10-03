@@ -1,0 +1,84 @@
+# Lingkungan development backend: PostgreSQL + aplikasi.
+#
+#   docker compose up -d --build        # database + backend (migrasi otomatis)
+#   docker compose ps                   # status & kesehatan service
+#   docker compose logs -f backend      # log aplikasi
+#   docker compose run --rm backend uv run pytest
+#   docker compose down                 # hentikan (data tetap tersimpan di volume)
+#   docker compose down -v              # hentikan dan hapus data database
+#
+# Kredensial default mengikuti backend/.env.example sehingga tetap kompatibel
+# dengan cara menjalankan backend langsung di host (uv run uvicorn ...).
+# Nilai bisa ditimpa lewat environment shell, contoh:
+#   DB_PASSWORD=rahasia APP_PORT=8001 docker compose up -d
+
+name: capstone-projek
+
+services:
+  db:
+    image: postgres:16
+    container_name: capstone-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-lms_moodle_db}
+    ports:
+      # Ubah DB_PORT bila port 5432 sudah dipakai PostgreSQL/container lain.
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-lms_moodle_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: capstone-backend
+    environment:
+      # Di dalam network compose, database dijangkau lewat nama service.
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-lms_moodle_db}
+      # Dikosongkan agar Settings membangun URL dari DB_* di atas.
+      DATABASE_URL: ""
+      # Nilai berikut hanya untuk development; produksi wajib menimpa
+      # SECRET_KEY dari environment configuration yang aman.
+      APP_ENV: ${APP_ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:-dev-only-insecure-secret-key-change-me-32}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Bind-mount kode & test agar perubahan di host langsung terpakai
+      # (uvicorn dijalankan dengan --reload). `.venv` di dalam image tidak
+      # tertimpa karena hanya subfolder ini yang di-mount.
+      - ./backend/src:/app/src:ro
+      - ./backend/tests:/app/tests:ro
+    command:
+      - .venv/bin/uvicorn
+      - src.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  postgres-data:
