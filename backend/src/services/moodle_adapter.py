@@ -62,6 +62,31 @@ class MoodleAdapter:
             shortname=shortname,
         )
 
+    async def update_course(
+        self,
+        internal_course_id: str,
+        *,
+        fullname: str | None = None,
+        shortname: str | None = None,
+        visible: bool | None = None,
+    ) -> CourseDTO:
+        fields = {"fullname": fullname, "shortname": shortname, "visible": visible}
+        changes = {key: value for key, value in fields.items() if value is not None}
+        if not changes:
+            raise ValueError("update_course membutuhkan minimal satu field yang diubah")
+        moodle_id = await self._require_moodle_course_id(internal_course_id)
+        result = await self._safe_call(
+            "core_course_update_courses",
+            {"courses": [{"id": moodle_id, **changes}]},
+        )
+        warnings = result.get("warnings") or []
+        if warnings:
+            reason = warnings[0].get("message", "alasan tidak diketahui")
+            raise MoodleOperationFailedError(
+                f"Moodle menolak update course '{internal_course_id}': {reason}"
+            )
+        return await self.get_course(internal_course_id)
+
     async def find_course(self, shortname: str) -> CourseDTO | None:
         shortname = shortname.strip()
         if not shortname:

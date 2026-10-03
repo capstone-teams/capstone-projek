@@ -1,10 +1,14 @@
 import asyncio
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
 
 from src.services.moodle_adapter import MoodleAdapter
-from src.services.moodle_adapter_exceptions import MoodleOperationFailedError
+from src.services.moodle_adapter_exceptions import (
+    MoodleEntityNotFoundError,
+    MoodleOperationFailedError,
+)
 from src.services.moodle_client import MoodleClient
 from src.services.moodle_mapping import InMemoryMoodleMappingRepository, MoodleMapping
 
@@ -111,6 +115,117 @@ def test_find_course_normalizes_moodle_errors():
     async def scenario():
         with pytest.raises(MoodleOperationFailedError):
             await adapter.find_course("cs101")
+        await client.aclose()
+
+    run(scenario())
+
+
+def update_handler(update_response, calls):
+    def handler(request):
+        form = parse_qs(request.content.decode())
+        function = form["wsfunction"][0]
+        calls.append((function, form))
+        if function == "core_course_update_courses":
+            return httpx.Response(200, json=update_response)
+        return httpx.Response(200, json=[{"id": 42, "fullname": "Judul Baru", "shortname": "cs101", "visible": 1}])
+
+    return handler
+
+
+def test_update_course_sends_only_changed_fields_and_returns_fresh_course():
+    calls = []
+    adapter, repo, client = make_adapter(update_handler({"warnings": []}, calls))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        dto = await adapter.update_course("course_1", fullname="Judul Baru")
+        function, form = calls[0]
+        assert function == "core_course_update_courses"
+        assert form["courses[0][id]"] == ["42"]
+        assert form["courses[0][fullname]"] == ["Judul Baru"]
+        assert "courses[0][shortname]" not in form
+        assert "courses[0][visible]" not in form
+        assert dto.fullname == "Judul Baru"
+        assert dto.internal_id == "course_1"
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_update_course_can_hide_a_course():
+    calls = []
+    adapter, repo, client = make_adapter(update_handler({"warnings": []}, calls))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        await adapter.update_course("course_1", visible=False)
+        assert calls[0][1]["courses[0][visible]"] == ["0"]
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_update_course_requires_at_least_one_change():
+    adapter, repo, client = make_adapter(update_handler({"warnings": []}, []))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        with pytest.raises(ValueError):
+            await adapter.update_course("course_1")
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_update_course_without_mapping_raises_not_found():
+    calls = []
+    adapter, _, client = make_adapter(update_handler({"warnings": []}, calls))
+
+    async def scenario():
+        with pytest.raises(MoodleEntityNotFoundError):
+            await adapter.update_course("belum-ada", fullname="X")
+        assert calls == []
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_update_course_treats_moodle_warnings_as_failure():
+    warning = {
+        "warnings": [
+            {
+                "item": "course",
+                "itemid": 42,
+                "warningcode": "shortnametaken",
+                "message": "Shortname sudah dipakai",
+            }
+        ]
+    }
+    adapter, repo, client = make_adapter(update_handler(warning, []))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        with pytest.raises(MoodleOperationFailedError) as info:
+            await adapter.update_course("course_1", shortname="dipakai")
+        assert "Shortname sudah dipakai" in str(info.value)
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_update_course_normalizes_moodle_errors():
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={"exception": "moodle_exception", "errorcode": "invalidtoken", "message": "Invalid token"},
+        )
+
+    adapter, repo, client = make_adapter(handler)
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        with pytest.raises(MoodleOperationFailedError):
+            await adapter.update_course("course_1", fullname="X")
         await client.aclose()
 
     run(scenario())

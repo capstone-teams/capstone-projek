@@ -28,6 +28,15 @@ class IMoodleIntegration(Protocol):
         self, internal_course_id: str, fullname: str, shortname: str, category_id: int = 1
     ) -> CourseDTO: ...
 
+    async def update_course(
+        self,
+        internal_course_id: str,
+        *,
+        fullname: str | None = None,
+        shortname: str | None = None,
+        visible: bool | None = None,
+    ) -> CourseDTO: ...
+
     async def find_course(self, shortname: str) -> CourseDTO | None: ...
 
     async def get_course_contents(self, internal_course_id: str) -> list[SectionDTO]: ...
