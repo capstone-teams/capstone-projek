@@ -1,0 +1,29 @@
+import { defineConfig } from '@playwright/test'
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  testMatch: '**/*.spec.ts',
+  forbidOnly: Boolean(process.env.CI),
+  workers: 1,
+  retries: 0,
+  outputDir: '.cache/playwright/results',
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: '.cache/playwright/report', open: 'never' }],
+    ['json', { outputFile: '.cache/playwright/results.json' }],
+  ],
+  use: {
+    browserName: 'chromium',
+    channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined),
+    baseURL: 'http://127.0.0.1:4173',
+    viewport: { width: 1440, height: 900 },
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+  webServer: {
+    command: 'npm run dev -- --host 127.0.0.1 --port 4173 --configLoader runner',
+    url: 'http://127.0.0.1:4173',
+    reuseExistingServer: false,
+    timeout: 30_000,
+  },
+})

@@ -52,8 +52,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
 
           <form onSubmit={handleLogin}>
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Username</label>
+              <label className={styles.formLabel} htmlFor="login-username">Username</label>
               <input
+                id="login-username"
                 type="text"
                 className={styles.formInput}
                 value={username}
@@ -67,8 +68,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onRoleChange }
             </div>
 
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Kata sandi</label>
+              <label className={styles.formLabel} htmlFor="login-password">Kata sandi</label>
               <input
+                id="login-password"
                 type="password"
                 className={styles.formInput}
                 value={password}

@@ -13,6 +13,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "node --experimental-strip-types --test tests/**/*.test.ts",
+    "test:e2e": "playwright test",
+    "verify:foundation": "npm run lint && npm run build && npm test && npm run test:e2e && node scripts/check-foundation-readiness.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "22.20.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

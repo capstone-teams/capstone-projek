@@ -7,6 +7,11 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   { ignores: ['dist/**', 'node_modules/**', '.cache/**'] },
   {
+    files: ['scripts/**/*.mjs'],
+    ...js.configs.recommended,
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: { ecmaVersion: 2022, globals: globals.browser },
@@ -17,7 +22,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['vite.config.ts', 'eslint.config.js'],
+    files: ['vite.config.ts', 'playwright.config.ts', 'tests/e2e/**/*.ts', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
   },
 )

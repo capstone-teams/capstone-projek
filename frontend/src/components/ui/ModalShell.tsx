@@ -23,6 +23,10 @@ export const ModalShell: React.FC<ModalShellProps> = ({
   useEffect(() => {
     if (!isOpen) return
 
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+
     // Body scroll lock
     const originalOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -59,6 +63,7 @@ export const ModalShell: React.FC<ModalShellProps> = ({
     return () => {
       document.body.style.overflow = originalOverflow
       window.removeEventListener('keydown', handleKeyDown)
+      if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true })
     }
   }, [isOpen, onClose])
 

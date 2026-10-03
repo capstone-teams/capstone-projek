@@ -52,7 +52,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </div>
 
-      {!hasCourses ? (
+      {!hasCourses || (courses.status === 'success' && courses.data.length === 0) ? (
         <div className={styles.emptyCard}>
           <h2 className={styles.emptyTitle}>Belum ada mata kuliah</h2>
           <p className={styles.emptyDesc}>

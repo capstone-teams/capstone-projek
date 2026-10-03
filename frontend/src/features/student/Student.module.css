@@ -113,6 +113,16 @@
 }
 
 /* Course Grid */
+.emptyState h2 {
+  margin: 0;
+  color: #0F172A;
+}
+
+.emptyState p {
+  margin: 12px 0 0;
+  color: #64748B;
+}
+
 .courseGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

@@ -3,6 +3,7 @@ import type { AppPath } from '../../types/navigation'
 import { courseService } from '../../services'
 import { useServiceResource } from '../../services/useServiceResource'
 import { ServiceStatus } from '../../services/ServiceStatus'
+import { Card } from '../../components/ui/Card'
 import { MAHASISWA_PROFILE } from '../../types/auth'
 import styles from './Student.module.css'
 
@@ -41,6 +42,11 @@ export const StudentCoursesPage: React.FC<StudentCoursesPageProps> = ({
 
       {courses.status !== 'success' ? (
         <ServiceStatus error={courses.error ?? undefined} onRetry={courses.retry} />
+      ) : courses.data.length === 0 ? (
+        <Card padding="lg" className={styles.emptyState}>
+          <h2>Belum ada mata kuliah</h2>
+          <p>Mata kuliah akan muncul setelah dosen menyiapkannya.</p>
+        </Card>
       ) : (
         <div className={styles.courseGrid}>
           {courses.data.map((c) => (
