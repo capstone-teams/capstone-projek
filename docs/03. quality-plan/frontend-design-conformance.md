@@ -1,5 +1,8 @@
 # FE-04.2 — Verify M01 Design Conformance
 
+> Laporan historis sebelum integrasi authentication. Verifikasi JS/JSX terbaru
+> beserta perubahan login/menu tersedia pada [laporan penyelarasan](frontend-rakha-alignment.md).
+
 Issue: [#72](https://github.com/capstone-teams/capstone-projek/issues/72)
 
 Tanggal: 3 Oktober 2026

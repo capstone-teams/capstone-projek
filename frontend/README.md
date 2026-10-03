@@ -1,8 +1,12 @@
 # Frontend — Agentic LMS
 
-Frontend React + TypeScript dengan Vite, npm, dan ESLint. Branch ini memuat
-baseline UI yang disetujui dan service foundation FE-03.2. Data serta workflow
-feature masih memakai mock; authentication/session foundation belum terintegrasi.
+Frontend React + JavaScript/JSX dengan Vite, npm, ESLint, React Router, dan Vitest.
+Tampilan memakai implemented mockup yang disetujui. Fondasi routing, authentication,
+session, hooks, dan service diselaraskan dengan pekerjaan Rakha (`accbc21`).
+Data mata kuliah dan workflow feature masih memakai mock.
+
+Keputusan migrasi dan batas integrasi dicatat pada
+[laporan penyelarasan](../docs/03.%20quality-plan/frontend-rakha-alignment.md).
 
 Hasil dan dependensi verifikasi FE-04.1 tersedia pada
 [laporan verifikasi](../docs/03.%20quality-plan/frontend-foundation-verification.md).
@@ -35,13 +39,12 @@ Saat sengaja mengubah dependency, gunakan `npm install` lalu sertakan perubahan 
 | Perintah | Fungsi |
 | --- | --- |
 | `npm run dev` | Development server dengan hot reload |
-| `npm run typecheck` | Memeriksa TypeScript untuk source dan konfigurasi Vite |
-| `npm run lint` | Memeriksa TypeScript, React Hooks, dan Fast Refresh |
-| `npm run build` | Memeriksa TypeScript dan menghasilkan build di `dist/` |
-| `npm test` | Menguji helper navigasi, lifecycle, mock data, dan API client |
+| `npm run lint` | Memeriksa JavaScript/JSX, React Hooks, dan Fast Refresh |
+| `npm run build` | Menghasilkan build production di `dist/` |
+| `npm test` | Vitest: navigasi, lifecycle, session, API client, dan mock workflow |
 | `npm run test:e2e` | Menguji halaman dan request state pada browser |
 | `npm run test:design` | Membandingkan visual/style dan navigasi dengan approved implemented mockup (#72) |
-| `npm run verify:foundation` | Lint, build/typecheck, unit test, browser test, dan pemeriksaan kesiapan FE-04.1 |
+| `npm run verify:foundation` | Lint, build, unit test, browser test, dan pemeriksaan kesiapan FE-04.1 |
 | `npm run preview` | Menyajikan hasil build secara lokal pada port 3000 |
 
 Jalankan preview setelah build dan setelah menghentikan development server. Preview bukan server deployment production.
@@ -59,14 +62,14 @@ frontend/
     services/        # API client, service contract, mock adapter, dan request state
     styles/          # CSS global baseline UI
     utils/           # Fungsi utilitas
-    App.tsx          # Root component
-    main.tsx         # Entry point React
+    context/         # AuthProvider dan session aplikasi
+    App.jsx          # Routing dan komposisi halaman UI yang disetujui
+    main.jsx         # Entry point React, BrowserRouter, AuthProvider
   tests/             # Unit test dan browser test (e2e/)
   scripts/           # Pemeriksaan readiness dari hasil browser test
-  playwright.config.ts # Browser, laporan, dan server pengujian
+  playwright.config.js # Browser, laporan, dan server pengujian
   index.html         # Dokumen HTML dan mount point
-  vite.config.ts     # Plugin React dan port server
-  tsconfig*.json     # Konfigurasi TypeScript strict
+  vite.config.js     # Plugin React, Vitest, dan port server
   eslint.config.js   # Konfigurasi lint
   package.json       # Dependency dan scripts
   package-lock.json  # Versi dependency yang dikunci
@@ -76,17 +79,42 @@ Folder kosong dilacak dengan `.gitkeep`; hapus placeholder ketika menambahkan fi
 
 ## Konfigurasi dan batas integrasi
 
-Mode mock belum membutuhkan file `.env` atau credential. Bila integrasi API ditambahkan, dokumentasikan variabelnya dan sediakan `.env.example` pada modul yang menggunakannya.
+Mode mock berjalan tanpa `.env`, backend, atau Docker. Akun demo:
+
+| Username | Password | Role |
+| --- | --- | --- |
+| `dosen` | `dosen123` | Dosen |
+| `mahasiswa` | `mahasiswa123` | Mahasiswa |
+
+Password divalidasi. Role berasal dari `/auth/me`; pergantian role dilakukan dengan
+logout lalu login ke akun lain. Semua feature page memerlukan session. Materi dapat
+dibuka kedua role, sedangkan halaman dosen/mahasiswa memiliki guard masing-masing.
+Route `/my` menuju beranda akun, `/ai` menuju halaman dosen, dan route yang tidak
+terdaftar menampilkan halaman tidak ditemukan setelah login.
+
+Untuk authentication backend nyata, salin `.env.example` ke `.env.local`, set
+`VITE_USE_MOCK=false`, dan sesuaikan `VITE_API_BASE_URL`. Restart Vite. Isi kolom
+Username dengan **email** user backend: kontrak login menamai field-nya `username`,
+tetapi backend memverifikasi email. Akun demo tidak tersedia pada backend nyata.
+Backend perlu berjalan dan mengizinkan origin `http://localhost:3000` pada CORS.
+
+Token aplikasi disimpan oleh AuthProvider pada `agentic-lms.token`. Session dicek
+kembali saat reload dan dihapus saat logout atau respons 401. Frontend tidak
+mengirim request langsung ke Moodle dan tidak menyimpan token Moodle.
 Variabel Vite berawalan `VITE_` masuk ke bundle browser sehingga hanya boleh berisi konfigurasi publik, bukan secret.
 Frontend berkomunikasi dengan Backend API; prefix yang tertulis pada spesifikasi adalah `/api/v1`. Credential Moodle dan provider LLM tetap dikelola backend.
 
-## Keputusan implementasi issue #18
+## Keputusan awal issue #18 dan perubahan berikutnya
 
-- React + TypeScript mengikuti acceptance criteria issue.
+- Setup awal React + TypeScript mengikuti acceptance criteria issue #18.
 - Vite dipakai sebagai build tool untuk web client yang terpisah dari backend FastAPI.
 - npm dan lockfile digunakan untuk instalasi konsisten antar anggota tim.
-- CSS biasa digunakan untuk placeholder. Library UI, routing, dan state management ditambahkan ketika kebutuhan fitur sudah jelas.
-- Struktur mengikuti baseline README frontend sebelumnya; TypeScript menggunakan mode strict.
+- Pada 3 Oktober 2026, pengguna menyetujui penyelarasan dengan source JS/JSX Rakha
+  sambil mempertahankan desain yang sudah diimplementasikan. Konfigurasi TypeScript
+  diganti dengan lint JS/JSX dan Vitest; CSS Modules yang disetujui dipertahankan.
+- React Router dan AuthProvider menangani navigasi dan session. Service async
+  memakai hook bersama; feature workflow lokal tetap simulasi UI sampai adapter
+  response backend dan endpoint fitur disambungkan.
 
 Acuan: [Vite Getting Started](https://vite.dev/guide/), [System Design](../docs/02.%20design/design-system.md), [API Specification](../docs/02.%20design/design-api.md), dan [aturan kerja](../aturan.md).
 
@@ -110,12 +138,10 @@ tes selesai. Port tersebut harus kosong. Server development port 3000 dapat teta
 berjalan. Browser menggunakan context terisolasi dan service mock tanpa Backend.
 Laporan, screenshot, dan trace tersimpan di `.cache/playwright/`, yang diabaikan Git.
 
-Lima tes authentication/role/route saat ini ditandai sebagai expected failure dengan
-alasan dependensi FE-02/FE-03.1. `npm run test:e2e` dapat berhasil ketika kegagalan
-tersebut sesuai ekspektasi Playwright. **Hal itu belum berarti foundation siap.**
-`npm run verify:foundation` tetap mengembalikan exit code 1 ketika ada expected
-failure, skipped test, regression, atau hasil yang belum lengkap. Setelah dependency
-terintegrasi, hapus marker expected failure dan jalankan seluruh verifikasi lagi.
+Lima kasus authentication/role/route yang sebelumnya expected failure kini menjadi
+tes normal. `npm run verify:foundation` mengembalikan exit code 1 jika ada expected
+failure, skipped test, regression, atau hasil yang belum lengkap; gate ini tidak
+menganggap expected failure sebagai bukti kesiapan.
 
 ### Perbandingan desain FE-04.2
 
@@ -123,7 +149,9 @@ Jalankan `npm run test:design` untuk membandingkan source sekarang dengan implem
 mockup yang disetujui pada commit `e9807a530771263dda11f460f59ed77653c6df71`.
 Suite ini memeriksa 18 halaman/state/overlay pada tiga viewport, serta alur navigasi
 mahasiswa. Screenshot referensi dibuat dari commit baseline, lalu dibandingkan dengan
-source saat ini pada browser yang sama.
+source saat ini pada browser yang sama. Sebanyak 48 kasus memakai perbandingan
+pixel/style penuh; enam kasus login/menu memeriksa perubahan fungsi yang dicatat
+di laporan penyelarasan. Alur navigasi mahasiswa menjadi kasus ke-55.
 
 Git, `tar`, dan commit baseline perlu tersedia secara lokal. Dua server Vite memakai
 port 4173 dan 4174; kedua port harus kosong. Tidak ada backend atau dependency npm

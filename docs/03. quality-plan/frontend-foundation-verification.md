@@ -1,5 +1,8 @@
 # FE-04.1 — Frontend Foundation Verification
 
+> Laporan historis untuk branch verifikasi TS/TSX. Untuk hasil setelah integrasi
+> fondasi Rakha dan migrasi JS/JSX, lihat [laporan penyelarasan](frontend-rakha-alignment.md).
+
 Issue: [#71 — Verify Frontend Foundation](https://github.com/capstone-teams/capstone-projek/issues/71)
 
 Tanggal: 3 Oktober 2026
