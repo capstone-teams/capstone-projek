@@ -12,6 +12,7 @@ from src.services.moodle_integration_interface import CourseDTO, SectionDTO
 from src.services.moodle_mapping import IMoodleMappingRepository, MoodleMapping
 
 COURSE_ENTITY_TYPE = "course"
+WEEK_ENTITY_TYPE = "course_plan_week"
 
 
 class MoodleAdapter:
@@ -105,6 +106,42 @@ class MoodleAdapter:
         moodle_id = await self._require_moodle_course_id(internal_course_id)
         sections = await self._safe_call("core_course_get_contents", {"courseid": moodle_id})
         return [self._to_section_dto(section) for section in sections]
+
+    async def get_weekly_sections(self, internal_course_id: str) -> list[SectionDTO]:
+        sections = await self.get_course_contents(internal_course_id)
+        weekly = [section for section in sections if section.section_number > 0]
+        return sorted(weekly, key=lambda section: section.section_number)
+
+    async def resolve_week_section(
+        self, internal_course_id: str, internal_week_id: str, week_number: int
+    ) -> SectionDTO:
+        if week_number < 1:
+            raise ValueError("week_number harus minimal 1")
+        sections = await self.get_weekly_sections(internal_course_id)
+
+        mapped_id = await self._mappings.get_moodle_id(WEEK_ENTITY_TYPE, internal_week_id)
+        if mapped_id is not None:
+            section = next((s for s in sections if s.moodle_section_id == mapped_id), None)
+            if section is None:
+                raise MoodleEntityNotFoundError(
+                    f"Section Moodle {mapped_id} untuk minggu '{internal_week_id}' "
+                    f"tidak ditemukan lagi di course '{internal_course_id}'."
+                )
+            return section
+
+        section = next((s for s in sections if s.section_number == week_number), None)
+        if section is None:
+            raise MoodleEntityNotFoundError(
+                f"Course '{internal_course_id}' belum memiliki section untuk minggu {week_number}."
+            )
+        await self._mappings.save(
+            MoodleMapping(
+                entity_type=WEEK_ENTITY_TYPE,
+                internal_id=internal_week_id,
+                moodle_id=section.moodle_section_id,
+            )
+        )
+        return section
 
     async def _require_moodle_course_id(self, internal_course_id: str) -> int:
         moodle_id = await self._mappings.get_moodle_id(COURSE_ENTITY_TYPE, internal_course_id)

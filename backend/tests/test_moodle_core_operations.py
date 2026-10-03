@@ -229,3 +229,120 @@ def test_update_course_normalizes_moodle_errors():
         await client.aclose()
 
     run(scenario())
+
+
+def contents_handler(sections):
+    return lambda request: httpx.Response(200, json=sections)
+
+
+def section_payload(section_id, number, name=""):
+    return {"id": section_id, "section": number, "name": name or f"Section {number}", "modules": []}
+
+
+UNSORTED_SECTIONS = [
+    section_payload(10, 2),
+    section_payload(8, 0, "General"),
+    section_payload(9, 1),
+]
+
+
+def test_weekly_sections_skip_general_section_and_follow_week_order():
+    adapter, repo, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        sections = await adapter.get_weekly_sections("course_1")
+        assert [section.moodle_section_id for section in sections] == [9, 10]
+        assert [section.section_number for section in sections] == [1, 2]
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_resolve_week_section_matches_by_week_number_and_saves_mapping():
+    adapter, repo, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        section = await adapter.resolve_week_section("course_1", "week_a", 2)
+        assert section.moodle_section_id == 10
+        assert await repo.get_moodle_id("course_plan_week", "week_a") == 10
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_resolve_week_section_is_idempotent_on_retry():
+    adapter, repo, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        first = await adapter.resolve_week_section("course_1", "week_a", 1)
+        second = await adapter.resolve_week_section("course_1", "week_a", 1)
+        assert first == second
+        assert await repo.get_internal_id("course_plan_week", 9) == "week_a"
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_resolve_week_section_keeps_existing_link_when_section_moves():
+    adapter, repo, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        await repo.save(MoodleMapping("course_plan_week", "week_a", 10))
+        section = await adapter.resolve_week_section("course_1", "week_a", 1)
+        assert section.moodle_section_id == 10
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_resolve_week_section_fails_when_week_has_no_section():
+    adapter, repo, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        with pytest.raises(MoodleEntityNotFoundError):
+            await adapter.resolve_week_section("course_1", "week_x", 5)
+        assert await repo.exists("course_plan_week", "week_x") is False
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_resolve_week_section_fails_when_linked_section_no_longer_exists():
+    adapter, repo, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        await repo.save(MoodleMapping("course_plan_week", "week_a", 777))
+        with pytest.raises(MoodleEntityNotFoundError):
+            await adapter.resolve_week_section("course_1", "week_a", 1)
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_resolve_week_section_rejects_week_number_below_one():
+    adapter, repo, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "course_1", 42))
+        with pytest.raises(ValueError):
+            await adapter.resolve_week_section("course_1", "week_a", 0)
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_weekly_sections_require_a_mapped_course():
+    adapter, _, client = make_adapter(contents_handler(UNSORTED_SECTIONS))
+
+    async def scenario():
+        with pytest.raises(MoodleEntityNotFoundError):
+            await adapter.get_weekly_sections("belum-ada")
+        await client.aclose()
+
+    run(scenario())
