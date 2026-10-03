@@ -1,6 +1,6 @@
 # Penyelarasan approved UI dengan fondasi Rakha
 
-Tanggal: 3 Oktober 2026. Branch lokal: `codex/align-approved-ui-rakha-foundation`.
+Tanggal: 3 Oktober 2026. Branch lokal: `refactor/frontend-foundation-alignment`.
 
 ## Acuan dan keputusan
 
