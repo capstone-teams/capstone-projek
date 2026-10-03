@@ -89,6 +89,18 @@ perbedaan dengan runtime Rakha ini dicatat di laporan penyelarasan untuk review 
 Mock backend berjalan di memori dan workflow kembali ke fixture awal saat reload.
 Persistensi dan eksekusi Moodle nyata belum diverifikasi.
 
+## Rencana kuliah (#74)
+
+Tab Rencana pada project AI menampilkan informasi course, CPMK, tujuan, topik,
+metode mengajar, aktivitas dan status per minggu. Desktop mulai 1024 px memakai
+tabel; layar lebih kecil memakai kartu mingguan. CoursePlanDetails hanya mengatur
+presentasi; approve/regenerasi memakai handler Rakha pada CoursePlanPage.
+
+`getPlan` memetakan Course Plan Schema ke data halaman dan mempertahankan alias
+format Rakha untuk pemilihan minggu pada halaman Konten. Data yang belum mempunyai
+capaian/metode ditandai “Belum tersedia.”. Read error memiliki tombol Coba lagi.
+Mock memakai CPMK/metode dari RPS dan tetap kembali ke fixture awal saat reload.
+
 ## Struktur aktif
 
 - `src/App.jsx`: route tree Rakha.
@@ -117,6 +129,8 @@ Unit test menjalankan suite API/Moodle/workflow/pages Rakha, ditambah lifecycle 
 request state dan recovery halaman untuk #71. Browser test aktif:
 `rakha-runtime.spec.js` untuk route/login/workflow dan `foundation-71.spec.js`
 untuk pemulihan sesi, shared state, keyboard, empty/error serta responsive.
+`course-plan-74.spec.js` memeriksa detail rencana pada empat ukuran layar,
+generate/revisi/approve dan kompatibilitas pemilihan minggu pada halaman Konten.
 `rakha-presentation.spec.js` dijalankan terpisah melalui `test:design`
 untuk style dan batas konten pada 375/768/1440 px, dengan screenshot review.
 `verify:foundation` memeriksa lint/build/unit/browser dan hasil readiness.
@@ -133,7 +147,9 @@ Laporan ada di `.cache/playwright/` dan `.cache/design-conformance/`.
 
 Jika cache npm di drive C penuh, gunakan `npm ci --cache .cache/npm`.
 
-Lihat [laporan verifikasi #71](../docs/03.%20quality-plan/frontend-foundation-verification.md),
+Lihat [laporan Course Plan #74](../docs/03.%20quality-plan/frontend-course-plan-screen.md),
+[laporan verifikasi #71](../docs/03.%20quality-plan/frontend-foundation-verification.md),
 [laporan penyelarasan](../docs/03.%20quality-plan/frontend-rakha-alignment.md)
-dan [aturan kerja](../aturan.md). Semua perubahan saat ini di branch
+dan [aturan kerja](../aturan.md). Pekerjaan #74 di branch
+`feature/fe-05-1-course-plan-screen` bergantung pada
 `refactor/frontend-foundation-alignment`; tidak push langsung ke develop.

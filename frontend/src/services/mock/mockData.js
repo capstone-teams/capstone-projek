@@ -59,17 +59,27 @@ export function buildRpsAnalysis(rpsId) {
   };
 }
 
-export function buildPlanWeeks(instruction) {
+export function buildPlanWeeks(instruction, analysis = buildRpsAnalysis()) {
   return SAMPLE_TOPICS.map((topic, i) => {
     const week = i + 1;
     const isExam = EXAM_WEEKS.includes(week);
+    const rpsWeek = analysis.weekly_plan.find((item) => item.week === week);
+    const subTopics = isExam ? [] : [`Konsep ${topic.split(':')[0]}`, 'Studi kasus', 'Latihan praktikum'];
+    const objectives = isExam
+      ? ['Mengevaluasi capaian pembelajaran']
+      : [`Mahasiswa memahami ${topic.toLowerCase()}`, 'Mahasiswa mampu menerapkan konsep dalam praktikum'];
     return {
+      week_number: week,
+      title: topic,
+      learning_outcomes: rpsWeek?.cpmk ?? [],
+      objectives,
+      topics: subTopics.length ? subTopics : [topic],
+      teaching_methods: rpsWeek?.method ? rpsWeek.method.split(',').map((method) => method.trim()) : [],
+      // Alias lama dipertahankan untuk workflow konten Rakha.
       week,
       topic,
-      sub_topics: isExam ? [] : [`Konsep ${topic.split(':')[0]}`, 'Studi kasus', 'Latihan praktikum'],
-      learning_objectives: isExam
-        ? ['Mengevaluasi capaian pembelajaran']
-        : [`Mahasiswa memahami ${topic.toLowerCase()}`, 'Mahasiswa mampu menerapkan konsep dalam praktikum'],
+      sub_topics: subTopics,
+      learning_objectives: objectives,
       planned_activities: isExam ? ['quiz'] : week % 2 === 0 ? ['learning_material', 'assignment'] : ['learning_material'],
       note: instruction && week >= 5 && week <= 8 ? `Disesuaikan: ${instruction}` : null,
     };

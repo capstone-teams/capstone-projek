@@ -1,4 +1,5 @@
 import { api, idempotencyHeader } from './apiClient';
+import { normalizeCoursePlan } from './coursePlanAdapter';
 
 // Course API (design-api.md §8)
 
@@ -25,7 +26,7 @@ export function generatePlan(courseId) {
 }
 
 export function getPlan(courseId) {
-  return api.get(`/courses/${courseId}/plan`);
+  return api.get(`/courses/${courseId}/plan`).then(normalizeCoursePlan);
 }
 
 export function approvePlan(courseId) {

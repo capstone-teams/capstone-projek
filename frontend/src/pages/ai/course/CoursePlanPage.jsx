@@ -5,8 +5,13 @@ import { nullOn404 } from '../../../services/apiClient';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
 import InstructionModal from '../../../components/InstructionModal';
+import CoursePlanDetails from '../../../components/course-plan/CoursePlanDetails';
 
-const ACTIVITY_LABELS = { learning_material: 'Materi', assignment: 'Tugas', quiz: 'Kuis' };
+const PLAN_STATUS = {
+  draft: { label: 'Draft', tone: 'warning' },
+  approved: { label: 'Disetujui', tone: 'success' },
+  rejected: { label: 'Perlu revisi', tone: 'danger' },
+};
 
 export default function CoursePlanPage() {
   const { course, version, refresh } = useCourse();
@@ -44,15 +49,14 @@ export default function CoursePlanPage() {
   }
 
   const data = plan.data;
+  const status = PLAN_STATUS[data?.status] ?? { label: data?.status || 'Status belum tersedia', tone: 'neutral' };
   return (
     <Card
-      title={data ? `Rencana course · versi ${data.version}` : 'Rencana course'}
+      title={data?.version != null ? `Rencana course · versi ${data.version}` : 'Rencana course'}
       actions={
         data && (
           <>
-            <Badge tone={data.status === 'approved' ? 'success' : 'warning'}>
-              {data.status === 'approved' ? 'Disetujui' : 'Draft'}
-            </Badge>
+            <Badge tone={status.tone}>{status.label}</Badge>
             {reviewing && (
               <>
                 <button type="button" className="btn btn--ghost" onClick={() => setRevising(true)}>
@@ -72,56 +76,28 @@ export default function CoursePlanPage() {
         )
       }
     >
-      <ErrorAlert error={actionError || plan.error} onClose={() => {
+      <ErrorAlert error={actionError} onClose={() => {
           generate.clearError();
           approve.clearError();
         }} />
+      {plan.error && (
+        <div className="mb-4">
+          <ErrorAlert error={plan.error} />
+          <button type="button" className="btn" disabled={plan.loading} onClick={() => plan.reload()}>
+            {plan.loading ? 'Memuat…' : 'Coba lagi'}
+          </button>
+        </div>
+      )}
       {planning && <Alert tone="info">Agent sedang menyusun rencana{data ? ' versi baru' : ''}…</Alert>}
       {data?.instruction && <Alert tone="info" title="Instruksi revisi terakhir">{data.instruction}</Alert>}
 
+      {plan.loading && data && <Spinner label="Memuat ulang rencana…" />}
       {plan.loading && !data ? (
         <Spinner />
       ) : !data ? (
-        planning ? <Spinner label="Menyusun rencana…" /> : <EmptyState title="Rencana tidak ditemukan." />
+        plan.error ? null : planning ? <Spinner label="Menyusun rencana…" /> : <EmptyState title="Rencana tidak ditemukan." />
       ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Minggu</th>
-                <th>Topik</th>
-                <th>Tujuan pembelajaran</th>
-                <th>Aktivitas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.weeks.map((w) => (
-                <tr key={w.week}>
-                  <td>{w.week}</td>
-                  <td>
-                    <strong>{w.topic}</strong>
-                    {w.sub_topics?.length > 0 && <div className="muted">{w.sub_topics.join(' · ')}</div>}
-                    {w.note && <div className="note">{w.note}</div>}
-                  </td>
-                  <td>
-                    <ul className="compact">
-                      {w.learning_objectives.map((o) => (
-                        <li key={o}>{o}</li>
-                      ))}
-                    </ul>
-                  </td>
-                  <td>
-                    <div className="chips">
-                      {w.planned_activities?.map((a) => (
-                        <Badge key={a}>{ACTIVITY_LABELS[a] ?? a}</Badge>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <CoursePlanDetails plan={data} course={course} />
       )}
 
       <InstructionModal
