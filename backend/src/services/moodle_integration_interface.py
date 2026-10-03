@@ -6,7 +6,7 @@ from typing import Protocol
 
 @dataclass(frozen=True)
 class CourseDTO:
-    internal_id: str
+    internal_id: str | None
     moodle_id: int
     fullname: str
     shortname: str
@@ -27,5 +27,7 @@ class IMoodleIntegration(Protocol):
     async def create_course(
         self, internal_course_id: str, fullname: str, shortname: str, category_id: int = 1
     ) -> CourseDTO: ...
+
+    async def find_course(self, shortname: str) -> CourseDTO | None: ...
 
     async def get_course_contents(self, internal_course_id: str) -> list[SectionDTO]: ...

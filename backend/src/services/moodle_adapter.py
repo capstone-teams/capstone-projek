@@ -62,6 +62,20 @@ class MoodleAdapter:
             shortname=shortname,
         )
 
+    async def find_course(self, shortname: str) -> CourseDTO | None:
+        shortname = shortname.strip()
+        if not shortname:
+            raise ValueError("shortname tidak boleh kosong")
+        result = await self._safe_call(
+            "core_course_get_courses_by_field", {"field": "shortname", "value": shortname}
+        )
+        courses = result.get("courses") or []
+        if not courses:
+            return None
+        moodle_id = int(courses[0]["id"])
+        internal_id = await self._mappings.get_internal_id(COURSE_ENTITY_TYPE, moodle_id)
+        return self._to_course_dto(internal_id, courses[0])
+
     async def get_course_contents(self, internal_course_id: str) -> list[SectionDTO]:
         moodle_id = await self._require_moodle_course_id(internal_course_id)
         sections = await self._safe_call("core_course_get_contents", {"courseid": moodle_id})
@@ -85,7 +99,7 @@ class MoodleAdapter:
             ) from exc
 
     @staticmethod
-    def _to_course_dto(internal_course_id: str, raw: dict[str, Any]) -> CourseDTO:
+    def _to_course_dto(internal_course_id: str | None, raw: dict[str, Any]) -> CourseDTO:
         return CourseDTO(
             internal_id=internal_course_id,
             moodle_id=int(raw["id"]),
