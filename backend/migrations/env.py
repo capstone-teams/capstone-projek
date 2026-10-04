@@ -9,6 +9,7 @@ from src.config.settings import settings
 from src.models.base import Base
 from src.models.user import User
 from src.models.moodle_entity_mapping import MoodleEntityMapping
+from src.models.moodle_execution_record import MoodleExecutionRecord 
 
 config = context.config
 
