@@ -54,7 +54,7 @@ class FakeMoodleServer:
         return httpx.Response(200, json=[{"id": course["id"], "shortname": shortname}])
 
     def core_course_get_courses(self, form):
-        course = self.courses.get(int(form["ids[0]"]))
+        course = self.courses.get(int(form["options[ids][0]"]))
         return httpx.Response(200, json=[course] if course else [])
 
     def core_course_get_courses_by_field(self, form):
