@@ -44,7 +44,10 @@ class MoodleAdapter:
 
     async def get_course(self, internal_course_id: str) -> CourseDTO:
         moodle_id = await self._require_moodle_course_id(internal_course_id)
-        courses = await self._safe_call("core_course_get_courses", {"ids": [moodle_id]})
+        courses = await self._safe_call(
+            "core_course_get_courses", {"options": {"ids": [moodle_id]}}
+        )
+
         if not courses:
             raise MoodleEntityNotFoundError(
                 f"Course '{internal_course_id}' (Moodle ID {moodle_id}) tidak ditemukan di Moodle."
