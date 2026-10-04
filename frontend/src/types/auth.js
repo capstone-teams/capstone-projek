@@ -18,3 +18,13 @@ export const MAHASISWA_PROFILE = {
     email: '11211045@student.itk.ac.id',
     avatarInitial: 'NS',
 };
+// Status autentikasi yang diekspos AuthProvider.
+export const AUTH_STATUS = {
+    INITIALIZING: 'initializing',
+    AUTHENTICATED: 'authenticated',
+    ANONYMOUS: 'anonymous',
+};
+// Alasan sesi berakhir tanpa logout eksplisit.
+export const SESSION_NOTICE = {
+    EXPIRED: 'expired',
+};

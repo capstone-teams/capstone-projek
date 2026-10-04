@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../src/context/AuthProvider';
+import { AppStateProvider } from '../src/context/AppStateProvider';
 import App from '../src/App';
 import { MOODLE_SESSION_KEY, USE_MOODLE_MOCK } from '../src/services/config';
 import { login as backendLogin } from '../src/services/authService';
@@ -45,7 +46,9 @@ async function render(path, as) {
     root.render(
       <MemoryRouter initialEntries={[path]}>
         <AuthProvider>
-          <App />
+          <AppStateProvider>
+            <App />
+          </AppStateProvider>
         </AuthProvider>
       </MemoryRouter>,
     );

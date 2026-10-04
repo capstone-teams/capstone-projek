@@ -380,3 +380,10 @@
 .approved-page .week-nav__topic { max-width: 210px; }
 @media (max-width: 1024px) { .approved-page { padding: 28px 32px; } }
 @media (max-width: 640px) { .approved-page { padding: 24px 16px; } .approved-page h1, .approved-page .moodle-h1 { font-size: 24px; } }
+
+/* State aplikasi global (AppStatus): bar loading tipis di bawah header dan daftar error global. */
+.app-global-loading { position: sticky; top: 0; z-index: 40; height: 3px; overflow: hidden; background: var(--color-primary-light); }
+.app-global-loading__bar { display: block; width: 40%; height: 100%; background: var(--color-primary); animation: app-global-loading 1.2s ease-in-out infinite; }
+@keyframes app-global-loading { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .app-global-loading__bar { width: 100%; animation: none; } }
+.approved-page.app-global-errors { padding-bottom: 0; }

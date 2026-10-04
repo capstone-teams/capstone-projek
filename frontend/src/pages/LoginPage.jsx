@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Alert } from '../components/ui';
 import { MOODLE_URL, USE_MOODLE_MOCK } from '../services/config';
+import { SESSION_NOTICE } from '../types/auth';
 
 import { ApplicationHeader } from '../components/MoodleLayout';
 import styles from '../features/auth/LoginPage.module.css';
@@ -15,7 +16,7 @@ const MESSAGES = {
 };
 
 export default function LoginPage() {
-  const { user, login } = useAuth();
+  const { user, login, sessionNotice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [form, setForm] = useState({ username: '', password: '' });
@@ -53,6 +54,7 @@ export default function LoginPage() {
         <h2 className={styles.formTitle}>Masuk ke akun Anda</h2>
         {error && <Alert tone="danger" title="Login gagal">{error}</Alert>}
         {info && <Alert tone="info">{info}</Alert>}
+        {!error && !info && sessionNotice === SESSION_NOTICE.EXPIRED && <Alert tone="info" title="Sesi berakhir">Sesi Anda telah berakhir. Silakan masuk kembali.</Alert>}
         <form onSubmit={onSubmit}>
           <div className={styles.formGroup}><label className={styles.formLabel} htmlFor="username">Username</label>
             <input id="username" className={styles.formInput} value={form.username} onChange={update('username')} autoComplete="username" placeholder="Masukkan username Moodle" required autoFocus />

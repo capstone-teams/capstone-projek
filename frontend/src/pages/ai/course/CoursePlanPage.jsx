@@ -17,8 +17,8 @@ export default function CoursePlanPage() {
   const { course, version, refresh } = useCourse();
   const hasPlan = course.status !== 'CREATED';
   const plan = useApi(() => (hasPlan ? getPlan(course.id).catch(nullOn404) : null), [course.id, version, hasPlan]);
-  const generate = useAction(() => generatePlan(course.id));
-  const approve = useAction(() => approvePlan(course.id));
+  const generate = useAction(() => generatePlan(course.id), { loadingLabel: 'Meminta pembuatan rencana…' });
+  const approve = useAction(() => approvePlan(course.id), { loadingLabel: 'Menyetujui rencana…' });
   const [revising, setRevising] = useState(false);
 
   const reviewing = course.status === 'WAITING_PLAN_REVIEW';

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { MOODLE_URL } from '../services/config';
+import AppStatus from './AppStatus';
 import styles from './layout/AppNavbar.module.css';
 
 function UserMenu({ user, onLogout }) {
@@ -48,7 +49,7 @@ export function ApplicationHeader() {
 }
 
 export default function MoodleLayout() {
-  return <div className="approved-app"><ApplicationHeader /><Outlet /></div>;
+  return <div className="approved-app"><ApplicationHeader /><AppStatus /><Outlet /></div>;
 }
 
 export function PageContainer({ children }) {
