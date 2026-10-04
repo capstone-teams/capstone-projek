@@ -46,3 +46,11 @@ class IMoodleIntegration(Protocol):
     async def resolve_week_section(
         self, internal_course_id: str, internal_week_id: str, week_number: int
     ) -> SectionDTO: ...
+
+    async def create_section(
+        self, internal_course_id: str, internal_week_id: str, week_number: int, name: str
+    ) -> SectionDTO: ...
+
+    async def update_section(
+        self, internal_course_id: str, internal_week_id: str, *, name: str
+    ) -> SectionDTO: ...

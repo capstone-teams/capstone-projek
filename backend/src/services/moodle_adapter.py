@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.services.moodle_adapter_exceptions import (
+    MoodleCapabilityUnavailableError,
     MoodleEntityNotFoundError,
     MoodleOperationFailedError,
 )
@@ -142,6 +143,16 @@ class MoodleAdapter:
             )
         )
         return section
+
+    async def create_section(
+        self, internal_course_id: str, internal_week_id: str, week_number: int, name: str
+    ) -> SectionDTO:
+        raise MoodleCapabilityUnavailableError("create_section")
+
+    async def update_section(
+        self, internal_course_id: str, internal_week_id: str, *, name: str
+    ) -> SectionDTO:
+        raise MoodleCapabilityUnavailableError("update_section")
 
     async def _require_moodle_course_id(self, internal_course_id: str) -> int:
         moodle_id = await self._mappings.get_moodle_id(COURSE_ENTITY_TYPE, internal_course_id)

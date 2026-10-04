@@ -6,6 +6,7 @@ import pytest
 
 from src.services.moodle_adapter import MoodleAdapter
 from src.services.moodle_adapter_exceptions import (
+    MoodleCapabilityUnavailableError,
     MoodleEntityNotFoundError,
     MoodleOperationFailedError,
 )
@@ -343,6 +344,34 @@ def test_weekly_sections_require_a_mapped_course():
     async def scenario():
         with pytest.raises(MoodleEntityNotFoundError):
             await adapter.get_weekly_sections("belum-ada")
+        await client.aclose()
+
+    run(scenario())
+    
+    
+def test_create_section_reports_capability_as_unavailable():
+    calls = []
+    adapter, _, client = make_adapter(update_handler({"warnings": []}, calls))
+
+    async def scenario():
+        with pytest.raises(MoodleCapabilityUnavailableError) as info:
+            await adapter.create_section("course_1", "week_a", 1, "Minggu 1")
+        assert info.value.operation == "create_section"
+        assert calls == []
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_update_section_reports_capability_as_unavailable():
+    calls = []
+    adapter, _, client = make_adapter(update_handler({"warnings": []}, calls))
+
+    async def scenario():
+        with pytest.raises(MoodleCapabilityUnavailableError) as info:
+            await adapter.update_section("course_1", "week_a", name="Pengantar")
+        assert info.value.operation == "update_section"
+        assert calls == []
         await client.aclose()
 
     run(scenario())
