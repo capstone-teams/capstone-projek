@@ -25,10 +25,14 @@ def run(coro):
     return asyncio.run(coro)
 
 
+async def no_sleep(seconds):
+    return None
+
+
 def make_adapter(handler):
     client = MoodleClient(BASE_URL, TOKEN, transport=httpx.MockTransport(handler))
     repo = InMemoryMoodleMappingRepository()
-    return MoodleAdapter(client, repo), repo, client
+    return MoodleAdapter(client, repo, sleep=no_sleep), repo, client
 
 
 def moodle_exception(errorcode, message="Moodle error", exception="moodle_exception"):
