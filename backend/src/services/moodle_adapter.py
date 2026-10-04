@@ -9,7 +9,12 @@ from src.services.moodle_adapter_exceptions import (
 )
 from src.services.moodle_client import MoodleClient
 from src.services.moodle_exceptions import MoodleError
-from src.services.moodle_integration_interface import CourseDTO, SectionDTO
+from src.services.moodle_integration_interface import (
+    CourseDTO,
+    LearningMaterial,
+    LearningMaterialDTO,
+    SectionDTO,
+)
 from src.services.moodle_mapping import IMoodleMappingRepository, MoodleMapping
 
 COURSE_ENTITY_TYPE = "course"
@@ -153,6 +158,20 @@ class MoodleAdapter:
         self, internal_course_id: str, internal_week_id: str, *, name: str
     ) -> SectionDTO:
         raise MoodleCapabilityUnavailableError("update_section")
+
+    async def create_learning_material(
+        self,
+        internal_course_id: str,
+        internal_week_id: str,
+        internal_material_id: str,
+        material: LearningMaterial,
+    ) -> LearningMaterialDTO:
+        raise MoodleCapabilityUnavailableError("create_learning_material")
+
+    async def update_learning_material(
+        self, internal_material_id: str, material: LearningMaterial
+    ) -> LearningMaterialDTO:
+        raise MoodleCapabilityUnavailableError("update_learning_material")
 
     async def _require_moodle_course_id(self, internal_course_id: str) -> int:
         moodle_id = await self._mappings.get_moodle_id(COURSE_ENTITY_TYPE, internal_course_id)

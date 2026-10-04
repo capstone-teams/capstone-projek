@@ -11,6 +11,7 @@ from src.services.moodle_adapter_exceptions import (
     MoodleOperationFailedError,
 )
 from src.services.moodle_client import MoodleClient
+from src.services.moodle_integration_interface import LearningMaterial
 from src.services.moodle_mapping import InMemoryMoodleMappingRepository, MoodleMapping
 
 TOKEN = "test-token"
@@ -371,6 +372,36 @@ def test_update_section_reports_capability_as_unavailable():
         with pytest.raises(MoodleCapabilityUnavailableError) as info:
             await adapter.update_section("course_1", "week_a", name="Pengantar")
         assert info.value.operation == "update_section"
+        assert calls == []
+        await client.aclose()
+
+    run(scenario())
+    
+    
+def test_create_learning_material_reports_capability_as_unavailable():
+    calls = []
+    adapter, _, client = make_adapter(update_handler({"warnings": []}, calls))
+    material = LearningMaterial(title="Pengantar", content="<p>Isi</p>")
+
+    async def scenario():
+        with pytest.raises(MoodleCapabilityUnavailableError) as info:
+            await adapter.create_learning_material("course_1", "week_a", "material_1", material)
+        assert info.value.operation == "create_learning_material"
+        assert calls == []
+        await client.aclose()
+
+    run(scenario())
+
+
+def test_update_learning_material_reports_capability_as_unavailable():
+    calls = []
+    adapter, _, client = make_adapter(update_handler({"warnings": []}, calls))
+    material = LearningMaterial(title="Pengantar", content="<p>Isi</p>")
+
+    async def scenario():
+        with pytest.raises(MoodleCapabilityUnavailableError) as info:
+            await adapter.update_learning_material("material_1", material)
+        assert info.value.operation == "update_learning_material"
         assert calls == []
         await client.aclose()
 
