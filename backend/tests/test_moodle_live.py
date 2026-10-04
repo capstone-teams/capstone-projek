@@ -8,6 +8,7 @@ from src.config.settings import settings
 from src.services.moodle_adapter import MoodleAdapter
 from src.services.moodle_adapter_exceptions import MoodleAuthenticationFailedError
 from src.services.moodle_client import MoodleClient
+from src.services.moodle_health import MoodleHealthChecker
 from src.services.moodle_mapping import InMemoryMoodleMappingRepository
 
 pytestmark = pytest.mark.skipif(
@@ -18,7 +19,9 @@ pytestmark = pytest.mark.skipif(
 
 @pytest_asyncio.fixture
 async def live():
-    client = MoodleClient(settings.MOODLE_BASE_URL, settings.MOODLE_WEB_SERVICE_TOKEN, timeout=60)
+    client = MoodleClient(
+        settings.MOODLE_BASE_URL, settings.MOODLE_WEB_SERVICE_TOKEN, timeout=60.0
+    )
     adapter = MoodleAdapter(client, InMemoryMoodleMappingRepository())
     try:
         yield client, adapter
@@ -37,7 +40,7 @@ async def test_authentication_succeeds_with_the_configured_token(live):
 
 @pytest.mark.asyncio
 async def test_invalid_token_is_normalized_as_authentication_failure():
-    client = MoodleClient(settings.MOODLE_BASE_URL, "token-yang-salah", timeout=60)
+    client = MoodleClient(settings.MOODLE_BASE_URL, "token-yang-salah", timeout=60.0)
     adapter = MoodleAdapter(client, InMemoryMoodleMappingRepository())
     try:
         with pytest.raises(MoodleAuthenticationFailedError):
@@ -65,3 +68,13 @@ async def test_course_lifecycle_against_moodle(live):
     assert found.internal_id == internal_id
     assert updated.fullname == "Integration Test Updated"
     assert contents
+
+
+@pytest.mark.asyncio
+async def test_health_check_reports_moodle_as_available(live):
+    client, _ = live
+
+    health = await MoodleHealthChecker(client).check()
+
+    assert health.available is True
+    assert health.release
