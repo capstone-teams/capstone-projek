@@ -215,3 +215,24 @@ def test_mapping_repository_handles_entity_without_moodle_id_yet():
         assert await repo.exists("course", "not-yet-created") is False
 
     run(scenario())
+    
+    
+def test_get_course_sends_course_id_inside_options_parameter():
+    seen = {}
+
+    def handler(request):
+        seen["body"] = request.content.decode()
+        return httpx.Response(
+            200, json=[{"id": 42, "fullname": "CS 101", "shortname": "cs101", "visible": 1}]
+        )
+
+    adapter, repo, client = make_adapter(handler)
+
+    async def scenario():
+        await repo.save(MoodleMapping("course", "internal-1", 42))
+        await adapter.get_course("internal-1")
+        assert "wsfunction=core_course_get_courses" in seen["body"]
+        assert "options%5Bids%5D%5B0%5D=42" in seen["body"]
+        await client.aclose()
+
+    run(scenario())
