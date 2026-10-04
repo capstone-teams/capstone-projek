@@ -34,11 +34,13 @@ class MoodleAdapter:
         *,
         retry_policy: RetryPolicy | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        retry_observer: Callable[[MoodleOperationFailedError], Awaitable[None]] | None = None,
     ) -> None:
         self._client = client
         self._mappings = mapping_repository
         self._retry_policy = retry_policy or RetryPolicy()
         self._sleep = sleep
+        self._retry_observer = retry_observer
 
     async def get_course(self, internal_course_id: str) -> CourseDTO:
         moodle_id = await self._require_moodle_course_id(internal_course_id)
@@ -193,7 +195,12 @@ class MoodleAdapter:
                 error = normalize_moodle_error(exc, wsfunction)
                 if not error.retryable or attempt == attempts:
                     raise error from exc
+                await self._notify_retry(error)
                 await self._sleep(self._retry_policy.delay_for(attempt))
+
+    async def _notify_retry(self, error: MoodleOperationFailedError) -> None:
+        if self._retry_observer is not None:
+            await self._retry_observer(error)
 
     async def _find_raw_course(self, shortname: str) -> dict[str, Any] | None:
         result = await self._safe_call(
@@ -212,12 +219,13 @@ class MoodleAdapter:
         for attempt in range(1, max_attempts + 1):
             try:
                 return await self._safe_call("core_course_create_courses", params)
-            except MoodleTransientError:
+            except MoodleTransientError as error:
                 existing = await self._find_raw_course(shortname)
                 if existing is not None:
                     return [existing]
                 if attempt == max_attempts:
                     raise
+                await self._notify_retry(error)
                 await self._sleep(self._retry_policy.delay_for(attempt))
 
     @staticmethod
