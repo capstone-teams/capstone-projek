@@ -6,7 +6,12 @@ from src.services.moodle_adapter_exceptions import (
     MoodleEntityNotFoundError,
     MoodleOperationFailedError,
 )
-from src.services.moodle_integration_interface import CourseDTO, SectionDTO
+from src.services.moodle_integration_interface import (
+    CourseDTO,
+    LearningMaterial,
+    LearningMaterialDTO,
+    SectionDTO,
+)
 
 
 class MockMoodleIntegration:
@@ -14,8 +19,10 @@ class MockMoodleIntegration:
         self._courses: dict[str, CourseDTO] = {}
         self._sections: dict[str, list[SectionDTO]] = {}
         self._week_links: dict[str, int] = {}
+        self._materials: dict[str, tuple[str, LearningMaterialDTO]] = {}
         self._next_course_id = 1
         self._next_section_id = 100
+        self._next_module_id = 500
 
     async def get_course(self, internal_course_id: str) -> CourseDTO:
         return self._require_course(internal_course_id)
@@ -120,9 +127,74 @@ class MockMoodleIntegration:
             )
         section = self._section_by_id(internal_course_id, linked_id)
         updated = replace(section, name=name)
-        sections = self._sections[internal_course_id]
-        sections[sections.index(section)] = updated
+        self._swap_section(internal_course_id, section, updated)
         return updated
+
+    async def create_learning_material(
+        self,
+        internal_course_id: str,
+        internal_week_id: str,
+        internal_material_id: str,
+        material: LearningMaterial,
+    ) -> LearningMaterialDTO:
+        self._require_course(internal_course_id)
+        self._validate_material(material)
+        existing = self._materials.get(internal_material_id)
+        if existing is not None:
+            return existing[1]
+        linked_id = self._week_links.get(internal_week_id)
+        if linked_id is None:
+            raise MoodleEntityNotFoundError(
+                f"Minggu '{internal_week_id}' belum memiliki section di course '{internal_course_id}'."
+            )
+        section = self._section_by_id(internal_course_id, linked_id)
+        module_id = self._next_module_id
+        self._next_module_id += 1
+        created = LearningMaterialDTO(
+            internal_id=internal_material_id,
+            moodle_module_id=module_id,
+            moodle_section_id=section.moodle_section_id,
+            title=material.title,
+            content=material.content,
+            description=material.description,
+        )
+        self._materials[internal_material_id] = (internal_course_id, created)
+        self._swap_section(
+            internal_course_id, section, replace(section, module_ids=[*section.module_ids, module_id])
+        )
+        return created
+
+    async def update_learning_material(
+        self, internal_material_id: str, material: LearningMaterial
+    ) -> LearningMaterialDTO:
+        self._validate_material(material)
+        existing = self._materials.get(internal_material_id)
+        if existing is None:
+            raise MoodleEntityNotFoundError(
+                f"Learning material '{internal_material_id}' belum dibuat di Moodle."
+            )
+        internal_course_id, current = existing
+        updated = replace(
+            current,
+            title=material.title,
+            content=material.content,
+            description=material.description,
+        )
+        self._materials[internal_material_id] = (internal_course_id, updated)
+        return updated
+
+    def _swap_section(
+        self, internal_course_id: str, old: SectionDTO, new: SectionDTO
+    ) -> None:
+        sections = self._sections[internal_course_id]
+        sections[sections.index(old)] = new
+
+    @staticmethod
+    def _validate_material(material: LearningMaterial) -> None:
+        if not material.title.strip():
+            raise ValueError("title tidak boleh kosong")
+        if not material.content.strip():
+            raise ValueError("content tidak boleh kosong")
 
     def _require_course(self, internal_course_id: str) -> CourseDTO:
         course = self._courses.get(internal_course_id)

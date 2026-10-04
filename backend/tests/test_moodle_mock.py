@@ -7,6 +7,7 @@ from src.services.moodle_adapter_exceptions import (
     MoodleOperationFailedError,
 )
 from src.services.moodle_mock import MockMoodleIntegration
+from src.services.moodle_integration_interface import LearningMaterial
 
 
 def run(coro):
@@ -160,5 +161,153 @@ def test_section_inputs_are_validated():
             await mock.create_section("course_1", "week_a", 0, "Minggu 0")
         with pytest.raises(ValueError):
             await mock.create_section("course_1", "week_a", 1, "  ")
+
+    run(scenario())
+
+
+MATERIAL = LearningMaterial(
+    title="Pengantar Basis Data",
+    content="<p>Isi materi</p>",
+    description="Minggu 1",
+)
+
+
+async def course_with_week(mock):
+    await mock.create_course("course_1", "CS 101", "cs101")
+    return await mock.create_section("course_1", "week_a", 1, "Minggu 1")
+
+
+def test_create_learning_material_places_module_in_week_section():
+    mock = MockMoodleIntegration()
+
+    async def scenario():
+        section = await course_with_week(mock)
+        created = await mock.create_learning_material(
+            "course_1", "week_a", "material_1", MATERIAL
+        )
+        assert created.internal_id == "material_1"
+        assert created.moodle_section_id == section.moodle_section_id
+        assert created.title == "Pengantar Basis Data"
+        assert created.content == "<p>Isi materi</p>"
+        weekly = await mock.get_weekly_sections("course_1")
+        assert weekly[0].module_ids == [created.moodle_module_id]
+
+    run(scenario())
+
+
+def test_create_learning_material_is_idempotent_by_internal_id():
+    mock = MockMoodleIntegration()
+
+    async def scenario():
+        await course_with_week(mock)
+        first = await mock.create_learning_material(
+            "course_1", "week_a", "material_1", MATERIAL
+        )
+        second = await mock.create_learning_material(
+            "course_1", "week_a", "material_1", MATERIAL
+        )
+        assert first == second
+        weekly = await mock.get_weekly_sections("course_1")
+        assert len(weekly[0].module_ids) == 1
+
+    run(scenario())
+
+
+def test_materials_in_the_same_week_get_distinct_module_ids_in_order():
+    mock = MockMoodleIntegration()
+
+    async def scenario():
+        await course_with_week(mock)
+        first = await mock.create_learning_material(
+            "course_1", "week_a", "material_1", MATERIAL
+        )
+        second = await mock.create_learning_material(
+            "course_1", "week_a", "material_2", MATERIAL
+        )
+        assert first.moodle_module_id != second.moodle_module_id
+        weekly = await mock.get_weekly_sections("course_1")
+        assert weekly[0].module_ids == [
+            first.moodle_module_id,
+            second.moodle_module_id,
+        ]
+
+    run(scenario())
+
+
+def test_create_learning_material_requires_course_and_linked_week():
+    mock = MockMoodleIntegration()
+
+    async def scenario():
+        with pytest.raises(MoodleEntityNotFoundError):
+            await mock.create_learning_material(
+                "belum-ada", "week_a", "material_1", MATERIAL
+            )
+        await mock.create_course("course_1", "CS 101", "cs101")
+        with pytest.raises(MoodleEntityNotFoundError):
+            await mock.create_learning_material(
+                "course_1", "week_x", "material_1", MATERIAL
+            )
+
+    run(scenario())
+
+
+def test_learning_material_requires_title_and_content():
+    mock = MockMoodleIntegration()
+
+    async def scenario():
+        await course_with_week(mock)
+        with pytest.raises(ValueError):
+            await mock.create_learning_material(
+                "course_1",
+                "week_a",
+                "material_1",
+                LearningMaterial(title=" ", content="isi"),
+            )
+        with pytest.raises(ValueError):
+            await mock.create_learning_material(
+                "course_1",
+                "week_a",
+                "material_1",
+                LearningMaterial(title="Judul", content=""),
+            )
+
+    run(scenario())
+
+
+def test_update_learning_material_changes_content_and_keeps_identifiers():
+    mock = MockMoodleIntegration()
+
+    async def scenario():
+        await course_with_week(mock)
+        created = await mock.create_learning_material(
+            "course_1", "week_a", "material_1", MATERIAL
+        )
+        updated = await mock.update_learning_material(
+            "material_1",
+            LearningMaterial(title="Judul Baru", content="<p>Baru</p>"),
+        )
+        assert updated.title == "Judul Baru"
+        assert updated.content == "<p>Baru</p>"
+        assert updated.moodle_module_id == created.moodle_module_id
+        assert updated.moodle_section_id == created.moodle_section_id
+
+    run(scenario())
+
+
+def test_update_learning_material_rejects_unknown_material_and_blank_input():
+    mock = MockMoodleIntegration()
+
+    async def scenario():
+        await course_with_week(mock)
+        with pytest.raises(MoodleEntityNotFoundError):
+            await mock.update_learning_material("belum-ada", MATERIAL)
+        await mock.create_learning_material(
+            "course_1", "week_a", "material_1", MATERIAL
+        )
+        with pytest.raises(ValueError):
+            await mock.update_learning_material(
+                "material_1",
+                LearningMaterial(title="", content="isi"),
+            )
 
     run(scenario())
