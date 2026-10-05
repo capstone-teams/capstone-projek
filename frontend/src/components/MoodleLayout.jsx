@@ -44,7 +44,7 @@ export function ApplicationHeader() {
     <Link to={user ? '/my' : '/login'} className={styles.brand}>
       <span className={styles.brandLogo}>ITK</span><span className={styles.brandTitle}>Agentic LMS</span><span className={styles.brandSubtitle}>· Institut Teknologi Kalimantan</span>
     </Link>
-    {user ? <UserMenu user={user} onLogout={logout} /> : <Link to="/login">Masuk</Link>}
+    {user && <UserMenu user={user} onLogout={logout} />}
   </div></header>;
 }
 

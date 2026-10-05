@@ -95,6 +95,38 @@
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
+.passwordInputWrapper {
+  position: relative;
+}
+
+.passwordInputWrapper .formInput {
+  padding-right: 48px;
+}
+
+.passwordToggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.passwordToggle:focus-visible,
+.googleButton:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.3);
+  outline-offset: 2px;
+}
+
 .buttonRow {
   display: flex;
   gap: 12px;
@@ -145,10 +177,69 @@
   border-color: #CBD5E1;
 }
 
+.separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  color: #64748B;
+  font-size: 12px;
+}
+
+.separator::before,
+.separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: #E2E8F0;
+}
+
+.googleButton {
+  width: 100%;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background-color: #FFFFFF;
+  color: #334155;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.googleButton:hover {
+  background-color: #F8FAFC;
+  border-color: #94A3B8;
+}
+
+.googleIcon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
 .helperText {
   font-size: 13px;
   color: #64748B;
   margin-top: 12px;
+}
+
+.backToLogin {
+  display: inline-block;
+  margin-top: 20px;
+  color: #1D4ED8;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.backToLogin:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {
