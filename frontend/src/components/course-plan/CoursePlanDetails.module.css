@@ -1,0 +1,32 @@
+.details { min-width: 0; overflow-wrap: anywhere; }
+.information { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 0 0 20px; }
+.information > div { min-width: 0; }
+.information dt { color: var(--color-muted, #64748b); font-size: 13px; }
+.information dd { margin: 4px 0 0; font-weight: 600; }
+.description { margin: 0 0 20px; }
+.outcomes { margin-bottom: 24px; }
+.outcomes h3 { font-size: 16px; margin-bottom: 8px; }
+.textList { list-style: disc; padding-left: 20px; margin: 4px 0; }
+.textList li + li { margin-top: 6px; }
+.activities { display: flex; flex-wrap: wrap; gap: 6px; }
+.activities > span { white-space: normal; overflow-wrap: anywhere; }
+.tableWrap { max-width: 100%; overflow-x: auto; }
+.table { min-width: 1000px; table-layout: fixed; }
+.table th:first-child { width: 88px; }
+.table thead th:nth-child(2) { width: 22%; }
+.table thead th:nth-child(3), .table thead th:nth-child(4) { width: 23%; }
+.table tbody th { border-bottom: 1px solid var(--color-line, #e2e8f0); vertical-align: top; }
+.caption { padding: 0 0 12px; text-align: left; font-weight: 600; }
+.weekCards { display: none; }
+
+@media (max-width: 1023px) {
+  .tableWrap { display: none; }
+  .weekCards { display: grid; gap: 16px; list-style: none; margin: 0; padding: 0; }
+  .weekCards > li { min-width: 0; }
+  .weekCard { border: 1px solid var(--color-line, #e2e8f0); border-radius: 8px; padding: 16px; }
+  .weekCard h3 { font-size: 17px; line-height: 1.5; margin-bottom: 16px; }
+  .weekFields { display: grid; gap: 16px; margin: 0; }
+  .weekFields dt { font-size: 13px; font-weight: 600; color: var(--color-ink-subtle, #475569); margin-bottom: 4px; }
+  .weekFields dd { margin: 0; }
+  .information { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
