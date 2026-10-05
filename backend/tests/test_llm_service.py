@@ -32,6 +32,7 @@ CREDENTIAL_OWNERS = {
     "src/services/llm/openai_provider.py",
     "src/services/llm/gemini_provider.py",
     "src/services/auth/tokens.py",
+    "src/services/moodle_client.py",
 }
 
 # Credential *reads* to look for in the modules above: attribute access such as
