@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../src/context/AuthProvider';
+import { AppStateProvider } from '../src/context/AppStateProvider';
 import App from '../src/App';
 import { MOODLE_SESSION_KEY, USE_MOODLE_MOCK } from '../src/services/config';
 import { login as backendLogin } from '../src/services/authService';
@@ -45,7 +46,9 @@ async function render(path, as) {
     root.render(
       <MemoryRouter initialEntries={[path]}>
         <AuthProvider>
-          <App />
+          <AppStateProvider>
+            <App />
+          </AppStateProvider>
         </AuthProvider>
       </MemoryRouter>,
     );
@@ -69,7 +72,7 @@ describe('setup', () => {
 describe('login', () => {
   it('mengarahkan ke halaman login bila belum masuk', async () => {
     await render('/my/courses');
-    await waitForText('Selamat datang kembali');
+    await waitForText('Masuk ke akun Anda');
   });
 
   async function fillAndSubmit(username, password) {
@@ -95,12 +98,50 @@ describe('login', () => {
     await render('/login');
     await fillAndSubmit('dosen', 'dosen123');
     await waitForText('Kursus yang Anda ajar');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it('menampilkan error untuk password salah', async () => {
+  it('tidak menolak username yang benar dan menampilkan notifikasi untuk password yang salah', async () => {
     await render('/login');
     await fillAndSubmit('dosen', 'keliru');
     await waitForText('Username atau password salah');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Login gagal');
+  });
+
+  it('menyediakan kontrol emoji mata, tombol Google, dan menyembunyikan tautan Masuk di navbar', async () => {
+    await render('/login');
+
+    const password = container.querySelector('#password');
+    const passwordToggle = container.querySelector('[aria-label="Tampilkan kata sandi"]');
+    expect(password.type).toBe('password');
+    expect(passwordToggle).not.toBeNull();
+    expect(container.querySelector('header a')?.textContent).not.toContain('Masuk');
+
+    await act(async () => passwordToggle.click());
+    expect(password.type).toBe('text');
+    expect(container.querySelector('[aria-label="Sembunyikan kata sandi"]')).not.toBeNull();
+
+    const googleButton = [...container.querySelectorAll('button')].find((button) => button.textContent.includes('Lanjutkan dengan Google'));
+    await act(async () => googleButton.click());
+    await waitForText('Login menggunakan Google belum tersedia');
+  });
+
+  it('membuka halaman pemulihan kata sandi dari login', async () => {
+    await render('/login');
+    await act(async () => container.querySelector('a[href="/forgot-password"]').click());
+
+    await waitForText('Lupa kata sandi?');
+    expect(container.querySelector('#recovery-username')).not.toBeNull();
+    expect(container.querySelector('form').getAttribute('action')).toContain('/login/forgot_password.php');
+  });
+
+  it('menampilkan pemberitahuan saat mengirim pemulihan dalam mode demo', async () => {
+    await render('/forgot-password');
+    const recoveryInput = container.querySelector('#recovery-username');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(recoveryInput, 'dosen');
+    await act(async () => recoveryInput.dispatchEvent(new Event('input', { bubbles: true })));
+    await act(async () => container.querySelector('form').requestSubmit());
+    await waitForText('Pemulihan kata sandi belum tersedia');
   });
 
   it('tidak menampilkan kata dummy di halaman login', async () => {

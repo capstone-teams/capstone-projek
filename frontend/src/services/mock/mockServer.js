@@ -179,6 +179,20 @@ function startContentGeneration(course, weeks, { runType = 'content_generation',
   return run;
 }
 
+function buildCoursePlan(course, { instruction = null, status = 'draft' } = {}) {
+  const analysis = db.rps.find((rps) => rps.id === course.rps_id).analysis;
+  return {
+    id: course.plan?.id ?? nextId('plan'),
+    course_id: course.id,
+    version: (course.plan?.version ?? 0) + 1,
+    status,
+    instruction,
+    course: { title: course.name, code: course.code, credits: analysis.course.credits },
+    learning_outcomes: analysis.learning_outcomes,
+    weeks: buildPlanWeeks(instruction, analysis),
+  };
+}
+
 function startPlanning(course, instruction) {
   const run = createRun('course_planning', course, 'course_planning');
   setStatus(course, 'PLANNING', 'course_planning');
@@ -190,17 +204,9 @@ function startPlanning(course, instruction) {
       emit(course, 'PLANNING_PROGRESS', { stage: 'drafting_weeks' });
     },
     () => {
-      const version = (course.plan?.version ?? 0) + 1;
-      course.plan = {
-        id: course.plan?.id ?? nextId('plan'),
-        course_id: course.id,
-        version,
-        status: 'draft',
-        instruction: instruction ?? null,
-        weeks: buildPlanWeeks(instruction),
-      };
+      course.plan = buildCoursePlan(course, { instruction });
       finishRun(run);
-      emit(course, 'PLANNING_COMPLETED', { version });
+      emit(course, 'PLANNING_COMPLETED', { version: course.plan.version });
       setStatus(course, 'WAITING_PLAN_REVIEW', 'plan_review');
     },
   ]);
@@ -731,7 +737,7 @@ export function resetMockDb() {
     additional_prompt: 'Gunakan contoh kasus aplikasi kampus ITK.',
     activity_configuration: { learning_material: true, assignment: true, quiz: true },
   });
-  done.plan = { id: nextId('plan'), course_id: done.id, version: 1, status: 'approved', instruction: null, weeks: buildPlanWeeks() };
+  done.plan = buildCoursePlan(done, { status: 'approved' });
   SAMPLE_TOPICS.forEach((topic, i) => {
     done.content[i + 1] = buildWeekContent(i + 1, topic, done.activity_configuration, i + 1 === 5 ? 1 : 0);
   });
@@ -746,7 +752,7 @@ export function resetMockDb() {
     additional_prompt: '',
     activity_configuration: { learning_material: true, assignment: true, quiz: false },
   });
-  pending.plan = { id: nextId('plan'), course_id: pending.id, version: 1, status: 'draft', instruction: null, weeks: buildPlanWeeks() };
+  pending.plan = buildCoursePlan(pending);
   pending.status = 'WAITING_PLAN_REVIEW';
   pending.stage = 'plan_review';
   emit(pending, 'PLANNING_COMPLETED', { version: 1 });

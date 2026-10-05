@@ -1,19 +1,20 @@
 @import 'tailwindcss';
 @import './moodle-icon-filters.css';
+@import './approved-base.css' layer(base);
 
 /* Nilai diambil dari moodle/public/theme/boost/style/moodle.css (Moodle 5.3, token --mds-*). */
 @theme {
-  --font-sans: 'Noto Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Liberation Sans', Arial, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Liberation Sans', Arial, sans-serif;
 
-  --color-primary: #0f6cbf;
-  --color-primary-dark: #0d5ca2; /* --bs-btn-hover-bg */
+  --color-primary: #1D4ED8;
+  --color-primary-dark: #1E40AF; /* --bs-btn-hover-bg */
   --color-primary-light: #e7f0f9;
-  --color-ink: #1d2125; /* --mds-text-default */
-  --color-ink-subtle: #495057; /* --mds-text-subtle */
-  --color-muted: #6a737b; /* --mds-text-muted */
-  --color-line: #dee2e6; /* --mds-border-default / gray-300 */
-  --color-line-subtle: #e9ecef; /* --mds-border-subtle / gray-200 */
-  --color-surface: #f8f9fa; /* --mds-bg-surface-subtle / body-bg */
+  --color-ink: #0F172A; /* --mds-text-default */
+  --color-ink-subtle: #475569; /* --mds-text-subtle */
+  --color-muted: #64748B; /* --mds-text-muted */
+  --color-line: #E2E8F0; /* --mds-border-default / gray-300 */
+  --color-line-subtle: #F1F5F9; /* --mds-border-subtle / gray-200 */
+  --color-surface: #F8FAFC; /* --mds-bg-surface-subtle / body-bg */
   --color-success: #357a32;
   --color-success-light: #d7e6d6;
   --color-warning: #8a5300;
@@ -28,7 +29,7 @@
   --color-act-communication: #eb6200;
   --color-act-content: #0099ad;
   --color-act-interactive: #8d3d1b;
-  --color-act-other: #6a737b;
+  --color-act-other: #64748B;
 }
 
 @layer base {
@@ -358,3 +359,31 @@
     @apply border border-line px-2 py-1;
   }
 }
+
+/* Approved presentation applied to Rakha's functional pages. */
+.approved-page { max-width: 1440px; margin: 0 auto; padding: 32px 64px; min-width: 0; }
+.approved-app { min-height: 100vh; background: #F8FAFC; }
+.approved-login { min-height: calc(100vh - 64px); display: flex; flex-direction: column; }
+.approved-page .moodle-h1 { font-size: 28px; line-height: 1.2; }
+.approved-page .btn { min-height: 38px; padding: 8px 18px; font-size: 13px; font-weight: 600; border-radius: 8px; border: 1px solid #E2E8F0; }
+.approved-page .btn--primary { background: #1D4ED8; color: white; border-color: #1D4ED8; }
+.approved-page .btn--primary:hover { background: #1E40AF; }
+.approved-page section, .approved-page .stat { border-color: #E2E8F0; }
+.approved-page h1 { font-size: 28px; }
+.approved-page .tabs { overflow-x: auto; }
+.approved-page .tabs__link { flex-shrink: 0; }
+.approved-page .table-wrap { max-width: 100%; }
+.approved-page .grid--sidebar { grid-template-columns: minmax(0, 1fr); }
+.approved-page .week-nav { flex-direction: row; flex-wrap: wrap; max-height: none; }
+.approved-page .week-nav > li { min-width: 0; max-width: 100%; }
+.approved-page .week-nav__btn { width: auto; }
+.approved-page .week-nav__topic { max-width: 210px; }
+@media (max-width: 1024px) { .approved-page { padding: 28px 32px; } }
+@media (max-width: 640px) { .approved-page { padding: 24px 16px; } .approved-page h1, .approved-page .moodle-h1 { font-size: 24px; } }
+
+/* State aplikasi global (AppStatus): bar loading tipis di bawah header dan daftar error global. */
+.app-global-loading { position: sticky; top: 0; z-index: 40; height: 3px; overflow: hidden; background: var(--color-primary-light); }
+.app-global-loading__bar { display: block; width: 40%; height: 100%; background: var(--color-primary); animation: app-global-loading 1.2s ease-in-out infinite; }
+@keyframes app-global-loading { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .app-global-loading__bar { width: 100%; animation: none; } }
+.approved-page.app-global-errors { padding-bottom: 0; }

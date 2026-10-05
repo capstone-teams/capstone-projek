@@ -75,7 +75,7 @@ export default function DashboardPage() {
     <PageContainer>
       <h1 className="moodle-h1 mb-6">Halo, {user.firstname}! 👋</h1>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid items-start gap-5 ">
         <div className="flex min-w-0 flex-col gap-5">
           <Card title="Timeline">
             <Timeline />
@@ -104,7 +104,7 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <aside className="flex flex-col gap-5">
+        <div className="grid gap-5 md:grid-cols-2">
           {user.role === 'dosen' ? (
             <>
               <Card title="Kursus yang Anda ajar">
@@ -146,7 +146,7 @@ export default function DashboardPage() {
               )}
             </Card>
           )}
-        </aside>
+        </div>
       </div>
     </PageContainer>
   );

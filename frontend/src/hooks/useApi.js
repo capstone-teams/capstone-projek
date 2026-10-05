@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { AppStateContext } from '../context/appStateContext';
 import { useLatest } from './useLatest';
 
 /**
@@ -38,24 +39,28 @@ export function useApi(fetcher, deps = []) {
 /**
  * Membungkus aksi (POST/PUT) dengan state pending & error.
  * run() melempar ulang error supaya pemanggil bisa bereaksi bila perlu.
+ * `loadingLabel` juga mendaftarkan aksi ke loading global AppStateProvider (bila ada).
  */
-export function useAction(action) {
+export function useAction(action, { loadingLabel } = {}) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const actionRef = useLatest(action);
+  const startLoading = useContext(AppStateContext)?.startLoading;
 
   const run = useCallback(async (...args) => {
     setPending(true);
     setError(null);
+    const stopLoading = loadingLabel && startLoading ? startLoading(loadingLabel) : null;
     try {
       return await actionRef.current(...args);
     } catch (e) {
       setError(e);
       throw e;
     } finally {
+      stopLoading?.();
       setPending(false);
     }
-  }, [actionRef]);
+  }, [actionRef, loadingLabel, startLoading]);
 
   return { run, pending, error, clearError: () => setError(null) };
 }

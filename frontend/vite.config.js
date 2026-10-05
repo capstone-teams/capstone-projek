@@ -9,12 +9,13 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss()],
     server: {
-      port: 3000,
+      port: 3000, strictPort: true,
       // Teruskan /api ke FastAPI backend agar tidak perlu CORS saat development.
       proxy: {
         '/api': { target: backendUrl, changeOrigin: true, ws: true },
       },
     },
+    preview: { port: 3000, strictPort: true },
     test: {
       environment: 'jsdom',
       include: ['tests/**/*.test.{js,jsx}'],

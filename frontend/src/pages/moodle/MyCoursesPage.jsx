@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useAuth } from '../../hooks/useAuth';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { usePreference } from '../../hooks/useAppState';
 import { useApi } from '../../hooks/useApi';
 import { getCoursesByClassification } from '../../services/moodle/moodleApi';
 import { PageContainer } from '../../components/MoodleLayout';
@@ -14,11 +15,12 @@ const FILTERS = [
 ];
 
 export default function MyCoursesPage() {
-  const { user } = useAuth();
-  const [classification, setClassification] = useState('all');
+  const { isTeacherOf } = useCurrentUser();
+  // Filter diingat per user, seperti blok "Ikhtisar kursus" Moodle.
+  const [storedClassification, setClassification] = usePreference('myCourses.classification', 'all');
+  const classification = FILTERS.some((f) => f.value === storedClassification) ? storedClassification : 'all';
   const [query, setQuery] = useState('');
   const { data, error, loading } = useApi(() => getCoursesByClassification(classification), [classification]);
-  const teacherIds = new Set(user.teacherCourseIds);
 
   const q = query.trim().toLowerCase();
   const courses = (data ?? []).filter((c) => !q || `${c.fullname} ${c.shortname}`.toLowerCase().includes(q));
@@ -47,7 +49,7 @@ export default function MyCoursesPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {courses.map((c) => (
-              <CourseCard key={c.id} course={c} isTeacher={teacherIds.has(c.id)} />
+              <CourseCard key={c.id} course={c} isTeacher={isTeacherOf(c.id)} />
             ))}
           </div>
         )}

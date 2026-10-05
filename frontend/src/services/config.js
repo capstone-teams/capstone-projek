@@ -18,3 +18,5 @@ export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? 'true') !== 'false';
 
 export const TOKEN_STORAGE_KEY = 'agentic-lms.token';
 export const MOODLE_SESSION_KEY = 'agentic-lms.moodle-session';
+// Preferensi UI per user; kunci lengkap: `${PREFERENCES_STORAGE_KEY}.<userId>`.
+export const PREFERENCES_STORAGE_KEY = 'agentic-lms.preferences';

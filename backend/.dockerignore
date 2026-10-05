@@ -1,0 +1,23 @@
+# Konteks build image backend.
+#
+# Credential TIDAK boleh ikut ke dalam image: `.env` dan variannya dikecualikan,
+# sementara `.env.example` tetap disertakan karena Settings memakainya sebagai
+# fallback konfigurasi (dan test_config.py membacanya).
+
+.env
+.env.*
+!.env.example
+
+# Virtual environment & artefak build lokal
+.venv/
+build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Tooling lokal
+.git/
+.github/

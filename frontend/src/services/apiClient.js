@@ -1,5 +1,6 @@
 import { API_BASE_URL, TOKEN_STORAGE_KEY, USE_MOCK } from './config';
 import { handleMockRequest } from './mock/mockServer';
+import { readString, writeString } from '../utils/storage';
 
 /**
  * Error dari Backend API. Bentuknya mengikuti design-api.md §18:
@@ -16,20 +17,11 @@ export class ApiError extends Error {
 }
 
 export function getToken() {
-  try {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  return readString(TOKEN_STORAGE_KEY);
 }
 
 export function setToken(token) {
-  try {
-    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    else localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch {
-    // localStorage tidak tersedia (mis. private mode); sesi hanya hidup di memori.
-  }
+  writeString(TOKEN_STORAGE_KEY, token || null);
 }
 
 // Dipanggil saat backend membalas 401 agar AuthContext bisa logout.
@@ -86,6 +78,7 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
     try {
       data = JSON.parse(text);
     } catch {
+      if (response.ok) throw new ApiError(response.status, 'INVALID_RESPONSE', 'Respons JSON backend tidak valid.');
       data = null;
     }
   }

@@ -13,6 +13,8 @@ __pycache__/
 .Python
 .venv/
 .venv*/
+backend/.venv/
+backend/.venv*/
 env/
 venv/
 ENV/
@@ -20,6 +22,7 @@ env.bak/
 venv.bak/
 
 # Environment Variables & Secrets
+backend/.env
 .env
 .env.*
 !.env.example

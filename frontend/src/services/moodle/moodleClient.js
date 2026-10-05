@@ -22,10 +22,12 @@ export class MoodleError extends Error {
 }
 
 let token = null;
+let tokenGeneration = 0;
 let onInvalidToken = null;
 
 export function setMoodleToken(value) {
   token = value;
+  tokenGeneration += 1;
 }
 
 export function getMoodleToken() {
@@ -86,16 +88,18 @@ export async function requestToken(username, password) {
 /** Panggil satu fungsi Moodle Web Service, mis. callWs('core_webservice_get_site_info'). */
 export async function callWs(wsfunction, params = {}) {
   if (!token) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
+  const requestToken = token;
+  const generation = tokenGeneration;
 
   const data = USE_MOODLE_MOCK
-    ? await mockCallWs(token, wsfunction, params)
+    ? await mockCallWs(requestToken, wsfunction, params)
     : await postForm(
         `${MOODLE_URL}/webservice/rest/server.php?moodlewsrestformat=json&wsfunction=${encodeURIComponent(wsfunction)}`,
-        encodeParams({ wstoken: token, ...params }),
+        encodeParams({ wstoken: requestToken, ...params }),
       );
 
   if (data && typeof data === 'object' && data.exception) {
-    if (data.errorcode === 'invalidtoken' && onInvalidToken) onInvalidToken();
+    if (data.errorcode === 'invalidtoken' && generation === tokenGeneration && onInvalidToken) onInvalidToken();
     throw new MoodleError(data.errorcode, data.message, { exception: data.exception, wsfunction });
   }
   return data;

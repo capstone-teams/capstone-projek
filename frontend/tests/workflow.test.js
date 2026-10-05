@@ -100,7 +100,14 @@ describe('workflow course end-to-end', () => {
     expect(await status()).toBe('PLANNING');
     await flush();
     expect(await status()).toBe('WAITING_PLAN_REVIEW');
+<<<<<<< HEAD
     expect((await courses.getPlan(id)).weeks).toHaveLength(16);
+=======
+    const generatedPlan = await courses.getPlan(id);
+    expect(generatedPlan.weeks).toHaveLength(16);
+    expect(generatedPlan.course).toMatchObject({ code: 'IF2105', credits: 3 });
+    expect(generatedPlan.weeks[0]).toMatchObject({ week_number: 1, learning_outcomes: ['CPMK-1'], teaching_methods: ['Ceramah', 'diskusi', 'praktikum'] });
+>>>>>>> origin/develop
 
     await courses.regeneratePlan(id, 'Perbaiki minggu 5-8');
     await flush();

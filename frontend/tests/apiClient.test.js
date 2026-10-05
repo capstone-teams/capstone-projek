@@ -8,7 +8,8 @@ vi.mock('../src/services/config', () => ({
   TOKEN_STORAGE_KEY: 'test.token',
 }));
 
-const { request, setToken, ApiError, onUnauthorized } = await import('../src/services/apiClient');
+const { request, getToken, setToken, ApiError, onUnauthorized } = await import('../src/services/apiClient');
+const { login } = await import('../src/services/authService');
 
 function mockFetch(status, body) {
   const fn = vi.fn().mockResolvedValue({
@@ -23,6 +24,7 @@ function mockFetch(status, body) {
 afterEach(() => {
   vi.unstubAllGlobals();
   setToken(null);
+  onUnauthorized(null);
 });
 
 describe('apiClient (mode backend)', () => {
@@ -69,5 +71,26 @@ describe('apiClient (mode backend)', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     const err = await request('GET', '/x').catch((e) => e);
     expect(err.code).toBe('NETWORK_ERROR');
+  });
+
+  it('rejects malformed successful JSON instead of presenting it as empty data', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '<html>Proxy error</html>' }));
+    await expect(request('GET', '/courses')).rejects.toMatchObject({ code: 'INVALID_RESPONSE', status: 200 });
+  });
+
+  it('accepts a valid empty 204 response', async () => {
+    mockFetch(204);
+    await expect(request('POST', '/x')).resolves.toBeNull();
+  });
+
+  it('a delayed backend login cannot restore a token after its session ended', async () => {
+    let release;
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise((resolve) => { release = resolve; })));
+    let current = true;
+    const pending = login('dosen', 'dosen123', { isCurrent: () => current });
+    current = false;
+    release({ ok: true, status: 200, text: async () => JSON.stringify({ access_token: 'obsolete-token' }) });
+    await pending;
+    expect(getToken()).toBeNull();
   });
 });

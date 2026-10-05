@@ -22,6 +22,7 @@ function mockFetch(...responses) {
 afterEach(() => {
   vi.unstubAllGlobals();
   setMoodleToken(null);
+  onMoodleTokenInvalid(null);
 });
 
 describe('encodeParams', () => {
@@ -73,6 +74,20 @@ describe('webservice/rest/server.php', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     const err = await callWs('core_webservice_get_site_info').catch((e) => e);
     expect(err.code).toBe('networkerror');
+  });
+
+  it('respons token lama tidak mengeluarkan sesi yang lebih baru', async () => {
+    setMoodleToken('tok');
+    const handler = vi.fn();
+    onMoodleTokenInvalid(handler);
+    let resolve;
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise((done) => { resolve = done; })));
+    const pending = callWs('core_webservice_get_site_info').catch((error) => error);
+    // Moodle dapat menerbitkan kembali nilai token yang sama untuk sesi baru.
+    setMoodleToken('tok');
+    resolve({ status: 200, text: async () => JSON.stringify({ exception: 'moodle_exception', errorcode: 'invalidtoken', message: 'Invalid token' }) });
+    expect((await pending).code).toBe('invalidtoken');
+    expect(handler).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import MoodleLayout from './components/MoodleLayout';
 import RequireAuth from './components/RequireAuth';
+<<<<<<< HEAD
+=======
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+>>>>>>> origin/develop
 import LoginPage from './pages/LoginPage';
 import { NotFoundPage } from './pages/StatusPage';
 // Moodle (dosen & mahasiswa)
@@ -30,6 +34,10 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+<<<<<<< HEAD
+=======
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+>>>>>>> origin/develop
 
       <Route element={<RequireAuth />}>
         <Route element={<MoodleLayout />}>

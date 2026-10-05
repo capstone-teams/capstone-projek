@@ -1,0 +1,286 @@
+.container {
+  padding: 32px 64px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex: 1;
+}
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748B;
+  flex-wrap: wrap;
+}
+
+.breadcrumbLink {
+  color: #1D4ED8;
+  font-weight: 500;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.breadcrumbLink:hover {
+  text-decoration: underline;
+}
+
+.breadcrumbSeparator {
+  color: #CBD5E1;
+}
+
+.breadcrumbCurrent {
+  color: #64748B;
+  font-weight: 500;
+}
+
+.pageHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.headingText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pageTitle {
+  font-size: 26px;
+  font-weight: 700;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+}
+
+.pageMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #64748B;
+  flex-wrap: wrap;
+}
+
+.badgeTypePdf {
+  background-color: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badgeTypePpt {
+  background-color: #FFF7ED;
+  color: #C2410C;
+  border: 1px solid #FFEDD5;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badgeTypeTask {
+  background-color: #F5F3FF;
+  color: #6D28D9;
+  border: 1px solid #DDD6FE;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btnPrimary {
+  background-color: #1D4ED8;
+  color: #FFFFFF;
+  border: 1px solid #1D4ED8;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btnPrimary:hover {
+  background-color: #1E40AF;
+}
+
+.btnSecondary {
+  background-color: #FFFFFF;
+  color: #1D4ED8;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.btnSecondary:hover {
+  background-color: #F8FAFC;
+  border-color: #CBD5E1;
+}
+
+/* Document Reader Canvas */
+.readerCanvas {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.docBanner {
+  border-bottom: 2px solid #F1F5F9;
+  padding-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.docTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0F172A;
+  line-height: 1.35;
+}
+
+.docDescription {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.subCpmkBox {
+  background-color: #F8FAFC;
+  border-left: 4px solid #1D4ED8;
+  padding: 14px 18px;
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.subCpmkLabel {
+  font-weight: 700;
+  color: #1E293B;
+  margin-bottom: 4px;
+}
+
+.docSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionHeading {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0F172A;
+  border-bottom: 1px solid #F1F5F9;
+  padding-bottom: 8px;
+}
+
+.sectionContent {
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+.formulaBox {
+  background-color: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  padding: 16px 20px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 14px;
+  color: #1E293B;
+  text-align: center;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.exerciseCard {
+  background-color: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exerciseTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #92400E;
+}
+
+.exerciseText {
+  font-size: 13px;
+  color: #78350F;
+  line-height: 1.6;
+}
+
+.readerFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #E2E8F0;
+  padding-top: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 20px 16px 40px;
+  }
+  .readerCanvas {
+    padding: 24px 16px;
+  }
+  .pageHeading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .headerActions {
+    width: 100%;
+  }
+  .headerActions button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
