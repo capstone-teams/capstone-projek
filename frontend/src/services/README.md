@@ -1,26 +1,30 @@
-# Service aktif mengikuti Rakha
+# Service frontend
 
-Acuan: `origin/feature/frontend-setup` pada commit `accbc21`.
+Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah.
 
-- `moodle/moodleClient.js`: token Moodle dan Web Service transport.
-- `moodle/moodleApi.js`: session/peran, kursus, peserta, nilai, aktivitas, profil.
-- `moodle/mockMoodle.js`: fixture Moodle ketika VITE_MOODLE_MOCK=true.
-- `apiClient.js`: facade HTTP/mock backend, Bearer token, ApiError.
-- `authService.js`: login backend terpisah untuk fitur AI.
-- `rpsService.js`, `profileService.js`, `courseService.js`: fitur backend aktif.
-- `monitoringSocket.js`: event workflow yang digunakan layout project.
-- `mock/`: state machine backend ketika VITE_USE_MOCK=true.
+| Modul | Tanggung jawab |
+| --- | --- |
+| moodle/moodleClient.js | Token Moodle, REST/form transport, invalid-token handler, dan URL file |
+| moodle/moodleApi.js | Pemulihan sesi/peran, kursus, peserta, nilai, aktivitas, dan profil |
+| moodle/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true |
+| apiClient.js | HTTP/mock backend, Bearer token, ApiError, dan pemeriksaan respons |
+| authService.js | Login backend terpisah untuk fitur AI |
+| rpsService.js, profileService.js, courseService.js | RPS, preferensi, dan workflow backend |
+| coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
+| monitoringSocket.js | Event workflow dan reconnect WebSocket |
+| mock/ | State machine backend ketika VITE_USE_MOCK=true |
+| config.js | URL, mode mock, dan kunci penyimpanan dari environment |
 
-AuthProvider login melalui Moodle lalu mencoba backend untuk akun dosen.
-Seluruh halaman aktif di src/pages memanggil service Rakha; tidak ada adapter
-presentation fixture tambahan. Aksi generate/approve/review/execute/verify
-menggunakan shared mock backend atau HTTP sesuai flag.
+AuthProvider login melalui Moodle lalu mencoba backend untuk akun dosen. Token
+Moodle dan backend disimpan terpisah; kegagalan backend ditampilkan melalui state
+global tanpa menggagalkan sesi Moodle. Guard generasi sesi mencegah request lama
+memulihkan sesi atau menyimpan token setelah logout.
 
-File `index.js`, `mockCourseService.js`, `apiError.js`, `useServiceResource.js`
-dan `ServiceStatus.jsx` adalah implementasi sebelumnya yang tidak dipakai runtime
-aktif. Jangan gunakan facade itu untuk fitur baru. File dipertahankan sebagai
-referensi agar pekerjaan sebelumnya tetap tersedia.
+Kursus LMS dibaca langsung melalui service Moodle. Generate, approve, review,
+execute, dan verify konten AI menggunakan backend HTTP atau shared mock backend.
+Transport serta alias payload tetap sama pada kedua mode. Mock backend berada di
+memori dan kembali ke fixture awal saat reload.
 
-Login Moodle dan backend nyata belum diuji. Khusus backend, credential dan role
-perlu cocok dengan server capstone; provider Rakha tidak menjamin dua sistem akun
-tersebut otomatis sama. Mock backend hilang saat reload.
+Login dan publikasi nyata belum diverifikasi. Identitas login serta role Moodle
+dan backend harus sesuai dengan server masing-masing; keduanya tidak otomatis
+merupakan satu sistem akun. Lihat [konfigurasi frontend](../../README.md).
