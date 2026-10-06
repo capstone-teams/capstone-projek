@@ -30,6 +30,31 @@ test('Moodle rejects the wrong password and preserves the login view', async ({ 
   expect(await page.evaluate(() => localStorage.getItem('agentic-lms.moodle-session'))).toBeNull();
 });
 
+test('mobile login controls and password recovery keep navigation usable', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/login');
+  const password = page.getByLabel('Kata sandi', { exact: true });
+  await expect(password).toHaveAttribute('type', 'password');
+  await page.getByRole('button', { name: 'Tampilkan kata sandi', exact: true }).click();
+  await expect(password).toHaveAttribute('type', 'text');
+  await page.getByRole('button', { name: 'Sembunyikan kata sandi', exact: true }).click();
+  await expect(password).toHaveAttribute('type', 'password');
+
+  await page.getByRole('button', { name: 'Lanjutkan dengan Google' }).click();
+  await expect(page.getByRole('status')).toContainText('Login menggunakan Google belum tersedia');
+  await expect(page).toHaveURL(/\/login$/);
+  expect(await page.evaluate(() => localStorage.getItem('agentic-lms.moodle-session'))).toBeNull();
+
+  await page.getByRole('link', { name: 'Lupa password?', exact: true }).click();
+  await expect(page).toHaveURL(/\/forgot-password$/);
+  await page.getByLabel('Username atau alamat email', { exact: true }).fill('dosen');
+  await page.getByRole('button', { name: 'Kirim instruksi pemulihan' }).click();
+  await expect(page.getByRole('status')).toContainText('Pemulihan kata sandi belum tersedia');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.getByRole('link', { name: 'Kembali ke halaman masuk' }).click();
+  await expect(page.getByRole('heading', { name: 'Masuk ke akun Anda' })).toBeVisible();
+});
+
 const teacherPages = [
   ['/my', 'Kursus yang Anda ajar'],
   ['/my/courses', 'Basis Data'],

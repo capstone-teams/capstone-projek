@@ -2,14 +2,13 @@ import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Alert } from '../components/ui';
-import { USE_MOODLE_MOCK } from '../services/config';
 import { SESSION_NOTICE } from '../types/auth';
 
 import { ApplicationHeader } from '../components/MoodleLayout';
 import styles from '../features/auth/LoginPage.module.css';
 
 const MESSAGES = {
-  invalidlogin: 'login tidak valid. Silakan coba lagi.',
+  invalidlogin: 'Username atau password salah. Silakan coba lagi.',
   authentication_failed: 'Username atau password salah. Silakan coba lagi.',
   enablewsdescription: 'Layanan web Moodle belum aktif.',
   servicenotavailable: 'Layanan web Moodle belum aktif.',
