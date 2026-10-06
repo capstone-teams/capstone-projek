@@ -23,15 +23,3 @@ export function usePreference(key, fallback) {
   );
   return [value, setValue];
 }
-
-/** { isLoading, tasks, startLoading, trackLoading } untuk indikator loading global. */
-export function useGlobalLoading() {
-  const { isLoading, loading, startLoading, trackLoading } = useAppState();
-  return { isLoading, tasks: loading, startLoading, trackLoading };
-}
-
-/** { errors, reportError, dismissError, clearErrors } untuk error tingkat aplikasi. */
-export function useGlobalError() {
-  const { errors, reportError, dismissError, clearErrors } = useAppState();
-  return { errors, reportError, dismissError, clearErrors };
-}

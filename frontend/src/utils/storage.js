@@ -32,7 +32,3 @@ export function readJson(key, fallback = null) {
 export function writeJson(key, value) {
   return writeString(key, value == null ? null : JSON.stringify(value));
 }
-
-export function removeItem(key) {
-  return writeString(key, null);
-}

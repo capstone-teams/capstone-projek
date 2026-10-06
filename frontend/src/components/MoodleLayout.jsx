@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { MOODLE_URL } from '../services/config';
 import AppStatus from './AppStatus';
-import styles from './layout/AppNavbar.module.css';
+import styles from './MoodleLayout.module.css';
 
 function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);

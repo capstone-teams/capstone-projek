@@ -7,7 +7,7 @@ export async function seedSession(page, role = 'dosen') {
   }, { role });
 }
 
-test('anonymous access requires Moodle login and reaches Rakha dashboard', async ({ page }) => {
+test('anonymous access requires Moodle login and reaches the dashboard', async ({ page }) => {
   await page.goto('/course/2/participants');
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel('Username', { exact: true }).fill('dosen');
@@ -69,7 +69,7 @@ const teacherPages = [
   ['/ai/courses/course_project_001/content', 'Tujuan pembelajaran'],
 ];
 for (const [route, content] of teacherPages) {
-  test('Rakha teacher route: ' + route, async ({ page }) => {
+  test('teacher route: ' + route, async ({ page }) => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await seedSession(page);
@@ -110,7 +110,7 @@ test('logout removes both Moodle and backend sessions and guards browser history
   await expect(page.getByRole('heading', { name: 'Masuk ke akun Anda' })).toBeVisible();
 });
 
-test('plan approval and generation use Rakha workflow services', async ({ page }) => {
+test('plan approval and generation use workflow services', async ({ page }) => {
   test.setTimeout(60000);
   await seedSession(page);
   await page.goto('/ai/courses/course_project_002/plan');

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge } from '../ui';
-import styles from '../../features/dashboard/DashboardPage.module.css';
+import styles from './CourseCard.module.css';
 
 export default function CourseCard({ course, isTeacher }) {
   return <Link to={'/course/' + course.id} className={styles.courseCard}>

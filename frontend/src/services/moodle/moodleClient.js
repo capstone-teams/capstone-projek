@@ -30,10 +30,6 @@ export function setMoodleToken(value) {
   tokenGeneration += 1;
 }
 
-export function getMoodleToken() {
-  return token;
-}
-
 /** Dipanggil saat Moodle menolak token (mis. kedaluwarsa atau dicabut). */
 export function onMoodleTokenInvalid(handler) {
   onInvalidToken = handler;

@@ -70,7 +70,7 @@ test('a new course shows the empty plan then generates all schema fields', async
   await expect(page.getByRole('table').locator('tbody tr').first()).toContainText('Ceramah');
 });
 
-test('Rakha revision and approval keep the enriched plan usable for content week selection', async ({ page }) => {
+test('revision and approval keep the enriched plan usable for content week selection', async ({ page }) => {
   await seed(page);
   await page.goto('/ai/courses/course_project_002/plan');
   await page.getByRole('button', { name: 'Minta revisi', exact: true }).click();
