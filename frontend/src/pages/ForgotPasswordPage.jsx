@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Alert } from '../components/ui';
 import { ApplicationHeader } from '../components/MoodleLayout';
 import { MOODLE_URL, USE_MOODLE_MOCK } from '../services/config';
-import styles from '../features/auth/LoginPage.module.css';
+import styles from './AuthPages.module.css';
 
 export default function ForgotPasswordPage() {
   const [info, setInfo] = useState('');

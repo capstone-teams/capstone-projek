@@ -43,10 +43,6 @@ export function formatUnixDay(ts) {
   return ts ? dayFormat.format(fromUnix(ts)) : '-';
 }
 
-export function formatUnixDate(ts) {
-  return ts ? shortFormat.format(fromUnix(ts)) : '-';
-}
-
 export function formatUnixDateTime(ts) {
   return ts ? `${shortFormat.format(fromUnix(ts))}, ${clockFormat.format(fromUnix(ts))}` : '-';
 }

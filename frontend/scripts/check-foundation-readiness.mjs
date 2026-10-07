@@ -21,8 +21,8 @@ for (const test of blockers) {
 }
 for (const test of incomplete) console.log(`INCOMPLETE: ${test.title} (${test.status})`)
 
-// Playwright counts expected failures as passing results. They still block FE-04.1 readiness.
+// Expected failures count as passing in Playwright but block frontend readiness.
 if (tests.length === 0 || blockers.length > 0 || incomplete.length > 0 || report.errors?.length > 0) {
-  console.error('FE-04.1 is not ready to close. Integrate the dependencies and rerun verification.')
+  console.error('Frontend verification is incomplete. Resolve the reported checks and rerun verification.')
   process.exitCode = 1
 }

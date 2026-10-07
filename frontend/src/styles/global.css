@@ -360,7 +360,7 @@
   }
 }
 
-/* Approved presentation applied to Rakha's functional pages. */
+/* Tema dan layout halaman aplikasi. */
 .approved-page { max-width: 1440px; margin: 0 auto; padding: 32px 64px; min-width: 0; }
 .approved-app { min-height: 100vh; background: #F8FAFC; }
 .approved-login { min-height: calc(100vh - 64px); display: flex; flex-direction: column; }

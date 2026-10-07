@@ -79,7 +79,7 @@ export function rejectContent(courseId, reason) {
   return api.post(`/courses/${courseId}/review/reject`, { reason });
 }
 
-// Moodle Execution API (§13). Frontend tidak memanggil Moodle langsung.
+// Moodle Execution API (§13): publikasi konten dijalankan melalui backend.
 
 export function executeCourse(courseId) {
   return api.post(`/courses/${courseId}/execute`, undefined, { headers: idempotencyHeader() });
