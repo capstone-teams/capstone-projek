@@ -100,25 +100,33 @@
 }
 
 .passwordInputWrapper .formInput {
-  padding-right: 48px;
+  padding-right: 100px;
 }
 
 .passwordToggle {
   position: absolute;
+  z-index: 1;
   top: 50%;
-  right: 10px;
+  right: 8px;
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  gap: 4px;
   height: 32px;
-  padding: 0;
-  border: 0;
+  padding: 0 8px;
+  border: 1px solid #CBD5E1;
   border-radius: 6px;
-  background: transparent;
+  background: #FFFFFF;
+  color: #334155;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.passwordToggle:hover {
+  background-color: #F8FAFC;
+  border-color: #94A3B8;
 }
 
 .passwordToggle:focus-visible,
