@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { MOODLE_URL } from '../services/config';
 import AppStatus from './AppStatus';
 import styles from './MoodleLayout.module.css';
 
@@ -30,8 +29,6 @@ function UserMenu({ user, onLogout }) {
       <Link role="menuitem" to="/my" className={item}>Dasbor</Link>
       <Link role="menuitem" to="/my/courses" className={item}>Kursus saya</Link>
       <Link role="menuitem" to="/user/profile" className={item}>Profil</Link>
-      {user.role === 'dosen' && <Link role="menuitem" to="/ai" className={item}>Generator AI</Link>}
-      <a role="menuitem" href={MOODLE_URL} target="_blank" rel="noreferrer" className={item}>Buka Moodle asli ↗</a>
       <div className={styles.dropdownDivider} />
       <button type="button" role="menuitem" className={item} onClick={onLogout}>Keluar</button>
     </div>}
@@ -41,10 +38,20 @@ function UserMenu({ user, onLogout }) {
 export function ApplicationHeader() {
   const { user, logout } = useAuth();
   return <header className={styles.header}><div className={styles.headerInner}>
-    <Link to={user ? '/my' : '/login'} className={styles.brand}>
-      <span className={styles.brandLogo}>ITK</span><span className={styles.brandTitle}>Agentic LMS</span><span className={styles.brandSubtitle}>· Institut Teknologi Kalimantan</span>
-    </Link>
-    {user && <UserMenu user={user} onLogout={logout} />}
+    <div className={styles.headerLeft}>
+      <Link to={user ? '/my' : '/login'} className={styles.brand}>
+        <img src="/itk-logo.png" alt="ITK" className={styles.brandLogo} />
+        <span className={styles.brandTitle}>Agentic LMS</span>
+      </Link>
+      {user && <nav className={styles.navMenu} aria-label="Navigasi situs">
+        <NavLink to="/my" end className={styles.navLink}>Dasbor</NavLink>
+        <NavLink to="/my/courses" className={styles.navLink}>Kursusku</NavLink>
+        {user.role === 'dosen' && <NavLink to="/ai" className={styles.navLink}>Generator AI</NavLink>}
+      </nav>}
+    </div>
+    {user && <div className={styles.headerActions}>
+      <UserMenu user={user} onLogout={logout} />
+    </div>}
   </div></header>;
 }
 

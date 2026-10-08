@@ -16,9 +16,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .brand {
+  min-width: 0;
   font-size: 18px;
   font-weight: 700;
   color: #0F172A;
@@ -35,40 +37,86 @@
 }
 
 .brandLogo {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background-color: #1D4ED8;
-  color: #FFFFFF;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: -0.05em;
+  height: 36px;
+  width: auto;
+  max-width: 90px;
+  object-fit: contain;
   flex-shrink: 0;
+  display: block;
 }
 
 .brandTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 18px;
   font-weight: 700;
   color: #0F172A;
   letter-spacing: -0.01em;
 }
 
-.brandSubtitle {
-  font-size: 12px;
-  font-weight: 500;
-  color: #64748B;
-  margin-left: 4px;
-}
-
 .userMenuContainer {
   position: relative;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  height: 100%;
+  min-width: 0;
+}
+
+.navMenu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748B;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.navLink:hover {
+  color: #0F172A;
+}
+
+.navLink:global(.active),
+.navLink[aria-current='page'] {
+  color: #1D4ED8;
+  font-weight: 600;
+  border-bottom-color: #1D4ED8;
+}
+
+.userName {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .userPill {
   display: inline-flex;
+  min-height: 44px;
   align-items: center;
   gap: 8px;
   background-color: #FFFFFF;
@@ -157,17 +205,27 @@
   .headerInner {
     padding: 0 32px;
   }
+  .headerLeft {
+    gap: 20px;
+  }
 }
 
 @media (max-width: 768px) {
   .headerInner {
     padding: 0 16px;
   }
-  .brandSubtitle {
-    display: none;
+  .headerLeft {
+    gap: 16px;
+  }
+  .brandLogo {
+    height: 30px;
   }
   .brandTitle {
     font-size: 16px;
+  }
+  .navLink {
+    padding: 0 10px;
+    font-size: 13px;
   }
   .userName {
     display: none;
@@ -175,7 +233,6 @@
   .userPill {
     padding: 4px 8px;
     gap: 4px;
-    min-height: 36px;
   }
   .dropdownMenu {
     width: min(280px, calc(100vw - 32px));
@@ -190,12 +247,35 @@
 @media (max-width: 480px) {
   .headerInner {
     padding: 0 12px;
+    gap: 8px;
+  }
+  .headerLeft {
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .headerLeft::-webkit-scrollbar {
+    display: none;
   }
   .brand {
     gap: 8px;
+    flex-shrink: 0;
+  }
+  .brandLogo {
+    height: 26px;
   }
   .brandTitle {
-    font-size: 15px;
+    display: none;
+  }
+  .navMenu {
+    gap: 2px;
+  }
+  .navLink {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+  .headerActions {
+    gap: 8px;
   }
   .dropdownMenu {
     width: min(270px, calc(100vw - 24px));
