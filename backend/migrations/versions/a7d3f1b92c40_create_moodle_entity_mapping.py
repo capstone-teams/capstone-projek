@@ -1,7 +1,7 @@
 """create moodle entity mapping
 
 Revision ID: a7d3f1b92c40
-Revises: c182a1549dc6
+Revises: 86ab20d2f2a8
 Create Date: 2026-10-01 10:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'a7d3f1b92c40'
-down_revision: Union[str, Sequence[str], None] = 'c182a1549dc6'
+down_revision: Union[str, Sequence[str], None] = '86ab20d2f2a8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
