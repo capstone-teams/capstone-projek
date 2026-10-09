@@ -7,6 +7,7 @@ from src.models.course import Course, CourseStatus
 from src.models.course_plan import CoursePlan, CoursePlanStatus
 from src.models.course_plan_week import CoursePlanWeek
 from src.models.instructor_profile import InstructorProfile
+from src.models.moodle_entity_mapping import MoodleEntityMapping
 from src.models.moodle_execution import MoodleExecution, MoodleExecutionStatus
 from src.models.review import Review, ReviewDecision, ReviewTargetType
 from src.models.rps import RPS, RPSStatus
@@ -39,6 +40,7 @@ __all__ = [ "Base",
             "CoursePlanStatus",
             "CoursePlanWeek",
             "InstructorProfile",
+            "MoodleEntityMapping",
             "MoodleExecution",
             "MoodleExecutionStatus",
             "Review",

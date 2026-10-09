@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from src.config.settings import settings
 from src.models.base import Base
 from src.models.user import User
+from src.models.moodle_entity_mapping import MoodleEntityMapping
 
 config = context.config
 
