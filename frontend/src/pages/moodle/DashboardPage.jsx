@@ -8,6 +8,7 @@ import ActivityIcon from '../../components/moodle/ActivityIcon';
 import CourseCard from '../../components/moodle/CourseCard';
 import { cmidFromUrl, formatUnixDay, formatUnixTime } from '../../utils/format';
 
+
 function Timeline() {
   const { data: events, error, loading } = useApi(() => getActionEvents({ limit: 20 }));
 
@@ -104,7 +105,7 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid gap-5">
           {user.role === 'dosen' ? (
             <>
               <Card title="Kursus yang Anda ajar">
@@ -120,12 +121,6 @@ export default function DashboardPage() {
                 ) : (
                   <p className="text-sm text-muted">{user.isAdmin ? 'Anda admin situs.' : 'Belum ada.'}</p>
                 )}
-              </Card>
-              <Card title="Generator Konten AI">
-                <p className="mb-3 text-sm text-muted">Isi konten course otomatis dari RPS, review, lalu kirim ke Moodle.</p>
-                <Link to="/ai" className="btn btn--primary btn--sm">
-                  Buka Generator AI
-                </Link>
               </Card>
             </>
           ) : (
