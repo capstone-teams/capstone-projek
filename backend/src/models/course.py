@@ -1,0 +1,87 @@
+import enum
+
+from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime
+from sqlalchemy import DateTime
+
+from src.models.base import BaseModel
+
+
+class CourseStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+
+
+class Course(BaseModel):
+    __tablename__ = "course"
+
+    instructor_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    rps_id: Mapped[str] = mapped_column(
+        ForeignKey("rps.id"),
+        nullable=False,
+    )
+
+    category: Mapped[str] = mapped_column(
+            ForeignKey("categories.id"),
+            nullable=False,
+            )
+    
+    course_format: Mapped[str] = mapped_column(
+            String(255),
+            nullable=False,
+            unique=True,
+            )
+
+    sortorder: Mapped[int] = mapped_column(
+        nullable=False,
+    )
+
+    fullname: Mapped[str] = mapped_column(
+        String(254),
+        nullable=False,
+    )
+    
+    shortname: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+    )
+
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    semester: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    status: Mapped[CourseStatus] = mapped_column(
+        Enum(CourseStatus, name="course_status"),
+        nullable=False,
+        default=CourseStatus.DRAFT,
+    )
+
+    moodle_course_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    start_date: Mapped[datetime | None] = mapped_column(
+            DateTime(timezone=True), 
+            nullable=True
+    )
+
+    end_date: Mapped[datetime | None] = mapped_column(
+            DateTime(timezone=True), 
+            nullable=True
+    )
