@@ -7,6 +7,15 @@ export function listCourses() {
   return api.get('/courses');
 }
 
+/**
+ * Project generator milik satu kursus Moodle (satu kursus = satu project), atau null bila belum ada.
+ * Hasil tetap disaring di sini supaya benar walau backend belum mendukung filter moodle_course_id.
+ */
+export async function findCourseByMoodleId(moodleCourseId) {
+  const res = await api.get('/courses', { query: { moodle_course_id: moodleCourseId } });
+  return (res?.courses ?? []).find((c) => String(c.moodle_course_id) === String(moodleCourseId)) ?? null;
+}
+
 export function createCourse(payload) {
   return api.post('/courses', payload);
 }
@@ -79,7 +88,7 @@ export function rejectContent(courseId, reason) {
   return api.post(`/courses/${courseId}/review/reject`, { reason });
 }
 
-// Moodle Execution API (§13). Frontend tidak memanggil Moodle langsung.
+// Moodle Execution API (§13): publikasi konten dijalankan melalui backend.
 
 export function executeCourse(courseId) {
   return api.post(`/courses/${courseId}/execute`, undefined, { headers: idempotencyHeader() });

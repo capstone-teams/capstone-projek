@@ -13,9 +13,9 @@ import { appStateReducer, initialAppState, MAX_NOTIFICATIONS, preferencesKey } f
 import { readJson, writeJson } from '../src/utils/storage';
 import { MOODLE_SESSION_KEY } from '../src/services/config';
 import { AUTH_STATUS, SESSION_NOTICE } from '../src/types/auth';
-import AppStatus from '../src/components/AppStatus';
+import AppStatus from '../src/components/layout/AppStatus';
 import MyCoursesPage from '../src/pages/moodle/MyCoursesPage';
-import LoginPage from '../src/pages/LoginPage';
+import LoginPage from '../src/pages/auth/LoginPage';
 
 const service = vi.hoisted(() => ({
   requestToken: vi.fn(), resolveSession: vi.fn(), setMoodleToken: vi.fn(), onMoodleTokenInvalid: vi.fn(),

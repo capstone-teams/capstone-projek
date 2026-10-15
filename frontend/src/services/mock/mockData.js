@@ -75,7 +75,7 @@ export function buildPlanWeeks(instruction, analysis = buildRpsAnalysis()) {
       objectives,
       topics: subTopics.length ? subTopics : [topic],
       teaching_methods: rpsWeek?.method ? rpsWeek.method.split(',').map((method) => method.trim()) : [],
-      // Alias lama dipertahankan untuk workflow konten Rakha.
+      // Alias field digunakan pemilih minggu dan workflow konten.
       week,
       topic,
       sub_topics: subTopics,

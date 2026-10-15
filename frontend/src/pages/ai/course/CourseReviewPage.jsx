@@ -4,7 +4,7 @@ import { useCourse } from '../../../hooks/useCourse';
 import { approveContent, getReview, rejectContent, validateContent } from '../../../services/courseService';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
-import InstructionModal from '../../../components/InstructionModal';
+import InstructionModal from '../../../components/ai/InstructionModal';
 import { formatDateTime } from '../../../utils/format';
 
 const SEVERITY_TONES = { high: 'danger', medium: 'warning', low: 'neutral' };

@@ -3,8 +3,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
 import { getCoursesByClassification, getUserById } from '../../services/moodle/moodleApi';
 import { moodleUrl } from '../../services/moodle/moodleClient';
-import { PageContainer } from '../../components/MoodleLayout';
+import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Avatar, Badge, Card, ErrorAlert, Spinner } from '../../components/ui';
+import TeachingPreferencesCard from '../../components/ai/TeachingPreferencesCard';
 import { formatUnixDateTime } from '../../utils/format';
 
 export default function ProfilePage() {
@@ -71,6 +72,7 @@ export default function ProfilePage() {
             </ul>
           )}
         </Card>
+        {user.role === 'dosen' && <TeachingPreferencesCard />}
       </div>
     </PageContainer>
   );

@@ -10,7 +10,7 @@
  * Kedua endpoint mengirim header Access-Control-Allow-Origin: *, jadi bisa dipanggil dari browser.
  */
 import { MOODLE_SERVICE, MOODLE_URL, USE_MOODLE_MOCK } from '../config';
-import { mockCallWs, mockRequestToken } from './mockMoodle';
+import { mockCallWs, mockRequestToken } from '../mock/mockMoodle';
 
 export class MoodleError extends Error {
   constructor(errorcode, message, extra = {}) {
@@ -28,10 +28,6 @@ let onInvalidToken = null;
 export function setMoodleToken(value) {
   token = value;
   tokenGeneration += 1;
-}
-
-export function getMoodleToken() {
-  return token;
 }
 
 /** Dipanggil saat Moodle menolak token (mis. kedaluwarsa atau dicabut). */

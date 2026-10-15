@@ -101,6 +101,12 @@ describe('login', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('menampilkan placeholder sesuai desain login', async () => {
+    await render('/login');
+    expect(container.querySelector('#username').placeholder).toBe('ID Number (username) / email');
+    expect(container.querySelector('#password').placeholder).toBe('Password');
+  });
+
   it('tidak menolak username yang benar dan menampilkan notifikasi untuk password yang salah', async () => {
     await render('/login');
     await fillAndSubmit('dosen', 'keliru');
@@ -161,10 +167,15 @@ describe('halaman dosen', () => {
     ['/course/2/mod/102', 'Konsep utama'],
     ['/course/2/mod/107', 'Ringkasan penilaian'],
     ['/course/2/mod/104', 'untuk membuka tautan'],
-    ['/ai', 'Generation project'],
-    ['/ai/rps', 'RPS-Pemrograman-Web-2026.pdf'],
-    ['/ai/courses/course_project_001/plan', 'Rencana course · versi 1'],
-    ['/ai/courses/course_project_002/plan', 'Setujui rencana'],
+    ['/user/profile', 'Preferensi mengajar (Generator AI)'],
+    ['/my/courses', 'Menunggu review rencana'],
+    ['/course/2', 'Generator AI'],
+    ['/course/2/ai', 'Aktivitas agent'],
+    ['/course/2/ai/rps', 'Komponen penilaian'],
+    ['/course/2/ai/plan', 'Rencana course · versi 1'],
+    ['/course/4/ai/plan', 'Setujui rencana'],
+    ['/course/3/ai', 'Mulai generator AI'],
+    ['/ai', 'Ikhtisar kursus'],
     ['/tidak-ada', 'Halaman tidak ditemukan'],
   ];
 
@@ -181,7 +192,7 @@ describe('halaman mahasiswa', () => {
     ['/course/3', 'Normalisasi'],
     ['/course/2/grades', 'Laporan nilai'],
     ['/course/2/mod/107', 'Status pengumpulan'],
-    ['/ai', 'Khusus dosen'],
+    ['/course/2/ai', 'Khusus dosen'],
   ];
 
   it.each(pages)('render %s', async (path, text) => {
@@ -195,5 +206,11 @@ describe('halaman mahasiswa', () => {
     await waitForText('Halo, Andi!');
     expect(container.textContent).not.toContain('Generator AI');
     expect(container.textContent.toLowerCase()).not.toContain('dummy');
+  });
+
+  it('tidak melihat tab Generator AI di halaman kursus', async () => {
+    await render('/course/2', 'mahasiswa');
+    await waitForText('Peserta');
+    expect(container.textContent).not.toContain('Generator AI');
   });
 });
