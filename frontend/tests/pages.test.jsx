@@ -101,6 +101,12 @@ describe('login', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('menampilkan placeholder sesuai desain login', async () => {
+    await render('/login');
+    expect(container.querySelector('#username').placeholder).toBe('ID Number (username) / email');
+    expect(container.querySelector('#password').placeholder).toBe('Password');
+  });
+
   it('tidak menolak username yang benar dan menampilkan notifikasi untuk password yang salah', async () => {
     await render('/login');
     await fillAndSubmit('dosen', 'keliru');

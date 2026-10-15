@@ -56,8 +56,8 @@ export default function LoginPage() {
       {info && <Alert tone="info">{info}</Alert>}
       {!error && !info && sessionNotice === SESSION_NOTICE.EXPIRED && <Alert tone="info" title="Sesi berakhir">Sesi Anda telah berakhir. Silakan masuk kembali.</Alert>}
       <form onSubmit={onSubmit}>
-        <AuthField id="username" label="Username" value={form.username} onChange={update('username')} autoComplete="username" placeholder="Masukkan username Moodle" required autoFocus />
-        <PasswordField id="password" label="Kata sandi" value={form.password} onChange={update('password')} autoComplete="current-password" required />
+        <AuthField id="username" label="Username" value={form.username} onChange={update('username')} autoComplete="username" placeholder="ID Number (username) / email" required autoFocus />
+        <PasswordField id="password" label="Kata sandi" value={form.password} onChange={update('password')} autoComplete="current-password" placeholder="Password" required />
         <div className="mb-4 text-sm">
           <Link to="/forgot-password">Lupa password?</Link>
         </div>

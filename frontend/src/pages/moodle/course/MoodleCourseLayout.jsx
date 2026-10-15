@@ -3,7 +3,6 @@ import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '../../../hooks/useAuth';
 import { useApi } from '../../../hooks/useApi';
 import { getCourse, getCourseContents, logCourseView } from '../../../services/moodle/moodleApi';
-import { moodleUrl } from '../../../services/moodle/moodleClient';
 import { PageContainer } from '../../../components/layout/MoodleLayout';
 import { ErrorAlert, Spinner } from '../../../components/ui';
 
@@ -31,7 +30,7 @@ export default function MoodleCourseLayout() {
   return <PageContainer>
     <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb"><Link to="/my/courses">Kursus saya</Link> / <span>{course.shortname}</span></nav>
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h1 className="moodle-h1">{course.fullname}</h1><a className="btn btn--sm" href={moodleUrl('/course/view.php?id=' + courseId)} target="_blank" rel="noreferrer">Buka di Moodle ↗</a>
+      <h1 className="moodle-h1">{course.fullname}</h1>
     </div>
     <nav className="tabs" aria-label="Navigasi kursus">{tabs.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className="tabs__link">{tab.label}</NavLink>)}</nav>
     {!onAiTab && <details className="mb-4 rounded-lg border border-line bg-white p-3">

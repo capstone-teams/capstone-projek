@@ -21,7 +21,7 @@ for (const width of [375, 768, 1440]) {
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1);
       if (route === '/login') {
         await expect(page.getByRole('button', { name: 'Masuk', exact: true })).toHaveCSS('background-color', 'rgb(29, 78, 216)');
-        await expect(page.getByLabel('Username', { exact: true })).toHaveCSS('border-radius', '6px');
+        await expect(page.getByLabel('Username', { exact: true })).toHaveCSS('border-radius', '10px');
       }
       await testInfo.attach('current-presentation', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
     });
