@@ -18,7 +18,6 @@ export default function ApplicationHeader() {
         {user && <nav className="flex h-full items-center gap-1 max-phone:gap-0.5" aria-label="Navigasi situs">
           <NavLink to="/my" end className={NAV_LINK_CLASS}>Dasbor</NavLink>
           <NavLink to="/my/courses" className={NAV_LINK_CLASS}>Kursusku</NavLink>
-          {user.role === 'dosen' && <NavLink to="/ai" className={NAV_LINK_CLASS}>Generator AI</NavLink>}
         </nav>}
       </div>
       {user && <div className="flex shrink-0 items-center gap-4 max-phone:gap-2">

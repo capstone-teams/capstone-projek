@@ -15,9 +15,9 @@ const NEXT_STEP = {
   PLAN_APPROVED: { text: 'Rencana disetujui. Lanjut generate konten mingguan.', to: 'content', cta: 'Generate konten' },
   WAITING_CONTENT_REVIEW: { text: 'Konten selesai divalidasi dan menunggu review Anda.', to: 'review', cta: 'Review konten' },
   CONTENT_REJECTED: { text: 'Konten ditolak. Regenerasi minggu yang bermasalah.', to: 'content', cta: 'Perbaiki konten' },
-  APPROVED: { text: 'Konten disetujui dan siap dikirim ke Moodle.', to: 'moodle', cta: 'Kirim ke Moodle' },
-  EXECUTED: { text: 'Konten sudah terkirim. Jalankan verifikasi di Moodle.', to: 'moodle', cta: 'Verifikasi' },
-  COMPLETED: { text: 'Course selesai dibuat dan terverifikasi di Moodle.', to: 'moodle', cta: 'Lihat hasil' },
+  APPROVED: { text: 'Konten disetujui dan siap dikirim ke Moodle.', to: 'publish', cta: 'Kirim ke Moodle' },
+  EXECUTED: { text: 'Konten sudah terkirim. Jalankan verifikasi di Moodle.', to: 'publish', cta: 'Verifikasi' },
+  COMPLETED: { text: 'Course selesai dibuat dan terverifikasi di Moodle.', to: 'publish', cta: 'Lihat hasil' },
 };
 
 export default function CourseOverviewPage() {

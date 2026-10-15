@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { ForbiddenPage } from '../../pages/StatusPage';
 import { Spinner } from '../ui';
@@ -7,6 +7,8 @@ import { Spinner } from '../ui';
 export default function RequireAuth({ roles }) {
   const { user, initializing } = useAuth();
   const location = useLocation();
+  // Diteruskan agar route bersarang (mis. tab AI di kursus) tetap menerima context layout induk.
+  const parentContext = useOutletContext();
 
   if (initializing) {
     return (
@@ -17,5 +19,5 @@ export default function RequireAuth({ roles }) {
   }
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
   if (roles && !roles.includes(user.role)) return <ForbiddenPage />;
-  return <Outlet />;
+  return <Outlet context={parentContext} />;
 }

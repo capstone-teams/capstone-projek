@@ -49,6 +49,18 @@ const COURSE_DEFS = [
       ['SQL Dasar', 'SELECT, INSERT, UPDATE, DELETE, dan JOIN.'],
     ],
   },
+  {
+    id: 4,
+    shortname: 'IF2105-B',
+    fullname: 'Pemrograman Web (Kelas B)',
+    category: 'Teknik Informatika',
+    summary: '<p>Kelas paralel Pemrograman Web. Materi mingguan disiapkan dengan generator AI.</p>',
+    enrol: { 3: 'editingteacher', 6: 'student', 7: 'student' },
+    weeks: [
+      ['Pengantar Pemrograman Web', 'Arsitektur client-server, cara kerja browser, dan protokol HTTP.'],
+      ['HTML5 dan Semantik', 'Struktur dokumen, elemen semantik, formulir, dan aksesibilitas dasar.'],
+    ],
+  },
 ];
 
 // ---- Bangun isi course seperti core_course_get_contents.

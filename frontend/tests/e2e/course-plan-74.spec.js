@@ -13,7 +13,7 @@ for (const width of [375, 768, 1024, 1440]) {
     await seed(page);
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/ai/courses/course_project_001/plan');
+    await page.goto('/course/2/ai/plan');
     await expect(page.getByRole('heading', { name: 'Rencana course · versi 1', exact: true })).toBeVisible();
     await expect(page.getByText('Disetujui', { exact: true })).toBeVisible();
     await expect(page.getByText('3 SKS', { exact: true })).toBeVisible();
@@ -57,9 +57,9 @@ for (const width of [375, 768, 1024, 1440]) {
 
 test('a new course shows the empty plan then generates all schema fields', async ({ page }) => {
   await seed(page);
-  await page.goto('/ai/courses/new');
-  await page.getByRole('button', { name: 'Buat course', exact: true }).click();
-  await expect(page).toHaveURL(/\/ai\/courses\/course_project_003$/);
+  // Basis Data (course 3) belum punya project generator: mulai dari tab Generator AI.
+  await page.goto('/course/3/ai');
+  await page.getByRole('button', { name: 'Mulai generator AI', exact: true }).click();
   await page.getByRole('link', { name: 'Rencana', exact: true }).click();
   await expect(page.getByText('Rencana belum dibuat.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Generate rencana', exact: true }).click();
@@ -72,7 +72,7 @@ test('a new course shows the empty plan then generates all schema fields', async
 
 test('revision and approval keep the enriched plan usable for content week selection', async ({ page }) => {
   await seed(page);
-  await page.goto('/ai/courses/course_project_002/plan');
+  await page.goto('/course/4/ai/plan');
   await page.getByRole('button', { name: 'Minta revisi', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Minta revisi rencana' });
   await dialog.getByRole('textbox', { name: 'Instruksi perbaikan' }).fill('Perjelas contoh minggu 5-8.');

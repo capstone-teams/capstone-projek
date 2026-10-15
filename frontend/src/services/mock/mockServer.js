@@ -294,12 +294,21 @@ const handlers = {
   },
 
   // Course
-  listCourses: () => ok({ courses: db.courses.map(publicCourse).reverse() }),
+  listCourses(_p, { query }) {
+    const moodleId = query?.moodle_course_id;
+    const courses = moodleId == null ? db.courses : db.courses.filter((c) => String(c.moodle_course_id) === String(moodleId));
+    return ok({ courses: courses.map(publicCourse).reverse() });
+  },
 
   createCourse(_p, { body }) {
     const rps = db.rps.find((r) => r.id === body?.rps_id);
     if (!rps) return fail(422, 'INVALID_REQUEST', 'rps_id tidak valid.', ['rps_id']);
     if (rps.status !== 'processed') return fail(422, 'INVALID_REQUEST', 'RPS harus selesai diproses terlebih dahulu.', ['rps_id']);
+    const moodleId = body.moodle_course_id == null ? '' : String(body.moodle_course_id).trim();
+    // Satu kursus Moodle hanya punya satu project generator.
+    if (moodleId && db.courses.some((c) => String(c.moodle_course_id) === moodleId)) {
+      return conflict('Kursus ini sudah memiliki project generator AI.');
+    }
     const cfg = body.activity_configuration ?? {};
     const activity_configuration = {
       learning_material: cfg.learning_material !== false,
@@ -308,7 +317,7 @@ const handlers = {
     };
     const course = newCourse({
       rps,
-      moodle_course_id: body.moodle_course_id?.trim() || null,
+      moodle_course_id: moodleId || null,
       additional_prompt: body.additional_prompt?.trim() || '',
       activity_configuration,
     });
@@ -733,7 +742,7 @@ export function resetMockDb() {
   // Course selesai, untuk contoh tampilan akhir.
   const done = newCourse({
     rps,
-    moodle_course_id: 'IF2105-A',
+    moodle_course_id: '2',
     additional_prompt: 'Gunakan contoh kasus aplikasi kampus ITK.',
     activity_configuration: { learning_material: true, assignment: true, quiz: true },
   });
@@ -748,7 +757,7 @@ export function resetMockDb() {
   // Course yang menunggu review plan.
   const pending = newCourse({
     rps,
-    moodle_course_id: 'IF2105-B',
+    moodle_course_id: '4',
     additional_prompt: '',
     activity_configuration: { learning_material: true, assignment: true, quiz: false },
   });

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 for (const width of [375, 768, 1440]) {
-  for (const route of ['/login', '/my', '/ai/courses/course_project_001/content']) {
+  for (const route of ['/login', '/my', '/course/2/ai/content']) {
     test('approved presentation ' + width + ' ' + route, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
       if (route !== '/login') await page.addInitScript(() => {

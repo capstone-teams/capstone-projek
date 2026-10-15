@@ -1,10 +1,12 @@
-import { Link, useParams } from 'react-router-dom';
-import { getRps, getRpsAnalysis } from '../../services/rpsService';
-import { useApi } from '../../hooks/useApi';
-import { Card, ErrorAlert, PageHeader, Spinner } from '../../components/ui';
+import { useCourse } from '../../../hooks/useCourse';
+import { getRps, getRpsAnalysis } from '../../../services/rpsService';
+import { useApi } from '../../../hooks/useApi';
+import { Card, ErrorAlert, Spinner } from '../../../components/ui';
 
-export default function RpsAnalysisPage() {
-  const { rpsId } = useParams();
+/** Hasil analisis RPS yang dipakai project generator kursus ini. */
+export default function CourseRpsPage() {
+  const { course } = useCourse();
+  const rpsId = course.rps_id;
   const { data, error, loading } = useApi(
     () => Promise.all([getRps(rpsId), getRpsAnalysis(rpsId)]).then(([rps, analysis]) => ({ rps, analysis })),
     [rpsId],
@@ -15,16 +17,10 @@ export default function RpsAnalysisPage() {
 
   const { rps, analysis } = data;
   return (
-    <>
-      <PageHeader
-        title={`${analysis.course.code} — ${analysis.course.name}`}
-        subtitle={`${analysis.course.credits} SKS · ${rps.filename}`}
-        actions={
-          <Link to={`/ai/courses/new?rps=${rps.id}`} className="btn btn--primary">
-            Buat course dari RPS ini
-          </Link>
-        }
-      />
+    <div className="stack">
+      <p className="text-muted">
+        {analysis.course.code} — {analysis.course.name} · {analysis.course.credits} SKS · {rps.filename}
+      </p>
 
       <div className="grid grid--2">
         <Card title="Capaian pembelajaran">
@@ -80,6 +76,6 @@ export default function RpsAnalysisPage() {
           ))}
         </ul>
       </Card>
-    </>
+    </div>
   );
 }

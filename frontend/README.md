@@ -1,8 +1,8 @@
 # Frontend — Agentic LMS
 
 Aplikasi React dengan JavaScript/JSX untuk akses kursus Moodle dan workflow
-penyusunan konten pembelajaran berbasis RPS. Peran dosen dapat menggunakan
-Generator AI; mahasiswa mengakses kursus Moodle.
+penyusunan konten pembelajaran berbasis RPS. Dosen pengampu membuka
+Generator AI dari tab di halaman kursus; mahasiswa mengakses kursus Moodle.
 
 ## Menjalankan
 
@@ -23,7 +23,7 @@ browser sehingga tidak memerlukan backend atau server Moodle.
 | dosen | dosen123 | Rina Kartika |
 | mahasiswa | mahasiswa123 | Andi Saputra |
 
-Fixture kursus mencakup Pemrograman Web dan Basis Data. Workflow backend mock
+Fixture kursus mencakup Pemrograman Web (kelas A dan B) dan Basis Data. Workflow backend mock
 berjalan di memori: navigasi client mempertahankan perubahan, full reload
 mengembalikan fixture awal. Sesi login dan preferensi UI disimpan terpisah.
 
@@ -53,17 +53,19 @@ VITE_* tersedia di browser; jangan gunakan untuk secret deployment.
 | / | Mengarah ke /my setelah login |
 | /my | Dasbor Moodle |
 | /my/courses | Kursus yang diikuti/diajar |
-| /user/profile | Profil pengguna Moodle |
+| /user/profile | Profil pengguna Moodle; dosen juga mengatur preferensi mengajar AI |
 | /course/:courseId | Isi kursus Moodle |
 | /course/:courseId/participants | Peserta |
 | /course/:courseId/grades | Nilai |
 | /course/:courseId/mod/:cmid | Materi/aktivitas Moodle |
-| /ai | Project Generator AI, khusus dosen |
-| /ai/rps dan /ai/rps/:rpsId | RPS dan analisis |
-| /ai/profile | Preferensi mengajar |
-| /ai/courses/new | Membuat project |
-| /ai/courses/:courseId | Ringkasan project |
-| /ai/courses/:courseId/plan, /content, /review, /moodle | Tahapan workflow project |
+| /course/:courseId/ai | Tab Generator AI (dosen pengampu): mulai project atau ringkasannya |
+| /course/:courseId/ai/rps, /plan, /content, /review, /publish | Tahapan workflow generator |
+| /ai/* | Rute lama; diarahkan ke /my/courses |
+
+Satu kursus Moodle memiliki satu project generator. Project dicari lewat
+`GET /courses?moodle_course_id=<id>` (lihat `findCourseByMoodleId` di
+courseService); hasil tetap disaring di frontend bila backend belum mendukung
+filter tersebut. Status project tampil sebagai badge di kartu Kursusku.
 
 Navigasi tersedia melalui menu akun dan tab halaman. Rute seperti /dashboard,
 /course-plan, dan /student/... tidak dipasang sebagai alias.
@@ -105,8 +107,8 @@ Mock mengambil CPMK/metode dari RPS.
 
 - src/main.jsx dan App.jsx: provider aplikasi dan routing.
 - src/pages/: satu folder per area — auth/ (login, lupa password), moodle/
-  (tampilan Moodle, course/ untuk halaman di dalam kursus), ai/ (workflow AI,
-  course/ untuk tahapan kursus AI). StatusPage berisi halaman 403/404.
+  (tampilan Moodle, course/ untuk halaman di dalam kursus), ai/course/ (tab
+  Generator AI di dalam kursus). StatusPage berisi halaman 403/404.
 - src/components/: dikelompokkan mengikuti pemakainya —
   - ui/: komponen dasar lintas halaman (Card, Badge, Alert, Modal, Toast, ...),
     satu file per komponen; import lewat `components/ui`.
@@ -115,11 +117,12 @@ Mock mengambil CPMK/metode dari RPS.
   - auth/: potongan halaman pages/auth (AuthLayout, AuthField, PasswordField,
     AuthSubmitButton, GoogleLoginButton); import lewat `components/auth`.
   - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml).
-  - ai/: komponen pages/ai (WorkflowStepper, EventLog, InstructionModal,
-    ActivityConfigFields, RpsUploadForm, TeachingProfileForm); ai/course/
-    berisi potongan halaman pages/ai/course (CoursePlanDetails,
-    ActivityConfigForm, ContentGeneratePanel, WeekContentDetail,
-    MoodleExecutionCard, MoodleVerificationCard).
+  - ai/: komponen generator AI (WorkflowStepper, EventLog, InstructionModal,
+    ActivityConfigFields, RpsUploadForm, TeachingProfileForm,
+    TeachingPreferencesCard); ai/course/ berisi potongan halaman
+    pages/ai/course (AiProjectStart, CoursePlanDetails, ActivityConfigForm,
+    ContentGeneratePanel, WeekContentDetail, MoodleExecutionCard,
+    MoodleVerificationCard).
   Halaman di pages/ hanya merangkai komponen; form/panel/card dibuat di
   components/.
 - Styling: Tailwind langsung di className, memakai token warna di

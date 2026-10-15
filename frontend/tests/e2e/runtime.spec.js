@@ -63,10 +63,10 @@ const teacherPages = [
   ['/course/2/participants', 'Andi Saputra'],
   ['/course/2/grades', 'Rekap nilai mahasiswa'],
   ['/course/2/mod/102', 'Konsep utama'],
-  ['/ai', 'Generation project'],
-  ['/ai/rps', 'RPS-Pemrograman-Web-2026.pdf'],
-  ['/ai/courses/course_project_001/plan', 'Rencana course · versi 1'],
-  ['/ai/courses/course_project_001/content', 'Tujuan pembelajaran'],
+  ['/course/2/ai', 'Aktivitas agent'],
+  ['/course/2/ai/rps', 'Komponen penilaian'],
+  ['/course/2/ai/plan', 'Rencana course · versi 1'],
+  ['/course/2/ai/content', 'Tujuan pembelajaran'],
 ];
 for (const [route, content] of teacherPages) {
   test('teacher route: ' + route, async ({ page }) => {
@@ -87,7 +87,9 @@ test('student sees Moodle data and is denied AI pages', async ({ page }) => {
   await expect(page.getByText('Ringkasan belajar', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Menu pengguna' }).click();
   await expect(page.getByRole('menuitem', { name: 'Generator AI' })).toHaveCount(0);
-  await page.goto('/ai');
+  await page.goto('/course/2');
+  await expect(page.getByRole('link', { name: 'Generator AI' })).toHaveCount(0);
+  await page.goto('/course/2/ai');
   await expect(page.getByRole('heading', { name: 'Khusus dosen' })).toBeVisible();
 });
 
@@ -113,7 +115,7 @@ test('logout removes both Moodle and backend sessions and guards browser history
 test('plan approval and generation use workflow services', async ({ page }) => {
   test.setTimeout(60000);
   await seedSession(page);
-  await page.goto('/ai/courses/course_project_002/plan');
+  await page.goto('/course/4/ai/plan');
   await page.getByRole('button', { name: 'Setujui rencana', exact: true }).click();
   await expect(page.getByText('Disetujui', { exact: true })).toBeVisible();
   // Client navigation keeps the shared mock backend in memory.
@@ -122,7 +124,7 @@ test('plan approval and generation use workflow services', async ({ page }) => {
   await expect(page.getByText('Tujuan pembelajaran', { exact: true })).toBeVisible({ timeout: 30000 });
   await page.getByRole('link', { name: 'Review', exact: true }).click();
   await page.getByRole('button', { name: 'Setujui semua konten', exact: true }).click();
-  await page.getByRole('link', { name: 'Moodle', exact: true }).click();
+  await page.getByRole('link', { name: 'Publikasi', exact: true }).click();
   await page.getByRole('button', { name: 'Kirim ke Moodle', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();

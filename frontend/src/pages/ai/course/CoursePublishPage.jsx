@@ -5,7 +5,7 @@ import MoodleVerificationCard from '../../../components/ai/course/MoodleVerifica
 
 const BEFORE_APPROVAL = ['CREATED', 'PLANNING', 'WAITING_PLAN_REVIEW', 'PLAN_APPROVED', 'GENERATING_CONTENT', 'VALIDATING', 'WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 
-export default function CourseMoodlePage() {
+export default function CoursePublishPage() {
   const { course } = useCourse();
 
   if (BEFORE_APPROVAL.includes(course.status)) {
