@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
 import { getActionEvents, getRecentCourses, getCoursesByClassification } from '../../services/moodle/moodleApi';
-import { PageContainer } from '../../components/MoodleLayout';
+import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Card, EmptyState, ErrorAlert, Spinner } from '../../components/ui';
 import ActivityIcon from '../../components/moodle/ActivityIcon';
 import CourseCard from '../../components/moodle/CourseCard';

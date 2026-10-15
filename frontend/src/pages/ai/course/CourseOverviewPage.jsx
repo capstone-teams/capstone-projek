@@ -1,15 +1,12 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
-import { generatePlan, getAgentRuns, updateActivityConfiguration } from '../../../services/courseService';
+import { generatePlan, getAgentRuns } from '../../../services/courseService';
 import { useAction, useApi } from '../../../hooks/useApi';
-import { Alert, Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
-import ActivityConfigFields from '../../../components/ActivityConfigFields';
-import EventLog from '../../../components/EventLog';
+import { Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
+import EventLog from '../../../components/ai/EventLog';
+import ActivityConfigForm from '../../../components/ai/course/ActivityConfigForm';
 import { RUN_TYPE_LABELS, isBusy } from '../../../utils/workflow';
 import { formatDateTime } from '../../../utils/format';
-
-const LOCKED_CONFIG = ['APPROVED', 'EXECUTING', 'EXECUTED', 'VERIFYING', 'COMPLETED'];
 
 // Langkah berikutnya yang perlu dilakukan dosen untuk tiap status.
 const NEXT_STEP = {
@@ -104,56 +101,6 @@ export default function CourseOverviewPage() {
           )}
         </Card>
       </div>
-    </div>
-  );
-}
-
-function ActivityConfigForm({ course, onSaved }) {
-  const [value, setValue] = useState(course.activity_configuration);
-  const [saved, setSaved] = useState(false);
-  const save = useAction((cfg) => updateActivityConfiguration(course.id, cfg));
-  const locked = LOCKED_CONFIG.includes(course.status) || isBusy(course.status);
-  const dirty = JSON.stringify(value) !== JSON.stringify(course.activity_configuration);
-
-  return (
-    <div className="form">
-      <ErrorAlert error={save.error} onClose={save.clearError} />
-      {saved && !dirty && <Alert tone="success">Konfigurasi tersimpan. Berlaku untuk konten yang digenerate berikutnya.</Alert>}
-      <ActivityConfigFields
-        value={value}
-        disabled={locked}
-        onChange={(v) => {
-          setSaved(false);
-          setValue(v);
-        }}
-      />
-      {locked ? (
-        <p className="muted">Konfigurasi terkunci pada tahap ini.</p>
-      ) : (
-        dirty && (
-          <div className="form__actions">
-            <button type="button" className="btn btn--ghost" onClick={() => setValue(course.activity_configuration)}>
-              Batal
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={save.pending}
-              onClick={() =>
-                save
-                  .run(value)
-                  .then(() => {
-                    setSaved(true);
-                    return onSaved();
-                  })
-                  .catch(() => {})
-              }
-            >
-              Simpan
-            </button>
-          </div>
-        )
-      )}
     </div>
   );
 }

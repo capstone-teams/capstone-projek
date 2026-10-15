@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { PageContainer } from '../../components/MoodleLayout';
+import { PageContainer } from '../../components/layout/MoodleLayout';
 
 const LINKS = [
   { to: '/ai', label: 'Project', end: true },

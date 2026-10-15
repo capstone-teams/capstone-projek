@@ -4,7 +4,7 @@ import { listRps } from '../../services/rpsService';
 import { createCourse } from '../../services/courseService';
 import { useAction, useApi } from '../../hooks/useApi';
 import { Card, EmptyState, ErrorAlert, Field, PageHeader, Spinner } from '../../components/ui';
-import ActivityConfigFields from '../../components/ActivityConfigFields';
+import ActivityConfigFields from '../../components/ai/ActivityConfigFields';
 
 export default function NewCoursePage() {
   const navigate = useNavigate();

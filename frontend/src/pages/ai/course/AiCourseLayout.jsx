@@ -4,7 +4,7 @@ import { getCourse, getMonitoring } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
 import { useCourseEvents } from '../../../hooks/useCourseEvents';
 import { ErrorAlert, PageHeader, Spinner, StatusBadge } from '../../../components/ui';
-import WorkflowStepper from '../../../components/WorkflowStepper';
+import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 
 const TABS = [
   { to: '', label: 'Ringkasan', end: true },
@@ -18,7 +18,7 @@ const TABS = [
  * Memuat course, lalu mengikuti event real-time-nya.
  * Sesuai design-api.md §17: ambil initial state via HTTP dulu, baru pakai event stream.
  */
-export default function CourseLayout() {
+export default function AiCourseLayout() {
   const { courseId } = useParams();
   const [events, setEvents] = useState([]);
   // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.

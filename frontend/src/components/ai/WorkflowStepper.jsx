@@ -1,4 +1,4 @@
-import { WORKFLOW_STEPS, currentStepIndex } from '../utils/workflow';
+import { WORKFLOW_STEPS, currentStepIndex } from '../../utils/workflow';
 
 export default function WorkflowStepper({ status }) {
   const current = currentStepIndex(status);

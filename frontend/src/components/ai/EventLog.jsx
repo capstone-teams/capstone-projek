@@ -1,6 +1,6 @@
-import { describeEvent } from '../utils/workflow';
-import { formatTime } from '../utils/format';
-import { EmptyState } from './ui';
+import { describeEvent } from '../../utils/workflow';
+import { formatTime } from '../../utils/format';
+import { EmptyState } from '../ui';
 
 export default function EventLog({ events, limit = 30 }) {
   if (!events?.length) return <EmptyState title="Belum ada event." />;

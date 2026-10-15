@@ -1,14 +1,14 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import MoodleLayout from './components/MoodleLayout';
-import RequireAuth from './components/RequireAuth';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import LoginPage from './pages/LoginPage';
+import MoodleLayout from './components/layout/MoodleLayout';
+import RequireAuth from './components/layout/RequireAuth';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
+import LoginPage from './pages/auth/LoginPage';
 import { NotFoundPage } from './pages/StatusPage';
 // Moodle (dosen & mahasiswa)
 import DashboardPage from './pages/moodle/DashboardPage';
 import MyCoursesPage from './pages/moodle/MyCoursesPage';
 import ProfilePage from './pages/moodle/ProfilePage';
-import CourseLayout from './pages/moodle/course/CourseLayout';
+import MoodleCourseLayout from './pages/moodle/course/MoodleCourseLayout';
 import CourseViewPage from './pages/moodle/course/CourseViewPage';
 import ParticipantsPage from './pages/moodle/course/ParticipantsPage';
 import GradesPage from './pages/moodle/course/GradesPage';
@@ -20,7 +20,7 @@ import RpsPage from './pages/ai/RpsPage';
 import RpsAnalysisPage from './pages/ai/RpsAnalysisPage';
 import NewCoursePage from './pages/ai/NewCoursePage';
 import TeachingProfilePage from './pages/ai/TeachingProfilePage';
-import AiCourseLayout from './pages/ai/course/CourseLayout';
+import AiCourseLayout from './pages/ai/course/AiCourseLayout';
 import CourseOverviewPage from './pages/ai/course/CourseOverviewPage';
 import CoursePlanPage from './pages/ai/course/CoursePlanPage';
 import CourseContentPage from './pages/ai/course/CourseContentPage';
@@ -40,7 +40,7 @@ export default function App() {
           <Route path="my/courses" element={<MyCoursesPage />} />
           <Route path="user/profile" element={<ProfilePage />} />
 
-          <Route path="course/:courseId" element={<CourseLayout />}>
+          <Route path="course/:courseId" element={<MoodleCourseLayout />}>
             <Route index element={<CourseViewPage />} />
             <Route path="participants" element={<ParticipantsPage />} />
             <Route path="grades" element={<GradesPage />} />

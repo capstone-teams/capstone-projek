@@ -3,7 +3,7 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { usePreference } from '../../hooks/useAppState';
 import { useApi } from '../../hooks/useApi';
 import { getCoursesByClassification } from '../../services/moodle/moodleApi';
-import { PageContainer } from '../../components/MoodleLayout';
+import { PageContainer } from '../../components/layout/MoodleLayout';
 import { EmptyState, ErrorAlert, Spinner } from '../../components/ui';
 import CourseCard from '../../components/moodle/CourseCard';
 

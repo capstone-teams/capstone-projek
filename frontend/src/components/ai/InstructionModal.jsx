@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ErrorAlert, Field, Modal } from './ui';
+import { ErrorAlert, Field, Modal } from '../ui';
 
 /** Modal berisi satu textarea wajib, mis. instruksi regenerasi atau alasan penolakan. */
 export default function InstructionModal({ open, title, label, placeholder, submitLabel, danger, onSubmit, onClose }) {

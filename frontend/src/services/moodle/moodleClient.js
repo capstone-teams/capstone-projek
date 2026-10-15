@@ -10,7 +10,7 @@
  * Kedua endpoint mengirim header Access-Control-Allow-Origin: *, jadi bisa dipanggil dari browser.
  */
 import { MOODLE_SERVICE, MOODLE_URL, USE_MOODLE_MOCK } from '../config';
-import { mockCallWs, mockRequestToken } from './mockMoodle';
+import { mockCallWs, mockRequestToken } from '../mock/mockMoodle';
 
 export class MoodleError extends Error {
   constructor(errorcode, message, extra = {}) {

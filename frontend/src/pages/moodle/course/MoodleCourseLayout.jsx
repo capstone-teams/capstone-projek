@@ -4,10 +4,10 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useApi } from '../../../hooks/useApi';
 import { getCourse, getCourseContents, logCourseView } from '../../../services/moodle/moodleApi';
 import { moodleUrl } from '../../../services/moodle/moodleClient';
-import { PageContainer } from '../../../components/MoodleLayout';
+import { PageContainer } from '../../../components/layout/MoodleLayout';
 import { ErrorAlert, Spinner } from '../../../components/ui';
 
-export default function CourseLayout() {
+export default function MoodleCourseLayout() {
   const params = useParams();
   const courseId = Number(params.courseId);
   const { user } = useAuth();

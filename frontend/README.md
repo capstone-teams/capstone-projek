@@ -104,10 +104,30 @@ Mock mengambil CPMK/metode dari RPS.
 ## Struktur
 
 - src/main.jsx dan App.jsx: provider aplikasi dan routing.
-- src/pages/: halaman Moodle, autentikasi, dan workflow AI; AuthPages.module.css
-  dipakai login serta pemulihan password.
-- src/components/: header MoodleLayout, komponen UI, kartu Moodle, dan detail
-  rencana; CSS Modules berada di dekat konsumennya.
+- src/pages/: satu folder per area — auth/ (login, lupa password), moodle/
+  (tampilan Moodle, course/ untuk halaman di dalam kursus), ai/ (workflow AI,
+  course/ untuk tahapan kursus AI). StatusPage berisi halaman 403/404.
+- src/components/: dikelompokkan mengikuti pemakainya —
+  - ui/: komponen dasar lintas halaman (Card, Badge, Alert, Modal, Toast, ...),
+    satu file per komponen; import lewat `components/ui`.
+  - layout/: kerangka aplikasi (MoodleLayout, ApplicationHeader, UserMenu,
+    RequireAuth, AppStatus).
+  - auth/: potongan halaman pages/auth (AuthLayout, AuthField, PasswordField,
+    AuthSubmitButton, GoogleLoginButton); import lewat `components/auth`.
+  - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml).
+  - ai/: komponen pages/ai (WorkflowStepper, EventLog, InstructionModal,
+    ActivityConfigFields, RpsUploadForm, TeachingProfileForm); ai/course/
+    berisi potongan halaman pages/ai/course (CoursePlanDetails,
+    ActivityConfigForm, ContentGeneratePanel, WeekContentDetail,
+    MoodleExecutionCard, MoodleVerificationCard).
+  Halaman di pages/ hanya merangkai komponen; form/panel/card dibuat di
+  components/.
+- Styling: Tailwind langsung di className, memakai token warna di
+  src/styles/global.css (`primary`, `ink`, `muted`, `line`, `surface`, ...).
+  Tidak ada CSS per komponen. Breakpoint desain tersedia sebagai varian
+  `max-laptop:` (≤1024px), `max-tablet:` (≤768px), dan `max-phone:` (≤480px).
+  Pola yang dipakai berulang (tombol .btn, .table, .tabs, dsb.) ada di
+  global.css bagian `@layer components`.
 - src/context/, hooks/, state/, types/, utils/: sesi, state bersama, dan helper.
 - src/services/: transport Moodle/backend, adapter course plan, monitoring,
   serta mock. Lihat [panduan service](src/services/README.md).

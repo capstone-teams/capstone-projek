@@ -30,7 +30,24 @@
   --color-act-content: #0099ad;
   --color-act-interactive: #8d3d1b;
   --color-act-other: #64748B;
+
+  --animate-toast-in: toast-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  @keyframes toast-in {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
 }
+
+/* Breakpoint desain (max-width, inklusif) — dipakai sebagai max-laptop:, max-tablet:, max-phone:. */
+@custom-variant max-laptop (@media (max-width: 1024px));
+@custom-variant max-tablet (@media (max-width: 768px));
+@custom-variant max-phone (@media (max-width: 480px));
 
 @layer base {
   html,

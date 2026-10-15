@@ -4,8 +4,8 @@ import { approvePlan, generatePlan, getPlan, regeneratePlan } from '../../../ser
 import { nullOn404 } from '../../../services/apiClient';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
-import InstructionModal from '../../../components/InstructionModal';
-import CoursePlanDetails from '../../../components/course-plan/CoursePlanDetails';
+import InstructionModal from '../../../components/ai/InstructionModal';
+import CoursePlanDetails from '../../../components/ai/course/CoursePlanDetails';
 
 const PLAN_STATUS = {
   draft: { label: 'Draft', tone: 'warning' },

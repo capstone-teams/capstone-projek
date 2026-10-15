@@ -386,7 +386,7 @@ export async function mockRequestToken(username, password) {
   await sleep(200);
   const user = Object.values(USERS).find((u) => u.username === username);
   if (!user || password !== `${username}123`) {
-    const { MoodleError } = await import('./moodleClient');
+    const { MoodleError } = await import('../moodle/moodleClient');
     throw new MoodleError('invalidlogin', 'Invalid login, please try again');
   }
   const token = `mock-${user.id}-${Date.now()}`;

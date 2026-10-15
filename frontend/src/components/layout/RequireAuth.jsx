@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
-import { ForbiddenPage } from '../pages/StatusPage';
-import { Spinner } from './ui';
+import { useAuth } from '../../hooks/useAuth';
+import { ForbiddenPage } from '../../pages/StatusPage';
+import { Spinner } from '../ui';
 
 /** Melindungi route: wajib login Moodle, dan opsional membatasi peran (dosen/mahasiswa). */
 export default function RequireAuth({ roles }) {

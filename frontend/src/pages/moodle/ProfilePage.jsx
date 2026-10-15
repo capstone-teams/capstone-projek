@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
 import { getCoursesByClassification, getUserById } from '../../services/moodle/moodleApi';
 import { moodleUrl } from '../../services/moodle/moodleClient';
-import { PageContainer } from '../../components/MoodleLayout';
+import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Avatar, Badge, Card, ErrorAlert, Spinner } from '../../components/ui';
 import { formatUnixDateTime } from '../../utils/format';
 
