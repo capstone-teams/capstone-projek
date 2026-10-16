@@ -6,6 +6,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import BaseModel
 
+# Panjang kolom versi skema. Nilainya harus menampung versi pada
+# ``src.schemas.rps_structured.RPS_SCHEMA_VERSION``; layer ``models/`` tidak
+# boleh mengimpor ``schemas/`` (lihat backend/README.md), sehingga batas ini
+# dinyatakan sebagai konstanta lokal dan dijaga oleh pengujian.
+SCHEMA_VERSION_LENGTH = 50
+
+# Nilai bawaan di sisi database, dipakai sebagai backstop bagi baris yang
+# ditulis tanpa melalui domain. Domain selalu mengirim versi yang berlaku
+# (``RPSDocument.schema_version``), jadi nilai ini hanya jaring pengaman dan
+# harus ikut naik ketika versi skema naik.
+DEFAULT_SCHEMA_VERSION = "1.0"
+
 
 class RPSStatus(str, enum.Enum):
     UPLOADED = "UPLOADED"
@@ -42,6 +54,16 @@ class RPS(BaseModel):
         String(255),
         nullable=False,
         index=True,
+    )
+
+    # Versi RPS Structured Data Schema yang berlaku untuk dokumen ini. Bersama
+    # ``file_hash`` ia menjadi kunci idempotency pemrosesan (BE-05): dokumen
+    # dengan hash **dan** versi skema yang sama tidak diproses ulang. Karena itu
+    # kolomnya NOT NULL — versi yang kosong akan membuat kunci tersebut ambigu.
+    schema_version: Mapped[str] = mapped_column(
+        String(SCHEMA_VERSION_LENGTH),
+        nullable=False,
+        server_default=DEFAULT_SCHEMA_VERSION,
     )
 
     status: Mapped[RPSStatus] = mapped_column(

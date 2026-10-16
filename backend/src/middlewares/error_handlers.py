@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from src.services.auth.errors import AuthDomainError
 from src.services.llm.base import LLMProviderError
+from src.services.rps.errors import RPSDomainError
 from src.services.user.errors import UserNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -85,8 +86,29 @@ async def user_not_found_error_handler(request: Request, exc: UserNotFoundError)
     )
 
 
+async def rps_error_handler(request: Request, exc: RPSDomainError) -> JSONResponse:
+    """Translate an RPS domain failure into the standard API error format (BE-05).
+
+    Every RPS error already carries its public contract (``error_code``,
+    ``status_code``, ``public_message``), so this handler only applies it:
+    invalid uploads become 400 ``INVALID_FILE``, missing documents 404
+    ``RESOURCE_NOT_FOUND``, conflicting state 409 ``INVALID_REQUEST``, and a
+    failed conversion 500 ``RPS_PROCESSING_FAILED``.
+
+    The underlying cause — a conversion library message, a filesystem path, or
+    part of the document — is logged server-side only and never returned.
+    """
+    logger.warning("RPS failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register the application-wide exception handlers."""
     app.add_exception_handler(LLMProviderError, llm_provider_error_handler)
     app.add_exception_handler(AuthDomainError, auth_error_handler)
     app.add_exception_handler(UserNotFoundError, user_not_found_error_handler)
+    app.add_exception_handler(RPSDomainError, rps_error_handler)

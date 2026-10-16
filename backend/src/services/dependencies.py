@@ -27,6 +27,7 @@ from src.config.database import get_session_factory
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
+from src.services.rps.service import RPSService
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.service import UserService
@@ -36,6 +37,7 @@ __all__ = [
     "get_auth_service",
     "get_current_user",
     "get_db_session",
+    "get_rps_service",
     "get_user_service",
     "require_roles",
 ]
@@ -68,6 +70,16 @@ def get_user_service(session: AsyncSession = Depends(get_db_session)) -> UserSer
 def get_auth_service(session: AsyncSession = Depends(get_db_session)) -> AuthService:
     """Auth Service untuk endpoint authentication."""
     return AuthService.from_session(session)
+
+
+def get_rps_service(session: AsyncSession = Depends(get_db_session)) -> RPSService:
+    """RPS Service untuk endpoint unggah/pemrosesan dokumen RPS (BE-05).
+
+    Service dibangun per request di atas satu ``AsyncSession``, sedangkan
+    penyimpanan berkas dan konverter dokumen yang mahal (Docling memuat model)
+    diambil dari factory yang meng-cache-nya per proses.
+    """
+    return RPSService.from_session(session)
 
 
 async def get_current_user(

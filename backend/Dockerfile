@@ -25,7 +25,17 @@ WORKDIR /app
 # Manifes dependensi disalin lebih dulu agar layer ini ter-cache selama lockfile
 # tidak berubah.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+#
+# Extra opsional tidak dipasang secara default: `docling` (konversi RPS, BE-05)
+# menarik torch dan model ML berukuran ratusan MB, sehingga pemasangannya
+# menjadi pilihan operator — bukan beban wajib setiap build maupun CI.
+#
+#   docker compose build --build-arg UV_SYNC_ARGS="--extra docling" backend
+#
+# Tanpa extra tersebut aplikasi tetap berjalan; endpoint pemrosesan RPS gagal
+# dengan error domain RPS_PROCESSING_FAILED beserta perintah pemasangannya.
+ARG UV_SYNC_ARGS=""
+RUN uv sync --frozen ${UV_SYNC_ARGS}
 
 # Source code dan konfigurasi. `.env.example` ikut karena Settings memakainya
 # sebagai fallback konfigurasi; `.env` asli tidak pernah masuk image
@@ -34,9 +44,13 @@ COPY . .
 
 # Cache uv dibuat sebagai root saat build lalu di-chown ke user aplikasi, agar
 # uv tetap dapat memakai cache-nya ketika container berjalan sebagai non-root.
+#
+# `/app/var` (penyimpanan dokumen RPS, BE-05) ikut dibuat di sini: volume bernama
+# pada compose mewarisi isi dan kepemilikan direktori image, sehingga tanpa ini
+# volume baru akan dimiliki root dan backend (uid 1000) gagal menulis dokumen.
 RUN chmod +x docker-entrypoint.sh \
     && useradd --create-home --uid 1000 app \
-    && mkdir -p /home/app/.cache/uv \
+    && mkdir -p /home/app/.cache/uv /app/var/rps \
     && chown -R app:app /app /home/app
 
 USER app

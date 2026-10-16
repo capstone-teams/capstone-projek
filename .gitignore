@@ -41,6 +41,14 @@ build/
 .pytest_cache/
 .coverage
 
+# RPS document storage & conversion artifacts (BE-05)
+# Dokumen RPS yang diunggah beserta artefak konversinya (JSON/YAML/tabel) adalah
+# data runtime, bukan bagian dari repository.
+backend/var/
+# Cache model & artefak Docling; dipakai saat DOCLING_CACHE_DIR/HF_HOME
+# diarahkan ke dalam workspace (mis. pada lingkungan yang membatasi $HOME).
+backend/.docling-cache/
+
 # Logs
 logs/
 *.log
