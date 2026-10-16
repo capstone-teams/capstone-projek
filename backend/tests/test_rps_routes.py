@@ -1,16 +1,22 @@
 """Test endpoint RPS (BE-05) melalui ASGI app di atas PostgreSQL sungguhan.
 
 Endpoint diuji end-to-end: authentication → authorization → validasi berkas →
-penyimpanan → (opsional) konversi → response. Database memakai fixture
-``conftest.db_session`` (PostgreSQL), sehingga native enum ``rps_status``,
-kolom ``JSONB``, dan constraint benar-benar terpakai.
+penyimpanan → penjadwalan konversi → response, lalu polling status.
 
-Konverter diganti konverter palsu supaya suite tetap ringan dan deterministik;
-konversi Docling sungguhan diuji pada ``tests/test_rps_docling_converter.py``.
-Penyimpanan memakai direktori sementara, bukan ``backend/var`` milik developer.
+Database memakai fixture ``conftest.db_session`` (PostgreSQL), sehingga native
+enum ``rps_status``, kolom JSONB (``source_document``), dan constraint
+benar-benar terpakai.
+
+Kontrak pemrosesan mengikuti design-api §6.3: ``POST /rps/{id}/process``
+menjawab ``202`` + ``PROCESSING`` dan konversinya berjalan **setelah** response
+dikirim. Runner-nya diganti runner pengganti (terikat ke session test) supaya
+kontrak "request tidak menahan konversi" dapat diuji tanpa menjalankan Docling:
+satu mode menyelesaikan konversinya, satu mode hanya mencatat penjadwalan.
+Konversi Docling sungguhan diuji pada ``tests/test_rps_docling_converter.py``.
 
 Cakupan utama: matriks role (design-api §22), format envelope error (§18),
-kontrak response (§6.1–§6.3), dan janji idempotency BE-05.
+kontrak response (§6.1–§6.3), janji idempotency BE-05, dan keterbacaan kegagalan
+lewat polling (issue #98).
 """
 
 from __future__ import annotations
@@ -22,18 +28,25 @@ import httpx
 import pytest
 import pytest_asyncio
 import shortuuid
+from sqlalchemy import text
 
 from src.config.settings import get_settings
 from src.main import create_app
+from src.schemas.rps import RPSDetailResponse
 from src.schemas.rps_structured import RPS_SCHEMA_VERSION
 from src.services.auth import hash_password
-from src.services.dependencies import get_db_session, get_rps_service
+from src.services.dependencies import (
+    get_db_session,
+    get_rps_processing_runner,
+    get_rps_service,
+)
 from src.services.rps.converter import (
     ConvertedTable,
     DocumentConversion,
     DocumentConverter,
 )
-from src.services.rps.errors import DocumentConversionError
+from src.services.rps.enums import RPSStatus
+from src.services.rps.errors import DocumentConversionError, RPSDomainError
 from src.services.rps.service import RPSService
 from src.services.rps.storage import LocalDocumentStorage
 from src.services.user import UserRole, UserService
@@ -44,6 +57,10 @@ RPS_URL = "/api/v1/rps"
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
 OTHER_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF\n"
 MARKDOWN = "# RPS Basis Data\n\n| Minggu | Topik |\n| --- | --- |\n| 1 | Basis data |\n"
+
+# Versi skema yang **berbeda** dari yang berlaku: dipakai untuk menguji kunci
+# idempotency tanpa terikat pada nomor versi saat ini.
+OTHER_SCHEMA_VERSION = "1.0" if RPS_SCHEMA_VERSION != "1.0" else "3.0"
 
 UPLOAD_RESPONSE_FIELDS = {
     "id",
@@ -62,6 +79,10 @@ DETAIL_RESPONSE_FIELDS = {
     "created_at",
     "updated_at",
     "has_source_markdown",
+    "has_source_document",
+    "processing_duration_ms",
+    "processing_error_code",
+    "processing_error_message",
     "source_markdown",
 }
 
@@ -88,15 +109,49 @@ class StubConverter(DocumentConverter):
     async def convert(self, *, content: bytes, file_name: str) -> DocumentConversion:
         self.calls += 1
         if self.fail:
-            raise DocumentConversionError("stub sengaja gagal")
+            raise DocumentConversionError(
+                "stub sengaja gagal",
+                public_reason="Dokumen contoh tidak dapat dikonversi.",
+            )
         return DocumentConversion(
             markdown=self.markdown,
-            document_json={"schema_name": "DoclingDocument"},
+            document_json={"schema_name": "DoclingDocument", "texts": [{"text": "Basis Data"}]},
             document_yaml="schema_name: DoclingDocument\n",
             tables=[ConvertedTable(index=0, markdown="| a |", cells=[["a"]])],
             converter_name=self.name,
             converter_version=self.version,
         )
+
+
+class ScheduledRunner:
+    """Runner pengganti yang meniru :func:`src.services.rps.runner.run_rps_processing`.
+
+    ``complete=False`` menirukan keadaan "response sudah dikirim, konversi belum
+    selesai" — inilah yang membuat janji *tidak menahan request* dapat diuji.
+    Kegagalan domain ditelan seperti runner asli, karena tidak ada client yang
+    menunggu hasilnya.
+    """
+
+    def __init__(self, *, complete: bool, session, storage, converter) -> None:
+        self.complete = complete
+        self.calls: list[dict[str, str]] = []
+        self._session = session
+        self._storage = storage
+        self._converter = converter
+
+    async def __call__(self, *, rps_id: str, owner_id: str) -> None:
+        self.calls.append({"rps_id": rps_id, "owner_id": owner_id})
+        if not self.complete:
+            return
+
+        service = RPSService.from_session(
+            self._session, storage=self._storage, converter=self._converter
+        )
+        try:
+            await service.convert(rps_id=rps_id, owner_id=owner_id)
+        except RPSDomainError:
+            # Sudah tercatat sebagai FAILED pada dokumen; sama seperti runner asli.
+            pass
 
 
 @pytest.fixture
@@ -109,9 +164,16 @@ def storage(tmp_path) -> LocalDocumentStorage:
     return LocalDocumentStorage(tmp_path)
 
 
+@pytest.fixture
+def runner(db_session, storage, converter) -> ScheduledRunner:
+    return ScheduledRunner(
+        complete=True, session=db_session, storage=storage, converter=converter
+    )
+
+
 @pytest_asyncio.fixture
-async def app(db_session, storage, converter) -> AsyncIterator:
-    """Aplikasi dengan database test dan konverter/penyimpanan pengganti."""
+async def app(db_session, storage, converter, runner) -> AsyncIterator:
+    """Aplikasi dengan database test dan dependency pengganti."""
     application = create_app()
 
     async def override_get_db_session():
@@ -120,8 +182,12 @@ async def app(db_session, storage, converter) -> AsyncIterator:
     async def override_get_rps_service() -> RPSService:
         return RPSService.from_session(db_session, storage=storage, converter=converter)
 
+    async def override_runner() -> ScheduledRunner:
+        return runner
+
     application.dependency_overrides[get_db_session] = override_get_db_session
     application.dependency_overrides[get_rps_service] = override_get_rps_service
+    application.dependency_overrides[get_rps_processing_runner] = override_runner
     yield application
     application.dependency_overrides.clear()
 
@@ -177,6 +243,16 @@ async def upload_rps(client, headers, *, file_name: str = "rps-basis-data.pdf", 
     )
 
 
+async def schedule_processing(client, headers, rps_id: str, **kwargs) -> httpx.Response:
+    return await client.post(f"{RPS_URL}/{rps_id}/process", headers=headers, **kwargs)
+
+
+async def read_detail(client, headers, rps_id: str) -> dict:
+    response = await client.get(f"{RPS_URL}/{rps_id}", headers=headers)
+    assert response.status_code == 200
+    return response.json()
+
+
 def error_code(response: httpx.Response) -> str:
     return response.json()["error"]["code"]
 
@@ -212,6 +288,10 @@ async def test_uploaded_document_can_be_read_back(client, instructor_headers):
     assert body["file_hash"] == uploaded["file_hash"]
     assert body["status"] == "UPLOADED"
     assert body["has_source_markdown"] is False
+    assert body["has_source_document"] is False
+    assert body["processing_duration_ms"] is None
+    assert body["processing_error_code"] is None
+    assert body["processing_error_message"] is None
     assert body["source_markdown"] is None
     assert body["created_at"] and body["updated_at"]
 
@@ -331,104 +411,138 @@ async def test_a_malformed_identifier_is_rejected_before_the_service(
     assert response.status_code == 422
 
 
-# --- BE-05.2: pemrosesan menjadi source_markdown ---------------------------
+# --- BE-05.2: pemrosesan asynchronous --------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_process_converts_the_document(client, instructor_headers, converter):
+async def test_process_schedules_the_conversion_and_answers_202(
+    client, instructor_headers, runner, converter
+):
+    """Acceptance criteria #98: request tidak menahan konversi."""
     uploaded = (await upload_rps(client, instructor_headers)).json()
+    runner.complete = False  # konversi belum selesai saat response dikirim
 
-    response = await client.post(
-        f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers
-    )
+    response = await schedule_processing(client, instructor_headers, uploaded["id"])
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert response.json() == {
         "rps_id": uploaded["id"],
-        "status": "PROCESSED",
+        "status": "PROCESSING",
         "schema_version": RPS_SCHEMA_VERSION,
         "reused": False,
     }
-    assert converter.calls == 1
+    assert [call["rps_id"] for call in runner.calls] == [uploaded["id"]]
+    # Konversi belum berjalan sama sekali ketika response diterima.
+    assert converter.calls == 0
 
-    detail = await client.get(f"{RPS_URL}/{uploaded['id']}", headers=instructor_headers)
-    assert detail.json()["source_markdown"] == MARKDOWN
-    assert detail.json()["has_source_markdown"] is True
+    detail = await read_detail(client, instructor_headers, uploaded["id"])
+    assert detail["status"] == "PROCESSING"
+    assert detail["has_source_markdown"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_scheduled_conversion_completes_and_can_be_polled(client, instructor_headers):
+    """Client memantau ``GET /rps/{id}`` sampai statusnya final."""
+    uploaded = (await upload_rps(client, instructor_headers)).json()
+
+    scheduled = await schedule_processing(client, instructor_headers, uploaded["id"])
+    assert scheduled.status_code == 202
+
+    detail = await read_detail(client, instructor_headers, uploaded["id"])
+    assert detail["status"] == "PROCESSED"
+    assert detail["source_markdown"] == MARKDOWN
+    assert detail["has_source_markdown"] is True
+    # Dokumen hasil konversi tersimpan di database (issue #98), bukan hanya di disk.
+    assert detail["has_source_document"] is True
+    assert detail["processing_duration_ms"] >= 1
+    assert detail["processing_error_code"] is None
+
+
+@pytest.mark.asyncio
+async def test_the_scheduled_runner_receives_the_document_and_its_owner(
+    client, instructor_headers, runner
+):
+    uploaded = (await upload_rps(client, instructor_headers)).json()
+
+    await schedule_processing(client, instructor_headers, uploaded["id"])
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["rps_id"] == uploaded["id"]
+    assert len(runner.calls[0]["owner_id"]) == 22
 
 
 @pytest.mark.asyncio
 async def test_process_accepts_an_empty_body(client, instructor_headers):
-    """``agent_run_id``/payload tidak wajib: pemrosesan default sudah bermakna."""
+    """Payload tidak wajib: pemrosesan default sudah bermakna."""
     uploaded = (await upload_rps(client, instructor_headers)).json()
 
-    response = await client.post(
-        f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers
-    )
+    response = await schedule_processing(client, instructor_headers, uploaded["id"])
 
-    assert response.status_code == 200
+    assert response.status_code == 202
 
 
 @pytest.mark.asyncio
-async def test_processing_twice_does_not_convert_again(client, instructor_headers, converter):
+async def test_processing_twice_does_not_convert_again(
+    client, instructor_headers, runner, converter
+):
     uploaded = (await upload_rps(client, instructor_headers)).json()
 
-    first = await client.post(f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers)
-    second = await client.post(f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers)
+    first = await schedule_processing(client, instructor_headers, uploaded["id"])
+    second = await schedule_processing(client, instructor_headers, uploaded["id"])
 
-    assert first.json()["reused"] is False
+    assert first.status_code == 202
+    assert second.status_code == 200
     assert second.json()["reused"] is True
     assert second.json()["status"] == "PROCESSED"
+    assert len(runner.calls) == 1
     assert converter.calls == 1
 
 
 @pytest.mark.asyncio
-async def test_processing_for_a_new_schema_version_converts_again(
-    client, instructor_headers, converter
+async def test_processing_for_a_new_schema_version_is_scheduled_again(
+    client, instructor_headers, runner, converter
 ):
     uploaded = (await upload_rps(client, instructor_headers)).json()
-    await client.post(f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers)
+    await schedule_processing(client, instructor_headers, uploaded["id"])
 
-    response = await client.post(
-        f"{RPS_URL}/{uploaded['id']}/process",
-        headers=instructor_headers,
-        json={"schema_version": "2.0"},
+    response = await schedule_processing(
+        client,
+        instructor_headers,
+        uploaded["id"],
+        json={"schema_version": OTHER_SCHEMA_VERSION},
     )
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "rps_id": uploaded["id"],
-        "status": "PROCESSED",
-        "schema_version": "2.0",
-        "reused": False,
-    }
+    assert response.status_code == 202
+    assert response.json()["schema_version"] == OTHER_SCHEMA_VERSION
+    assert response.json()["reused"] is False
+
+    detail = await read_detail(client, instructor_headers, uploaded["id"])
+    assert detail["status"] == "PROCESSED"
+    assert detail["schema_version"] == OTHER_SCHEMA_VERSION
+    assert len(runner.calls) == 2
     assert converter.calls == 2
 
 
 @pytest.mark.asyncio
-async def test_a_conversion_failure_is_reported_as_rps_processing_failed(
+async def test_a_conversion_failure_is_explained_through_polling(
     client, instructor_headers, converter
 ):
+    """Kegagalan background harus tetap dapat dipahami client (issue #98)."""
     uploaded = (await upload_rps(client, instructor_headers)).json()
     converter.fail = True
 
-    response = await client.post(
-        f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers
-    )
+    scheduled = await schedule_processing(client, instructor_headers, uploaded["id"])
+    assert scheduled.status_code == 202  # kegagalan belum diketahui saat response
 
-    assert response.status_code == 500
-    assert response.json() == {
-        "error": {
-            "code": "RPS_PROCESSING_FAILED",
-            "message": "Pemrosesan RPS gagal.",
-            "details": [],
-        }
-    }
-    # Detail penyebab hanya dicatat server-side.
-    assert "stub sengaja gagal" not in response.text
+    detail = await read_detail(client, instructor_headers, uploaded["id"])
+    assert detail["status"] == "FAILED"
+    assert detail["processing_error_code"] == "RPS_PROCESSING_FAILED"
+    assert detail["processing_error_message"]
+    assert detail["has_source_markdown"] is False
+    assert detail["has_source_document"] is False
 
-    detail = await client.get(f"{RPS_URL}/{uploaded['id']}", headers=instructor_headers)
-    assert detail.json()["status"] == "FAILED"
-    assert detail.json()["source_markdown"] is None
+    # Alasan yang dikembalikan aman: detail internal hanya ada di log.
+    assert "stub sengaja gagal" not in detail["processing_error_message"]
 
 
 @pytest.mark.asyncio
@@ -439,12 +553,11 @@ async def test_an_empty_conversion_result_is_reported_as_a_processing_failure(
     uploaded = (await upload_rps(client, instructor_headers)).json()
     converter.markdown = "   "
 
-    response = await client.post(
-        f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers
-    )
+    await schedule_processing(client, instructor_headers, uploaded["id"])
 
-    assert response.status_code == 500
-    assert error_code(response) == "RPS_PROCESSING_FAILED"
+    detail = await read_detail(client, instructor_headers, uploaded["id"])
+    assert detail["status"] == "FAILED"
+    assert detail["processing_error_code"] == "RPS_PROCESSING_FAILED"
 
 
 @pytest.mark.asyncio
@@ -453,30 +566,72 @@ async def test_a_failed_document_can_be_retried_through_the_api(
 ):
     uploaded = (await upload_rps(client, instructor_headers)).json()
     converter.fail = True
-
-    failed = await client.post(f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers)
-    assert failed.status_code == 500
+    await schedule_processing(client, instructor_headers, uploaded["id"])
+    assert (await read_detail(client, instructor_headers, uploaded["id"]))["status"] == "FAILED"
 
     converter.fail = False
-    retried = await client.post(f"{RPS_URL}/{uploaded['id']}/process", headers=instructor_headers)
+    retried = await schedule_processing(client, instructor_headers, uploaded["id"])
 
-    assert retried.status_code == 200
-    assert retried.json()["status"] == "PROCESSED"
-    assert retried.json()["reused"] is False
+    assert retried.status_code == 202
+    detail = await read_detail(client, instructor_headers, uploaded["id"])
+    assert detail["status"] == "PROCESSED"
+    # Catatan kegagalan sebelumnya dibersihkan oleh hasil yang berhasil.
+    assert detail["processing_error_code"] is None
+    assert detail["processing_error_message"] is None
     assert converter.calls == 2
 
 
 @pytest.mark.asyncio
+async def test_processing_a_document_twice_at_once_is_a_conflict(
+    client, instructor_headers, runner
+):
+    """Konversi yang masih berjalan tidak boleh dijadwalkan ulang."""
+    uploaded = (await upload_rps(client, instructor_headers)).json()
+    runner.complete = False
+
+    first = await schedule_processing(client, instructor_headers, uploaded["id"])
+    second = await schedule_processing(client, instructor_headers, uploaded["id"])
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert error_code(second) == "INVALID_REQUEST"
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_stuck_processing_document_can_be_reclaimed_after_the_lease(
+    client, instructor_headers, runner, db_session
+):
+    """Konversi yang terputus (server mati) tidak boleh mengunci dokumen selamanya."""
+    uploaded = (await upload_rps(client, instructor_headers)).json()
+    runner.complete = False
+    await schedule_processing(client, instructor_headers, uploaded["id"])
+
+    # Tirukan pemrosesan yang berhenti di tengah jalan: barisnya sudah lama
+    # tidak tersentuh, lebih tua dari batas lease.
+    await db_session.execute(
+        text("UPDATE rps SET updated_at = now() - interval '1 hour' WHERE id = :id"),
+        {"id": uploaded["id"]},
+    )
+    await db_session.commit()
+
+    response = await schedule_processing(client, instructor_headers, uploaded["id"])
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "PROCESSING"
+    assert len(runner.calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_another_instructor_cannot_process_the_document(
-    client, instructor_headers, other_instructor_headers, converter
+    client, instructor_headers, other_instructor_headers, runner, converter
 ):
     uploaded = (await upload_rps(client, instructor_headers)).json()
 
-    response = await client.post(
-        f"{RPS_URL}/{uploaded['id']}/process", headers=other_instructor_headers
-    )
+    response = await schedule_processing(client, other_instructor_headers, uploaded["id"])
 
     assert response.status_code == 404
+    assert runner.calls == []
     assert converter.calls == 0
 
 
@@ -538,6 +693,25 @@ async def test_unauthenticated_requests_are_denied(client, instructor_headers):
     )
 
 
+@pytest.mark.asyncio
+async def test_authorization_runs_before_processing_is_scheduled(
+    client, user_service, instructor_headers, runner
+):
+    """Guard harus selesai sebelum dokumen ditandai PROCESSING."""
+    await create_user(user_service, email="mhs@itk.ac.id", role=UserRole.STUDENT)
+    headers = await login(client, email="mhs@itk.ac.id")
+    uploaded = (await upload_rps(client, instructor_headers)).json()
+
+    denied = await schedule_processing(client, headers, uploaded["id"])
+
+    assert denied.status_code == 403
+    assert runner.calls == []
+    assert (await read_detail(client, instructor_headers, uploaded["id"]))["status"] == "UPLOADED"
+
+
+# --- Kontrak API -----------------------------------------------------------
+
+
 def test_rps_endpoints_are_part_of_the_api_spec():
     """Endpoint terdaftar pada OpenAPI di bawah prefix versi API (design-api §4)."""
     paths = create_app().openapi()["paths"]
@@ -545,3 +719,16 @@ def test_rps_endpoints_are_part_of_the_api_spec():
     assert RPS_URL in paths
     assert f"{RPS_URL}/{{rps_id}}" in paths
     assert f"{RPS_URL}/{{rps_id}}/process" in paths
+
+
+def test_processing_is_documented_as_an_asynchronous_operation():
+    """design-api §6.3: pemrosesan menerima 202, bukan menahan request."""
+    operation = create_app().openapi()["paths"][f"{RPS_URL}/{{rps_id}}/process"]["post"]
+
+    assert "202" in operation["responses"]
+
+
+def test_detail_response_fields_match_what_the_tests_assert():
+    """Menjaga daftar field pada test tetap sinkron dengan DTO-nya."""
+    assert set(RPSDetailResponse.model_fields) == DETAIL_RESPONSE_FIELDS
+    assert RPSStatus.PROCESSING.value == "PROCESSING"

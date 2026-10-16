@@ -31,6 +31,10 @@ DEFAULT_RPS_CONVERTER = "docling"
 DEFAULT_RPS_CONVERTER_OCR = True
 DEFAULT_RPS_CONVERTER_TABLE_STRUCTURE = True
 DEFAULT_RPS_CONVERTER_TABLE_MODE = "accurate"
+# Batas waktu pemrosesan yang masih dianggap berjalan. Setelah ini, dokumen
+# berstatus PROCESSING boleh diproses ulang — jalan keluar bila proses server
+# berhenti di tengah konversi sehingga barisnya tidak pernah selesai.
+DEFAULT_RPS_PROCESSING_LEASE_SECONDS = 900
 
 
 class Settings(BaseSettings):
@@ -106,6 +110,10 @@ class Settings(BaseSettings):
     RPS_CONVERTER_TABLE_MODE: str = ""
     # Direktori model Docling yang sudah diunduh lebih dulu (deployment offline).
     RPS_CONVERTER_ARTIFACTS_PATH: str = ""
+    # Batas waktu (detik) sebuah pemrosesan dianggap masih berjalan. Dokumen
+    # berstatus PROCESSING yang lebih tua dari ini boleh diproses ulang, sehingga
+    # konversi yang terputus (server dimatikan) tidak mengunci dokumen selamanya.
+    RPS_PROCESSING_LEASE_SECONDS: int | None = None
 
     model_config = SettingsConfigDict(
         # Urutan penting: pydantic-settings menggabungkan file-file ini secara
@@ -154,6 +162,14 @@ class Settings(BaseSettings):
         """Batas 0 atau negatif akan menolak seluruh unggahan tanpa penjelasan jelas."""
         if v is not None and v <= 0:
             raise ValueError("RPS_MAX_UPLOAD_BYTES harus lebih besar dari 0")
+        return v
+
+    @field_validator("RPS_PROCESSING_LEASE_SECONDS", mode="after")
+    @classmethod
+    def parse_rps_processing_lease(cls, v: int | None) -> int | None:
+        """Lease 0/negatif akan menganggap setiap pemrosesan sudah terlantar."""
+        if v is not None and v <= 0:
+            raise ValueError("RPS_PROCESSING_LEASE_SECONDS harus lebih besar dari 0")
         return v
 
     @field_validator("RPS_ALLOWED_EXTENSIONS", mode="after")
@@ -222,6 +238,15 @@ class Settings(BaseSettings):
     def rps_converter_artifacts_path(self) -> str | None:
         """Direktori model Docling, atau ``None`` bila memakai cache bawaan."""
         return (self.RPS_CONVERTER_ARTIFACTS_PATH or "").strip() or None
+
+    @property
+    def rps_processing_lease_seconds(self) -> int:
+        """Batas waktu pemrosesan yang dianggap masih berjalan (detik)."""
+        return (
+            DEFAULT_RPS_PROCESSING_LEASE_SECONDS
+            if self.RPS_PROCESSING_LEASE_SECONDS is None
+            else self.RPS_PROCESSING_LEASE_SECONDS
+        )
 
     @property
     def llm_provider(self) -> str:

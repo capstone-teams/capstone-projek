@@ -186,9 +186,25 @@ Response:
   "id": "rps_001",
   "filename": "rps.pdf",
   "status": "processed",
-  "created_at": "datetime"
+  "created_at": "datetime",
+  "has_source_markdown": true,
+  "has_source_document": true,
+  "processing_duration_ms": 8421,
+  "processing_error_code": null,
+  "processing_error_message": null
 }
 ```
+
+Endpoint ini juga menjadi **endpoint polling** untuk §6.3: setelah pemrosesan
+dijadwalkan, client memantau `status` sampai bernilai `processed` atau `failed`.
+
+Ketika `status` bernilai `failed`, `processing_error_code` memuat kode error §18
+(mis. `RPS_PROCESSING_FAILED`) dan `processing_error_message` memuat alasan yang
+dapat dipahami pengguna. Detail teknisnya tidak pernah dikembalikan, hanya
+dicatat server-side.
+
+`source_document` (JSON hasil konversi) tidak dikembalikan pada response ini
+karena ukurannya besar; ia tersedia bagi tahap ekstraksi (§6.4).
 
 ---
 
@@ -198,17 +214,52 @@ Response:
 POST /api/v1/rps/{rps_id}/process
 ```
 
-Response:
+Request body bersifat opsional:
+
+```json
+{
+  "schema_version": "2.0"
+}
+```
+
+`schema_version` boleh dikosongkan; bila diisi dan berbeda dari versi yang
+tercatat pada dokumen, dokumen diproses ulang untuk versi skema tersebut.
+
+Response `202 Accepted`:
 
 ```json
 {
   "rps_id": "rps_001",
   "status": "processing",
-  "agent_run_id": "run_001"
+  "schema_version": "2.0",
+  "reused": false
 }
 ```
 
-Processing merupakan asynchronous operation.
+Processing merupakan asynchronous operation: request hanya **menjadwalkan**
+konversi, lalu konversinya berjalan di background. Client memantau
+`GET /api/v1/rps/{rps_id}` (§6.2) sampai statusnya `processed` atau `failed`.
+
+Bila dokumen sudah diproses untuk `file_hash` dan `schema_version` yang sama,
+tidak ada pekerjaan yang dijadwalkan dan response-nya `200 OK` dengan
+`"reused": true`.
+
+```json
+{
+  "rps_id": "rps_001",
+  "status": "processed",
+  "schema_version": "2.0",
+  "reused": true
+}
+```
+
+Kegagalan konversi tidak muncul pada response ini (tidak ada client yang
+menunggu pekerjaan background); kegagalannya terlihat pada §6.2 sebagai
+`status: failed` beserta `processing_error_code` dan
+`processing_error_message`.
+
+Field `agent_run_id` menyusul bersama Agent Run pada M03 (lihat §15) dan
+karenanya belum ada pada response ini.
 
 ---
 

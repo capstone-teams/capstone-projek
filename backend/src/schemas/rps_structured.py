@@ -4,35 +4,46 @@ Modul ini adalah **kontrak bersama backend dan AI** untuk tahap ekstraksi
 (BE-08): bentuk data yang harus dihasilkan ketika sebuah RPS diubah menjadi
 struktur akademik. Rujukan desain:
 
-- ``docs/02. design/content-schema.md`` §6 (RPS Analysis Schema) dan §7 (RPS
-  Week Schema) — bentuk object dan nama field;
+- ``docs/02. design/content-schema.md`` §6.1 (RPS Analysis Schema) dan §6.2 (RPS
+  Structured Data) — bentuk object dan nama field;
 - §44 (Schema Evolution) — ``schema_version`` sebagai versi skema, terpisah dari
   content version;
 - §45 (JSON Schema Implementation) — Pydantic sebagai definisi schema
   application-level;
 - §3.2 (Schema is a Contract) — setiap output agent wajib melewati validasi
   schema sebelum disimpan/diteruskan;
+- §3.3 (RPS Traceability) — rencana mingguan harus dapat dikaitkan ke sumber
+  akademiknya;
 - §3.4 (Extensible but Controlled) — field utama eksplisit, tanpa wadah
   ``additional_data`` yang menampung apa pun.
+
+Hierarki capaian pembelajaran mengikuti template RPS program studi: **CPL**
+(Capaian Pembelajaran Lulusan) → **CPMK** (Capaian Pembelajaran Mata Kuliah) →
+**Sub-CPMK**. Inilah bentuk yang benar-benar tertulis pada dokumen RPS,
+sehingga ekstraksi tidak perlu menebak pemetaan dari bentuk generik.
 
 Aturan bentuk yang dipegang modul ini:
 
 1. **Tidak ada field akademik yang wajib diisi.** RPS antar-program studi
    berbeda-beda, sehingga field yang tidak tersedia pada dokumen bernilai
-   ``None`` atau list kosong (§6/§7: "boleh kosong atau null"). Yang wajib
-   hanyalah *isi* dari sebuah entri yang memang ada — misalnya sebuah learning
-   outcome harus punya ``description``, tetapi dokumen boleh tidak memiliki
-   learning outcome sama sekali.
+   ``None`` atau list kosong (§6: "boleh kosong atau null"). Yang wajib hanyalah
+   *isi* dari sebuah entri yang memang ada — misalnya sebuah CPL harus punya
+   ``description``, tetapi dokumen boleh tidak memiliki CPL sama sekali.
 2. **Sistem tidak boleh mengarang.** Tidak ada nilai default berupa teks
    placeholder: field yang tidak ditemukan tetap kosong, bukan diisi
    ``"TBD"``/``"N/A"`` hanya agar schema terlihat lengkap (§6).
 3. **Strict terhadap field tak dikenal.** ``extra="forbid"`` diterapkan pada
-   seluruh object supaya output agent yang menyimpang (salah nama field,
-   menambah field di luar kontrak) gagal validasi — bukan diam-diam tersimpan
-   setengah benar (§3.2, §3.4).
-4. **Metadata persistence bukan bagian schema.** ``id``/``version``/
+   seluruh object supaya output agent yang menyimpang gagal validasi — bukan
+   diam-diam tersimpan setengah benar (§3.2, §3.4).
+4. **Rujukan silang dilaporkan, bukan dilarang.** Sub-CPMK → CPMK → CPL dan
+   rujukan mingguan diperiksa oleh :meth:`RPSStructuredData.validate_references`
+   dan menghasilkan *temuan* (§3.3). Format RPS berbeda-beda, sehingga rujukan
+   yang tidak menemukan sasaran tidak boleh menggagalkan pemrosesan.
+5. **Metadata persistence bukan bagian schema.** ``id``/``version``/
    ``created_at`` milik database dan tidak diulang di sini (§5: "Schema JSON
-   tidak boleh menggantikan relational identity").
+   tidak boleh menggantikan relational identity"). Yang *memang* bagian dari
+   schema adalah :class:`RPSExtractionMetadata` — keterangan tentang proses
+   ekstraksi itu sendiri, bukan identitas baris database.
 
 Pemetaan ke tabel ``rps_analyses`` (data-model §9) disediakan oleh
 :func:`to_rps_analysis_payload` agar BE-08 tidak menebak nama kolom.
@@ -40,6 +51,8 @@ Pemetaan ke tabel ``rps_analyses`` (data-model §9) disediakan oleh
 
 from __future__ import annotations
 
+from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -49,25 +62,36 @@ __all__ = [
     "DanglingReference",
     "RPSAssessment",
     "RPSCourseIdentity",
-    "RPSLearningOutcome",
-    "RPSObjective",
+    "RPSCourseOutcome",
+    "RPSExtractionMetadata",
+    "RPSGraduateOutcome",
+    "RPSMedia",
     "RPSReference",
     "RPSStructuredData",
     "RPSStructuredModel",
+    "RPSSubCourseOutcome",
     "RPSTopic",
     "RPSWeek",
     "RPSWeekAssessment",
+    "RPSWeekType",
     "to_rps_analysis_payload",
 ]
 
 # Versi RPS Structured Data Schema yang berlaku (content-schema §44). Nilai ini
 # ikut disimpan pada kolom ``rps.schema_version`` dan menjadi bagian dari kunci
 # idempotency pemrosesan: dokumen dengan ``file_hash`` **dan**
-# ``schema_version`` yang sama tidak diproses ulang (BE-05 acceptance criteria).
+# ``schema_version`` yang sama tidak diproses ulang.
 #
-# Naikkan versi ini hanya bila bentuk schema berubah dan hasil lama tidak lagi
-# dapat dipakai apa adanya (breaking → ``2.0``, backward-compatible → ``1.1``).
-RPS_SCHEMA_VERSION = "1.0"
+# Riwayat versi:
+# - ``1.0`` — bentuk awal content-schema §6/§7 dengan
+#   ``learning_outcomes``/``objectives`` generik;
+# - ``2.0`` — hierarki capaian pembelajaran dibuat eksplisit (CPL/CPMK/Sub-CPMK),
+#   ``week_type`` ditambahkan, ``weight`` menjadi ``weight_percent``, serta
+#   ``media`` dan ``extraction`` tersedia. Perubahan ini *breaking* terhadap 1.0
+#   (§44), sehingga hasil lama perlu diproses ulang sebelum dipakai pada skema
+#   baru. Padanan field lama: ``learning_outcomes`` → ``cpmk``, ``objectives`` →
+#   ``sub_cpmk``.
+RPS_SCHEMA_VERSION = "2.0"
 
 
 class RPSStructuredModel(BaseModel):
@@ -96,8 +120,20 @@ class RPSStructuredModel(BaseModel):
         return value
 
 
+class RPSWeekType(str, Enum):
+    """Jenis minggu pada rencana pembelajaran (content-schema §6.2).
+
+    ``uts``/``uas`` menandai minggu ujian tengah/akhir semester, yang pada RPS
+    umumnya tidak memuat materi baru.
+    """
+
+    REGULAR = "regular"
+    UTS = "uts"
+    UAS = "uas"
+
+
 class RPSCourseIdentity(RPSStructuredModel):
-    """Identitas mata kuliah pada RPS (content-schema §6 ``course``)."""
+    """Identitas mata kuliah pada RPS (content-schema §6.1 ``course``)."""
 
     name: str | None = None
     code: str | None = None
@@ -106,22 +142,43 @@ class RPSCourseIdentity(RPSStructuredModel):
     description: str | None = None
 
 
-class RPSLearningOutcome(RPSStructuredModel):
-    """Capaian pembelajaran (CPMK/LO) beserta kodenya bila RPS menyebutkannya.
+class RPSGraduateOutcome(RPSStructuredModel):
+    """CPL — Capaian Pembelajaran Lulusan (tingkat program studi).
 
-    ``id`` opsional karena banyak RPS tidak memberi kode eksplisit; bila tidak
-    ada, rujukan dari :class:`RPSWeek` cukup memakai deskripsinya sebagai teks.
+    ``id`` adalah kode rujukan (mis. ``CPL-1``). RPS umumnya menuliskan kode
+    langsung pada kolomnya, dan CPMK merujuk kode tersebut.
     """
 
     id: str | None = None
     description: str = Field(min_length=1)
 
 
-class RPSObjective(RPSStructuredModel):
-    """Tujuan pembelajaran (OBJ) yang dinyatakan RPS."""
+class RPSCourseOutcome(RPSStructuredModel):
+    """CPMK — Capaian Pembelajaran Mata Kuliah; merujuk satu atau lebih CPL."""
 
     id: str | None = None
     description: str = Field(min_length=1)
+    cpl_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("cpl_ids", mode="after")
+    @classmethod
+    def _drop_blank_entries(cls, value: list[str]) -> list[str]:
+        """Buang entri kosong; entri tanpa isi bukan rujukan yang bermakna."""
+        return [item for item in value if item]
+
+
+class RPSSubCourseOutcome(RPSStructuredModel):
+    """Sub-CPMK — turunan CPMK yang menjadi sasaran tiap minggu."""
+
+    id: str | None = None
+    description: str = Field(min_length=1)
+    cpmk_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("cpmk_ids", mode="after")
+    @classmethod
+    def _drop_blank_entries(cls, value: list[str]) -> list[str]:
+        """Buang entri kosong (lihat :meth:`RPSCourseOutcome._drop_blank_entries`)."""
+        return [item for item in value if item]
 
 
 class RPSTopic(RPSStructuredModel):
@@ -131,34 +188,48 @@ class RPSTopic(RPSStructuredModel):
     name: str = Field(min_length=1)
 
 
-class RPSWeekAssessment(RPSStructuredModel):
-    """Assessment satu minggu (content-schema §7 ``assessment``).
+class RPSMedia(RPSStructuredModel):
+    """Media pembelajaran yang disebut RPS (mis. slide, video, LMS, alat peraga)."""
 
-    Tidak diisi bila RPS tidak menentukan assessment untuk minggu tersebut —
-    sistem tidak boleh mengarang assessment (§7).
-    """
-
+    id: str | None = None
+    name: str = Field(min_length=1)
     type: str | None = None
     description: str | None = None
 
 
-class RPSWeek(RPSStructuredModel):
-    """Distribusi materi per minggu (content-schema §7).
+class RPSWeekAssessment(RPSStructuredModel):
+    """Assessment satu minggu (content-schema §6.2 ``assessment``).
 
-    Sesuai §7, ``topics`` berisi **nama** topik, sedangkan
-    ``learning_outcomes`` dan ``objectives`` berisi **kode** (``LO-1``,
-    ``OBJ-1``) yang merujuk entri pada :class:`RPSStructuredData`.
+    Tidak diisi bila RPS tidak menentukan assessment untuk minggu tersebut —
+    sistem tidak boleh mengarang assessment (§6.1).
+    """
+
+    type: str | None = None
+    description: str | None = None
+    weight_percent: float | None = Field(default=None, ge=0, le=100)
+
+
+class RPSWeek(RPSStructuredModel):
+    """Distribusi materi per minggu (content-schema §6.2).
+
+    ``topics`` dan ``media`` berisi **nama** yang dideklarasikan pada dokumen,
+    sedangkan ``cpmk`` dan ``sub_cpmk`` berisi **kode** (``CPMK-1``, ``SUB-1``)
+    yang merujuk entri pada :class:`RPSStructuredData`.
     """
 
     week: int = Field(ge=1)
+    week_type: RPSWeekType = RPSWeekType.REGULAR
     topics: list[str] = Field(default_factory=list)
-    learning_outcomes: list[str] = Field(default_factory=list)
-    objectives: list[str] = Field(default_factory=list)
-    # Nama field mengikuti content-schema §7 (``teaching_method``, tunggal).
+    cpmk: list[str] = Field(default_factory=list)
+    sub_cpmk: list[str] = Field(default_factory=list)
+    # Nama field mengikuti content-schema §6.1 (``teaching_method``, tunggal).
     teaching_method: list[str] = Field(default_factory=list)
+    media: list[str] = Field(default_factory=list)
     assessment: RPSWeekAssessment | None = None
 
-    @field_validator("topics", "learning_outcomes", "objectives", "teaching_method", mode="after")
+    @field_validator(
+        "topics", "cpmk", "sub_cpmk", "teaching_method", "media", mode="after"
+    )
     @classmethod
     def _drop_blank_entries(cls, value: list[str]) -> list[str]:
         """Buang entri kosong; entri tanpa isi bukan informasi akademik."""
@@ -166,21 +237,21 @@ class RPSWeek(RPSStructuredModel):
 
 
 class RPSAssessment(RPSStructuredModel):
-    """Assessment tingkat mata kuliah (content-schema §6 ``assessments``).
+    """Assessment tingkat mata kuliah (content-schema §6.1 ``assessments``).
 
-    ``weight`` adalah bobot dalam persen bila RPS menyebutkannya; tidak diisi
-    bila tidak ada, dan tidak pernah dikira-kira.
+    ``weight_percent`` adalah bobot dalam persen bila RPS menyebutkannya; tidak
+    diisi bila tidak ada, dan tidak pernah dikira-kira.
     """
 
     id: str | None = None
     type: str | None = None
     description: str | None = None
     week: int | None = Field(default=None, ge=1)
-    weight: float | None = Field(default=None, ge=0, le=100)
+    weight_percent: float | None = Field(default=None, ge=0, le=100)
 
 
 class RPSReference(RPSStructuredModel):
-    """Satu entri daftar pustaka/referensi (content-schema §6 ``references``)."""
+    """Satu entri daftar pustaka/referensi (content-schema §6.1 ``references``)."""
 
     id: str | None = None
     citation: str = Field(min_length=1)
@@ -189,17 +260,55 @@ class RPSReference(RPSStructuredModel):
     source: str | None = None
 
 
+class RPSExtractionMetadata(RPSStructuredModel):
+    """Keterangan tentang proses ekstraksi yang menghasilkan dokumen ini.
+
+    Berbeda dari metadata persistence (§5) yang dimiliki database: object ini
+    mencatat **bagaimana** data diperoleh — pipeline/konverter, model bahasa yang
+    dipakai, halaman sumber, dan tingkat keyakinan — sehingga hasil ekstraksi
+    dapat dievaluasi dan ditelusuri (§3.3).
+    """
+
+    extracted_at: datetime | None = None
+    extractor: str | None = None
+    extractor_version: str | None = None
+    model_name: str | None = None
+    model_provider: str | None = None
+    source_pages: list[int] = Field(default_factory=list)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("source_pages", mode="after")
+    @classmethod
+    def _require_positive_pages(cls, value: list[int]) -> list[int]:
+        """Nomor halaman mengikuti penomoran dokumen (mulai dari 1)."""
+        invalid = sorted(page for page in value if page < 1)
+        if invalid:
+            raise ValueError(f"nomor halaman harus >= 1, ditemukan: {invalid}")
+        return value
+
+    @field_validator("warnings", mode="after")
+    @classmethod
+    def _drop_blank_entries(cls, value: list[str]) -> list[str]:
+        """Buang peringatan kosong (lihat :meth:`RPSWeek._drop_blank_entries`)."""
+        return [item for item in value if item]
+
+
 class DanglingReference(RPSStructuredModel):
-    """Rujukan pada :class:`RPSWeek` yang tidak menemukan sasaran deklarasinya.
+    """Rujukan yang tidak menemukan sasaran deklarasinya.
 
     Dilaporkan sebagai temuan (bukan error) oleh
     :meth:`RPSStructuredData.validate_references`, karena RPS yang berbeda
     memang boleh merujuk kode yang tidak dideklarasikan secara eksplisit.
     """
 
-    week: int
+    #: Asal rujukan: ``week``, ``cpmk``, atau ``sub_cpmk``.
+    source: str
+    #: Nama field yang memuat rujukan (mis. ``cpl_ids``, ``sub_cpmk``).
     field: str
     value: str
+    #: Nomor minggu; hanya terisi bila rujukannya berasal dari sebuah minggu.
+    week: int | None = None
 
 
 class RPSStructuredData(RPSStructuredModel):
@@ -211,13 +320,16 @@ class RPSStructuredData(RPSStructuredModel):
 
     schema_version: str = Field(default=RPS_SCHEMA_VERSION, min_length=1)
     course: RPSCourseIdentity = Field(default_factory=RPSCourseIdentity)
-    learning_outcomes: list[RPSLearningOutcome] = Field(default_factory=list)
-    objectives: list[RPSObjective] = Field(default_factory=list)
+    cpl: list[RPSGraduateOutcome] = Field(default_factory=list)
+    cpmk: list[RPSCourseOutcome] = Field(default_factory=list)
+    sub_cpmk: list[RPSSubCourseOutcome] = Field(default_factory=list)
     topics: list[RPSTopic] = Field(default_factory=list)
     weeks: list[RPSWeek] = Field(default_factory=list)
     teaching_methods: list[str] = Field(default_factory=list)
+    media: list[RPSMedia] = Field(default_factory=list)
     assessments: list[RPSAssessment] = Field(default_factory=list)
     references: list[RPSReference] = Field(default_factory=list)
+    extraction: RPSExtractionMetadata | None = None
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -260,43 +372,61 @@ class RPSStructuredData(RPSStructuredModel):
     def declared_ids(self, field: str) -> set[str]:
         """Kumpulan kode (``id``) yang dideklarasikan pada satu koleksi.
 
-        ``field`` adalah nama koleksi tingkat dokumen: ``learning_outcomes``,
-        ``objectives``, atau ``topics``. Entri tanpa ``id`` tidak menghasilkan
-        kode apa pun, sehingga tidak dapat dirujuk lewat kode.
+        ``field`` adalah nama koleksi tingkat dokumen: ``cpl``, ``cpmk``,
+        ``sub_cpmk``, atau ``topics``. Entri tanpa ``id`` tidak menghasilkan kode
+        apa pun, sehingga tidak dapat dirujuk lewat kode.
         """
         collection = getattr(self, field)
         return {entry.id for entry in collection if entry.id}
 
     def validate_references(self) -> list[DanglingReference]:
-        """Temukan rujukan minggu yang tidak menemukan sasaran (§3.3).
+        """Temukan rujukan yang tidak menemukan sasaran (§3.3).
 
-        Traceability RPS (content-schema §3.3) mengharuskan setiap rencana
-        mingguan dapat dikaitkan dengan Learning Outcome/Objective/Topic
-        sumbernya. Pemeriksaan ini **tidak** melempar error: RPS yang berbeda
-        boleh menyebut kode yang tidak dideklarasikan pada daftar utamanya, dan
-        temuan ini dipakai sebagai bahan validasi (BE-09), bukan penghalang
-        pemrosesan.
+        Traceability RPS mengharuskan setiap rencana mingguan dapat dikaitkan
+        dengan sumber akademiknya, dan hierarki capaian pembelajaran harus utuh:
+        Sub-CPMK → CPMK → CPL. Pemeriksaan ini **tidak** melempar error: RPS yang
+        berbeda boleh menyebut kode yang tidak dideklarasikan pada daftar
+        utamanya, dan temuan ini dipakai sebagai bahan validasi (BE-09), bukan
+        penghalang pemrosesan.
         """
-        # `learning_outcomes`/`objectives` pada minggu berisi kode, sedangkan
-        # `topics` berisi nama topik (content-schema §7) — sasaran pembandingnya
-        # berbeda, jadi ditentukan per field.
-        targets: dict[str, set[str]] = {
-            "learning_outcomes": self.declared_ids("learning_outcomes"),
-            "objectives": self.declared_ids("objectives"),
-            "topics": {topic.name for topic in self.topics},
-        }
+        cpl_ids = self.declared_ids("cpl")
+        cpmk_ids = self.declared_ids("cpmk")
+        sub_cpmk_ids = self.declared_ids("sub_cpmk")
+        topic_names = {topic.name for topic in self.topics}
+        media_names = {media.name for media in self.media}
 
-        findings: list[DanglingReference] = []
+        findings = _dangling(
+            source="cpmk",
+            field="cpl_ids",
+            values=_referenced(self.cpmk, "cpl_ids"),
+            declared=cpl_ids,
+        )
+        findings += _dangling(
+            source="sub_cpmk",
+            field="cpmk_ids",
+            values=_referenced(self.sub_cpmk, "cpmk_ids"),
+            declared=cpmk_ids,
+        )
+
+        # Rujukan per minggu: `cpmk`/`sub_cpmk` berisi kode, sedangkan `topics`
+        # dan `media` berisi nama yang dideklarasikan (content-schema §6.2),
+        # sehingga sasaran pembandingnya berbeda per field.
+        weekly_targets: tuple[tuple[str, set[str]], ...] = (
+            ("cpmk", cpmk_ids),
+            ("sub_cpmk", sub_cpmk_ids),
+            ("topics", topic_names),
+            ("media", media_names),
+        )
         for week in self.weeks:
-            for field, known in targets.items():
-                # Koleksi sasaran kosong berarti tidak ada yang bisa dirujuk;
-                # melaporkan seluruh rujukan minggu sebagai temuan hanya akan
-                # menghasilkan derau, bukan sinyal traceability.
-                if not known:
-                    continue
-                for value in getattr(week, field):
-                    if value not in known:
-                        findings.append(DanglingReference(week=week.week, field=field, value=value))
+            for field, declared in weekly_targets:
+                findings += _dangling(
+                    source="week",
+                    field=field,
+                    values=list(getattr(week, field)),
+                    declared=declared,
+                    week=week.week,
+                )
+
         return findings
 
     def has_academic_content(self) -> bool:
@@ -309,24 +439,63 @@ class RPSStructuredData(RPSStructuredModel):
             (
                 self.course.name,
                 self.course.code,
-                self.learning_outcomes,
-                self.objectives,
+                self.cpl,
+                self.cpmk,
+                self.sub_cpmk,
                 self.topics,
                 self.weeks,
                 self.teaching_methods,
+                self.media,
                 self.assessments,
                 self.references,
             )
         )
 
 
+def _referenced(entries: list[Any], field: str) -> list[str]:
+    """Seluruh nilai rujukan pada satu field dari sekumpulan entri."""
+    return [value for entry in entries for value in getattr(entry, field)]
+
+
+def _dangling(
+    *,
+    source: str,
+    field: str,
+    values: list[str],
+    declared: set[str],
+    week: int | None = None,
+) -> list[DanglingReference]:
+    """Rujukan yang tidak ada pada koleksi sasarannya.
+
+    Koleksi sasaran yang kosong berarti tidak ada yang bisa dirujuk; melaporkan
+    seluruh rujukan sebagai temuan hanya akan menghasilkan derau, bukan sinyal
+    traceability — karena itu kasus tersebut dilewati.
+    """
+    if not declared:
+        return []
+    return [
+        DanglingReference(source=source, field=field, value=value, week=week)
+        for value in values
+        if value not in declared
+    ]
+
+
 def to_rps_analysis_payload(data: RPSStructuredData) -> dict[str, Any]:
     """Petakan RPS Structured Data ke kolom tabel ``rps_analyses``.
 
     Bentuk kolom mengikuti ``docs/02. design/data-model.md`` §9 dan
-    ``src/models/rps_analysis.py``; kolom ``references`` pada database
-    direpresentasikan sebagai ``references_data`` pada model ORM (nama
-    ``references`` dipakai SQLAlchemy untuk terminologi relasi).
+    ``src/models/rps_analysis.py``:
+
+    - ``learning_outcomes`` ← ``cpmk`` (CPMK adalah capaian pembelajaran **mata
+      kuliah**, padanan terdekat dari kolom tersebut);
+    - ``objectives`` ← ``sub_cpmk`` (sasaran yang lebih rinci);
+    - ``raw_analysis`` ← seluruh dokumen, sehingga CPL, media, dan metadata
+      ekstraksi yang belum punya kolom tersendiri tetap tersimpan utuh dan dapat
+      diangkat menjadi kolom bila BE-08 membutuhkannya.
+
+    Kolom ``references`` pada database direpresentasikan sebagai
+    ``references_data`` pada model ORM (nama ``references`` dipakai SQLAlchemy
+    untuk terminologi relasi).
 
     Payload yang dikembalikan siap dipakai sebagai argumen kata kunci
     ``RPSAnalysis(...)``, sehingga BE-08 tidak perlu memetakan ulang:
@@ -338,8 +507,8 @@ def to_rps_analysis_payload(data: RPSStructuredData) -> dict[str, Any]:
     """
     return {
         "course_identity": data.course.model_dump(mode="json"),
-        "learning_outcomes": [entry.model_dump(mode="json") for entry in data.learning_outcomes],
-        "objectives": [entry.model_dump(mode="json") for entry in data.objectives],
+        "learning_outcomes": [entry.model_dump(mode="json") for entry in data.cpmk],
+        "objectives": [entry.model_dump(mode="json") for entry in data.sub_cpmk],
         "topics": [entry.model_dump(mode="json") for entry in data.topics],
         "weekly_distribution": [week.model_dump(mode="json") for week in data.weeks],
         "teaching_methods": list(data.teaching_methods),

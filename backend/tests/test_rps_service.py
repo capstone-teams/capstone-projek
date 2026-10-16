@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import shortuuid
@@ -35,7 +35,9 @@ from src.services.rps.errors import (
     DocumentConversionError,
     DocumentStorageError,
     InvalidFileError,
+    RPSDomainError,
     RPSNotFoundError,
+    RPSStateError,
     RPSValidationError,
 )
 from src.services.rps.service import (
@@ -52,9 +54,19 @@ PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
 OTHER_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF\n"
 INSTRUCTOR_ID = shortuuid.uuid()
 OTHER_INSTRUCTOR_ID = shortuuid.uuid()
-NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+def database_now() -> datetime:
+    """Waktu untuk repository in-memory, meniru ``server_default now()``.
+
+    Memakai waktu berjalan (bukan konstanta) karena ``updated_at`` dipakai domain
+    untuk menilai apakah sebuah pemrosesan masih berjalan atau sudah terlantar.
+    """
+    return datetime.now(timezone.utc)
 
 MARKDOWN = "# RPS Basis Data\n\n| Minggu | Topik |\n| --- | --- |\n| 1 | Basis data |\n"
+
+# Versi skema yang **berbeda** dari yang berlaku: dipakai untuk menguji kunci
+# idempotency tanpa terikat pada nomor versi saat ini.
+OTHER_SCHEMA_VERSION = "1.0" if RPS_SCHEMA_VERSION != "1.0" else "3.0"
 
 
 class InMemoryRPSRepository:
@@ -65,7 +77,10 @@ class InMemoryRPSRepository:
         self.created: list[RPSDocument] = []
 
     async def create(self, document: RPSDocument) -> RPSDocument:
-        persisted = replace(document, id=shortuuid.uuid(), created_at=NOW, updated_at=NOW)
+        created_at = database_now()
+        persisted = replace(
+            document, id=shortuuid.uuid(), created_at=created_at, updated_at=created_at
+        )
         self.rows[persisted.id or ""] = persisted
         self.created.append(persisted)
         return persisted
@@ -97,14 +112,14 @@ class InMemoryRPSRepository:
         ]
         if not matches:
             return None
-        return max(matches, key=lambda row: row.created_at or NOW)
+        return max(matches, key=lambda row: row.created_at or database_now())
 
     async def update(self, document: RPSDocument) -> RPSDocument | None:
         if document.id is None:
             raise ValueError("update memerlukan dokumen yang sudah dipersist")
         if document.id not in self.rows:
             return None
-        persisted = replace(document, updated_at=NOW)
+        persisted = replace(document, updated_at=database_now())
         self.rows[document.id] = persisted
         return persisted
 
@@ -288,11 +303,11 @@ async def test_the_same_document_under_a_new_schema_version_is_a_new_record(
 ):
     """Versi skema bagian dari kunci idempotency, bukan sekadar metadata."""
     first = await upload(service)
-    second = await upload(service, schema_version="2.0")
+    second = await upload(service, schema_version=OTHER_SCHEMA_VERSION)
 
     assert not second.deduplicated
     assert second.document.id != first.document.id
-    assert second.document.schema_version == "2.0"
+    assert second.document.schema_version == OTHER_SCHEMA_VERSION
     assert len(repository.rows) == 2
 
 
@@ -432,12 +447,12 @@ async def test_reusing_a_result_requires_both_hash_and_schema_version(service, c
         rps_id=rps_id, owner_id=INSTRUCTOR_ID, schema_version=RPS_SCHEMA_VERSION
     )
     reprocessed = await service.process_rps(
-        rps_id=rps_id, owner_id=INSTRUCTOR_ID, schema_version="2.0"
+        rps_id=rps_id, owner_id=INSTRUCTOR_ID, schema_version=OTHER_SCHEMA_VERSION
     )
 
     assert reused.reused
     assert not reprocessed.reused
-    assert reprocessed.document.schema_version == "2.0"
+    assert reprocessed.document.schema_version == OTHER_SCHEMA_VERSION
     assert len(converter.calls) == 2
 
 
@@ -543,6 +558,180 @@ async def test_a_processed_document_keeps_its_file_and_metadata(service):
     assert result.document.file_hash == original_hash
     assert result.document.file_name == "rps-basis-data.pdf"
     assert result.document.created_at is not None
+
+
+# --- Hasil konversi tersimpan & durasi (issue #98) -------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_converted_document_is_persisted_for_the_next_stage(service, repository):
+    """BE-08 memetakan field dari JSON Docling tanpa menjalankan Docling ulang."""
+    created = await upload(service)
+
+    result = await service.process_rps(
+        rps_id=created.document.id or "", owner_id=INSTRUCTOR_ID
+    )
+
+    stored = repository.rows[created.document.id or ""]
+    assert result.document.source_document == {
+        "schema_name": "DoclingDocument",
+        "texts": [{"text": "Basis Data"}],
+    }
+    assert stored.source_document == result.document.source_document
+    # Teks, heading, tabel, dan nomor halaman tetap ada pada JSON yang disimpan.
+    assert "texts" in stored.source_document
+
+
+@pytest.mark.asyncio
+async def test_the_processing_duration_is_recorded(service, repository):
+    created = await upload(service)
+
+    result = await service.process_rps(
+        rps_id=created.document.id or "", owner_id=INSTRUCTOR_ID
+    )
+
+    assert result.document.processing_duration_ms >= 1
+    assert repository.rows[created.document.id or ""].processing_duration_ms >= 1
+
+
+@pytest.mark.asyncio
+async def test_the_duration_is_also_recorded_in_the_conversion_manifest(service, tmp_path):
+    """Manifest menyimpan jejak konversi, termasuk performanya."""
+    created = await upload(service)
+
+    result = await service.process_rps(
+        rps_id=created.document.id or "", owner_id=INSTRUCTOR_ID
+    )
+
+    manifest = json.loads(
+        (_artifact_dir(tmp_path, result.document.file_path) / MANIFEST_ARTIFACT).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["duration_ms"] == result.document.processing_duration_ms
+
+
+@pytest.mark.asyncio
+async def test_a_conversion_failure_stores_a_readable_reason(service, repository):
+    """Kegagalan background harus terbaca client, bukan hanya status FAILED."""
+    created = await upload(service)
+    service._converter = RecordingConverter(
+        error=DocumentConversionError(
+            "detail internal: /var/rps/rahasia.pdf rusak",
+            public_reason="Dokumen tidak dapat dibaca.",
+        )
+    )
+
+    with pytest.raises(DocumentConversionError):
+        await service.process_rps(rps_id=created.document.id or "", owner_id=INSTRUCTOR_ID)
+
+    stored = repository.rows[created.document.id or ""]
+    assert stored.processing_error_code == "RPS_PROCESSING_FAILED"
+    assert stored.processing_error == "Dokumen tidak dapat dibaca."
+    # Detail internal tidak ikut tersimpan pada dokumen.
+    assert "rahasia" not in (stored.processing_error or "")
+
+
+@pytest.mark.asyncio
+async def test_a_retry_clears_the_previous_failure_record(service, repository):
+    created = await upload(service)
+    rps_id = created.document.id or ""
+    service._converter = RecordingConverter(
+        error=DocumentConversionError("gagal", public_reason="Gagal sekali.")
+    )
+
+    with pytest.raises(DocumentConversionError):
+        await service.process_rps(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+    assert repository.rows[rps_id].processing_error_code == "RPS_PROCESSING_FAILED"
+
+    service._converter = RecordingConverter()
+    await service.process_rps(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    assert repository.rows[rps_id].processing_error_code is None
+    assert repository.rows[rps_id].processing_error is None
+
+
+# --- Pemisahan permulaan dan konversi (pemrosesan background) --------------
+
+
+@pytest.mark.asyncio
+async def test_begin_processing_marks_the_document_without_converting(service, converter):
+    """Inilah bagian yang berjalan saat request: tidak menyentuh konverter."""
+    created = await upload(service)
+
+    start = await service.begin_processing(
+        rps_id=created.document.id or "", owner_id=INSTRUCTOR_ID
+    )
+
+    assert not start.reused
+    assert start.document.status is RPSStatus.PROCESSING
+    assert converter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_convert_finishes_a_document_that_is_already_processing(service, storage, converter):
+    created = await upload(service)
+    rps_id = created.document.id or ""
+    await service.begin_processing(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    result = await service.convert(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    assert result.document.status is RPSStatus.PROCESSED
+    assert len(converter.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_convert_refuses_a_document_that_is_not_being_processed(service, converter):
+    """Konversi hanya melanjutkan pekerjaan yang memang sudah dijadwalkan."""
+    created = await upload(service)
+
+    with pytest.raises(RPSDomainError):
+        await service.convert(rps_id=created.document.id or "", owner_id=INSTRUCTOR_ID)
+
+    assert converter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_begin_processing_reuses_a_finished_document(service, converter):
+    created = await upload(service)
+    rps_id = created.document.id or ""
+    await service.process_rps(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    start = await service.begin_processing(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    assert start.reused
+    assert start.document.status is RPSStatus.PROCESSED
+    assert len(converter.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_processing_document_cannot_be_started_again(service, repository):
+    created = await upload(service)
+    rps_id = created.document.id or ""
+    await service.begin_processing(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    with pytest.raises(RPSStateError):
+        await service.begin_processing(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+
+@pytest.mark.asyncio
+async def test_a_stale_processing_document_is_taken_over(service, repository, monkeypatch):
+    """Konversi yang terputus tidak boleh mengunci dokumen selamanya."""
+    created = await upload(service)
+    rps_id = created.document.id or ""
+    await service.begin_processing(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    # Barisnya sudah lama tidak tersentuh, lebih tua dari batas lease.
+    stale = repository.rows[rps_id]
+    repository.rows[rps_id] = replace(
+        stale, updated_at=datetime.now(timezone.utc) - timedelta(hours=1)
+    )
+    monkeypatch.setattr(get_settings(), "RPS_PROCESSING_LEASE_SECONDS", 900)
+
+    start = await service.begin_processing(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    assert not start.reused
+    assert start.document.status is RPSStatus.PROCESSING
 
 
 def _artifact_dir(tmp_path, file_path: str):

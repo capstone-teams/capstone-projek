@@ -159,6 +159,17 @@ Schema JSON tidak boleh menggantikan relational identity.
 
 RPS Analysis merupakan intermediate representation antara document processing dan planning.
 
+Bagian ini terdiri dari dua tingkat:
+
+- **§6.1 RPS Analysis Schema** — ringkasan yang dipakai untuk perencanaan dan
+  ditampilkan pada UI analisis RPS;
+- **§6.2 RPS Structured Data** — bentuk lengkapnya, termasuk hierarki capaian
+  pembelajaran, media, dan metadata ekstraksi. Inilah kontrak yang dihasilkan
+  tahap ekstraksi (BE-08) dan divalidasi oleh model Pydantic pada
+  `backend/src/schemas/rps_structured.py`.
+
+## 6.1 RPS Analysis Schema
+
 ```json id="o0s4uw"
 {
   "course": {
@@ -193,6 +204,159 @@ RPS Analysis merupakan intermediate representation antara document processing da
 }
 ```
 
+`learning_outcomes` pada ringkasan ini padanannya adalah **CPMK** dan
+`objectives` padanannya adalah **Sub-CPMK** pada §6.2 (lihat tabel pemetaan di
+§6.2.3).
+
+## 6.2 RPS Structured Data
+
+Bentuk lengkap RPS Analysis. Hierarki capaian pembelajaran ditulis eksplisit
+karena itulah yang benar-benar tercantum pada template RPS program studi:
+**CPL** (Capaian Pembelajaran Lulusan) → **CPMK** (Capaian Pembelajaran Mata
+Kuliah) → **Sub-CPMK**.
+
+```json id="r6x2cp"
+{
+  "schema_version": "2.0",
+  "course": {
+    "name": "Matematika Diskrit",
+    "code": "IF234",
+    "credits": 3,
+    "semester": 3,
+    "description": "..."
+  },
+  "cpl": [
+    {
+      "id": "CPL-1",
+      "description": "Menerapkan matematika, statistika, dan struktur diskrit"
+    }
+  ],
+  "cpmk": [
+    {
+      "id": "CPMK-1",
+      "description": "Menerapkan konsep matematika diskrit",
+      "cpl_ids": ["CPL-1"]
+    }
+  ],
+  "sub_cpmk": [
+    {
+      "id": "SUB-1",
+      "description": "Menjelaskan kombinatorial dan peluang diskrit",
+      "cpmk_ids": ["CPMK-1"]
+    }
+  ],
+  "topics": [
+    {
+      "id": "TOP-1",
+      "name": "Kombinatorial"
+    }
+  ],
+  "media": [
+    {
+      "id": "MED-1",
+      "name": "Slide presentasi",
+      "type": "presentation",
+      "description": "..."
+    }
+  ],
+  "weeks": [
+    {
+      "week": 1,
+      "week_type": "regular",
+      "topics": ["Kombinatorial"],
+      "cpmk": ["CPMK-1"],
+      "sub_cpmk": ["SUB-1"],
+      "teaching_method": ["Lecture"],
+      "media": ["Slide presentasi"],
+      "assessment": {
+        "type": "assignment",
+        "description": "...",
+        "weight_percent": 3.75
+      }
+    },
+    {
+      "week": 8,
+      "week_type": "uts"
+    }
+  ],
+  "teaching_methods": ["Lecture", "Lab"],
+  "assessments": [
+    {
+      "id": "A-1",
+      "type": "assignment",
+      "week": 1,
+      "weight_percent": 3.75
+    }
+  ],
+  "references": [
+    {
+      "id": "R-1",
+      "citation": "Rosen, Discrete Mathematics and Its Applications",
+      "authors": "Kenneth H. Rosen",
+      "year": 2018,
+      "source": "McGraw-Hill"
+    }
+  ],
+  "extraction": {
+    "extracted_at": "2026-10-16T13:30:31Z",
+    "extractor": "docling",
+    "extractor_version": "2.140.0",
+    "model_name": "...",
+    "model_provider": "...",
+    "source_pages": [1, 2],
+    "confidence": 0.86,
+    "warnings": []
+  }
+}
+```
+
+### 6.2.1 Aturan field
+
+| Kelompok | Field | Keterangan |
+| --- | --- | --- |
+| Metadata | `schema_version` | Versi skema (§44); nilai yang berlaku saat ini `2.0` |
+| Mata kuliah | `course` | `name`, `code`, `credits`, `semester`, `description` — semuanya opsional |
+| Capaian pembelajaran | `cpl` | `id`, `description` |
+| | `cpmk` | `id`, `description`, `cpl_ids` (merujuk `cpl[].id`) |
+| | `sub_cpmk` | `id`, `description`, `cpmk_ids` (merujuk `cpmk[].id`) |
+| Materi | `topics` | `id`, `name` |
+| Media | `media` | `id`, `name`, `type`, `description` |
+| Rencana mingguan | `weeks` | `week` (bilangan bulat positif), `week_type`, `topics`, `cpmk`, `sub_cpmk`, `teaching_method`, `media`, `assessment` |
+| Assessment | `assessments` | `id`, `type`, `description`, `week`, `weight_percent` |
+| Referensi | `references` | `id`, `citation`, `authors`, `year`, `source` |
+| Metadata ekstraksi | `extraction` | `extracted_at`, `extractor`, `extractor_version`, `model_name`, `model_provider`, `source_pages`, `confidence`, `warnings` |
+
+Aturan validasi:
+
+1. `weeks[].week` berupa bilangan bulat positif dan tidak boleh duplikat.
+2. `weeks[].week_type` bernilai `regular`, `uts`, atau `uas`. Minggu `uts`/`uas`
+   umumnya tidak memuat materi baru.
+3. `weight_percent` (pada `weeks[].assessment` maupun `assessments[]`) berada
+   pada rentang 0–100 dan hanya diisi bila RPS menyebutkan bobotnya.
+4. `extraction.source_pages` mengikuti penomoran halaman dokumen (mulai 1) dan
+   `extraction.confidence` berada pada rentang 0–1.
+5. Field di luar daftar di atas ditolak, bukan diabaikan (§3.2, §3.4).
+
+### 6.2.2 Traceability capaian pembelajaran
+
+Rujukan silang Sub-CPMK → CPMK → CPL dan rujukan mingguan diperiksa sebagai
+**peringatan, bukan error** (§3.3): RPS yang berbeda boleh menyebut kode yang
+tidak dideklarasikan pada daftar utamanya. Temuan ini menjadi bahan validasi
+(BE-09) dan dipakai sebagai sinyal kualitas ekstraksi, bukan penghalang
+pemrosesan.
+
+### 6.2.3 Pemetaan dari ringkasan §6.1
+
+| §6.1 (ringkasan) | §6.2 (bentuk lengkap) |
+| --- | --- |
+| `learning_outcomes` | `cpmk` |
+| `objectives` | `sub_cpmk` |
+| — | `cpl`, `media`, `extraction` |
+
+Versi 1.0 dari schema ini memakai bentuk ringkasan tersebut secara langsung.
+Perubahan ke 2.0 bersifat *breaking* terhadap 1.0 (§44), sehingga hasil lama
+perlu diproses ulang sebelum dipakai pada skema baru.
+
 Field yang tidak tersedia pada RPS boleh kosong atau null.
 
 Agent tidak boleh mengisi informasi akademik yang tidak ditemukan hanya untuk membuat schema terlihat lengkap.
@@ -201,20 +365,26 @@ Agent tidak boleh mengisi informasi akademik yang tidak ditemukan hanya untuk me
 
 # 7. RPS Week Schema
 
+Bentuk satu entri `weeks[]` pada §6.2.
+
 ```json id="q7w1q4"
 {
   "week": 1,
+  "week_type": "regular",
   "topics": [
     "Introduction to Database"
   ],
-  "learning_outcomes": [
-    "LO-1"
+  "cpmk": [
+    "CPMK-1"
   ],
-  "objectives": [
-    "OBJ-1"
+  "sub_cpmk": [
+    "SUB-1"
   ],
   "teaching_method": [
     "Lecture"
+  ],
+  "media": [
+    "Slide presentasi"
   ],
   "assessment": {
     "type": "assignment",
@@ -1159,11 +1329,11 @@ Rules:
 
 Schema dapat berubah selama development.
 
-Versioning dapat diperkenalkan:
+Versioning menggunakan:
 
 ```json id="y7v5e1"
 {
-  "schema_version": "1.0"
+  "schema_version": "2.0"
 }
 ```
 
@@ -1180,6 +1350,18 @@ Jika backward-compatible:
 ```
 
 Schema version tidak sama dengan content version.
+
+## Riwayat versi RPS Structured Data
+
+| Versi | Perubahan |
+| --- | --- |
+| 1.0 | Bentuk awal §6/§7 dengan `learning_outcomes`/`objectives` generik |
+| 2.0 | Hierarki capaian pembelajaran eksplisit (`cpl`/`cpmk`/`sub_cpmk`), `week_type`, `weight_percent` (sebelumnya `weight`), serta `media` dan `extraction`. *Breaking* terhadap 1.0 |
+
+`schema_version` disimpan pada kolom `rps.schema_version` dan menjadi bagian
+dari kunci idempotency pemrosesan (Data Model §8): dokumen dengan `file_hash`
+**dan** `schema_version` yang sama tidak diproses ulang, sedangkan permintaan
+dengan versi berbeda memproses ulang dokumen tersebut.
 
 ---
 
@@ -1207,6 +1389,7 @@ Exact implementation remains an engineering decision.
 
 | Schema Object     | Database Entity      |
 | ----------------- | -------------------- |
+| RPS Structured Data (lengkap) | `rps.source_document` (hasil konversi) dan `rps_analyses.raw_analysis` (hasil ekstraksi) |
 | RPS Analysis      | `rps_analyses`       |
 | Course Plan       | `course_plans`       |
 | Course Plan Week  | `course_plan_weeks`  |
@@ -1380,10 +1563,10 @@ MVP tidak perlu langsung mendukung schema untuk:
 
 | Decision                          | Status   |
 | --------------------------------- | -------- |
-| Final JSON Schema                 | TBD      |
-| Pydantic model structure          | TBD      |
-| Schema versioning implementation  | TBD      |
-| Exact RPS analysis fields         | TBD      |
+| Final JSON Schema                 | Proposed (BE-05.3, §6.2) |
+| Pydantic model structure          | Proposed (BE-05.3, `backend/src/schemas/rps_structured.py`) |
+| Schema versioning implementation  | Proposed (`schema_version` pada §44, kolom `rps.schema_version`) |
+| Exact RPS analysis fields         | Proposed (BE-05.3, §6.2) |
 | Exact learning material structure | Proposed |
 | Assignment schema                 | Proposed |
 | Quiz schema                       | Proposed |

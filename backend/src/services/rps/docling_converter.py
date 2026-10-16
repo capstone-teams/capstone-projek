@@ -118,7 +118,10 @@ class DoclingDocumentConverter(DocumentConverter):
         menyerahkan lokasi penyimpanan kepada library konversi.
         """
         if not content:
-            raise DocumentConversionError("isi dokumen kosong")
+            raise DocumentConversionError(
+                "isi dokumen kosong",
+                public_reason="Berkas RPS kosong sehingga tidak ada yang dapat dikonversi.",
+            )
 
         api = await self._ensure_api()
         document = await self._convert_document(api, content=content, file_name=file_name)
@@ -131,7 +134,11 @@ class DoclingDocumentConverter(DocumentConverter):
             # bekerja dengan bahan yang tidak ada.
             raise DocumentConversionError(
                 "konversi menghasilkan markdown kosong; dokumen tidak memuat teks "
-                "yang dapat diekstrak (aktifkan RPS_CONVERTER_OCR untuk dokumen pindai)"
+                "yang dapat diekstrak (aktifkan RPS_CONVERTER_OCR untuk dokumen pindai)",
+                public_reason=(
+                    "Dokumen tidak memuat teks yang dapat diekstrak. Bila RPS berupa "
+                    "hasil pindai, OCR perlu diaktifkan (RPS_CONVERTER_OCR)."
+                ),
             )
 
         return DocumentConversion(
@@ -219,7 +226,11 @@ class DoclingDocumentConverter(DocumentConverter):
             # Docling membungkus kegagalan backend (dokumen rusak/terenkripsi)
             # sebagai ConversionError dengan penyebab asli pada __cause__.
             raise DocumentConversionError(
-                f"konversi dokumen gagal: {_summarize_docling_error(exc)}"
+                f"konversi dokumen gagal: {_summarize_docling_error(exc)}",
+                public_reason=(
+                    "Dokumen tidak dapat dibaca — berkas mungkin rusak, "
+                    "terproteksi, atau bukan PDF yang sah."
+                ),
             ) from exc
         except FileNotFoundError as exc:
             # Model hilang saat runtime (mis. cache terhapus) — masalah
@@ -236,11 +247,16 @@ class DoclingDocumentConverter(DocumentConverter):
             ) from exc
         except (MemoryError, OSError) as exc:
             raise DocumentConversionError(
-                f"konversi dokumen gagal pada sisi sumber daya: {type(exc).__name__}"
+                f"konversi dokumen gagal pada sisi sumber daya: {type(exc).__name__}",
+                public_reason=(
+                    "Server kehabisan sumber daya saat memproses dokumen. "
+                    "Coba lagi atau gunakan berkas yang lebih kecil."
+                ),
             ) from exc
         except Exception as exc:
             raise DocumentConversionError(
-                f"konversi dokumen gagal: {type(exc).__name__}"
+                f"konversi dokumen gagal: {type(exc).__name__}",
+                public_reason="Dokumen gagal dikonversi oleh konverter Docling.",
             ) from exc
 
         document = getattr(result, "document", None)
@@ -294,7 +310,8 @@ def _export_markdown(document: Any) -> str:
         return document.export_to_markdown()
     except Exception as exc:
         raise DocumentConversionError(
-            f"gagal mengekspor markdown dari dokumen: {type(exc).__name__}"
+            f"gagal mengekspor markdown dari dokumen: {type(exc).__name__}",
+            public_reason="Hasil konversi tidak dapat diserialisasi.",
         ) from exc
 
 

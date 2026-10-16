@@ -320,13 +320,16 @@ ekstraksi pada BE-08.
 RPS PDF ──▶ unggah (file_hash) ──▶ simpan berkas asli
                                         │
                                         ▼
-                          POST /rps/{id}/process
-                                        │
-                        Docling ────────┴───────▶ source_markdown  (kolom rps)
-                                                 ├─ document.json  ┐
-                                                 ├─ document.yaml  ├─ artefak di
-                                                 ├─ tables.json    │  samping berkas
-                                                 └─ conversion.json┘
+                     POST /rps/{id}/process  ──▶ 202 PROCESSING (dijadwalkan)
+                                        │                      │
+                                        │              GET /rps/{id}  ← polling
+                                        ▼
+                        Docling ────────┴──▶ source_markdown  (kolom rps)
+                                             source_document  (JSONB: JSON Docling)
+                                             ├─ document.json  ┐
+                                             ├─ document.yaml  ├─ artefak di
+                                             ├─ tables.json    │  samping berkas
+                                             └─ conversion.json┘
 ```
 
 ### Endpoint
@@ -335,7 +338,7 @@ RPS PDF ──▶ unggah (file_hash) ──▶ simpan berkas asli
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/v1/rps` | `INSTRUCTOR` | Unggah RPS (`multipart/form-data`, field `file`). `201` untuk dokumen baru, `200` + `deduplicated: true` bila isi yang sama sudah pernah diunggah |
 | `GET` | `/api/v1/rps/{rps_id}` | `INSTRUCTOR` | Detail dokumen beserta `source_markdown`-nya |
-| `POST` | `/api/v1/rps/{rps_id}/process` | `INSTRUCTOR` | Konversi dokumen menjadi `source_markdown`; body opsional `{"schema_version": "..."}` |
+| `POST` | `/api/v1/rps/{rps_id}/process` | `INSTRUCTOR` | **Menjadwalkan** konversi: `202` + `PROCESSING`, atau `200` + `reused: true` bila sudah pernah diproses. Body opsional `{"schema_version": "..."}` |
 
 Authorization mengikuti design-api §22 (Student: `No` untuk seluruh operasi RPS).
 Seluruh endpoint memakai satu policy `instructor_only`.
@@ -351,6 +354,36 @@ Respons kegagalan mengikuti design-api §18/§19:
 | Konversi gagal (dokumen rusak, hasil kosong, model tidak tersedia) | 500 | `RPS_PROCESSING_FAILED` |
 | Penyimpanan berkas gagal | 500 | `INTERNAL_ERROR` |
 
+### Pemrosesan berjalan di background
+
+`POST /rps/{id}/process` tidak menahan request: endpoint menandai dokumen
+`PROCESSING`, menjadwalkan konversi, lalu menjawab `202` (design-api §6.3).
+Konversinya dijalankan oleh `src/services/rps/runner.py` **setelah** response
+dikirim, memakai session database sendiri — session milik request sudah tertutup
+saat itu.
+
+```bash
+# 1. jadwalkan
+curl -X POST /api/v1/rps/{id}/process -H "Authorization: Bearer $TOKEN"
+# → 202 {"status": "PROCESSING", "reused": false}
+
+# 2. pantau
+curl /api/v1/rps/{id} -H "Authorization: Bearer $TOKEN"
+# → 200 {"status": "PROCESSED", "has_source_document": true, "processing_duration_ms": 8421}
+```
+
+Kegagalan konversi **tidak** muncul pada response `process` (tidak ada client
+yang menunggu pekerjaan background). Kegagalannya terlihat saat polling:
+`status: FAILED` beserta `processing_error_code` (`RPS_PROCESSING_FAILED`) dan
+`processing_error_message` — alasan publik yang aman ditampilkan, sedangkan
+penyebab teknisnya hanya ada di log server-side.
+
+Runner berjalan *in-process* (Starlette `BackgroundTasks`), sehingga belum tahan
+terhadap proses yang mati di tengah konversi. Dua bentengnya: dokumen yang
+terlantar boleh diproses ulang setelah `RPS_PROCESSING_LEASE_SECONDS` (default
+900 detik), dan antrean pekerjaan yang durable menyusul bersama Agent Run pada
+BE-08.
+
 ### Idempotency: `file_hash` + `schema_version`
 
 Dokumen dengan `file_hash` dan `schema_version` yang sama **tidak diproses ulang**:
@@ -358,11 +391,15 @@ Dokumen dengan `file_hash` dan `schema_version` yang sama **tidak diproses ulang
 1. unggahan ulang dokumen identik mengembalikan baris yang sudah ada
    (`200`, `deduplicated: true`) alih-alih membuat baris kedua;
 2. pemrosesan dokumen yang sudah `PROCESSED` untuk versi skema yang sama
-   mengembalikan hasil tersimpan (`reused: true`) tanpa menjalankan Docling lagi.
+   dijawab `200` + `reused: true` tanpa menjadwalkan konversi lagi.
 
 Meminta pemrosesan dengan `schema_version` **berbeda** justru memproses ulang:
 hasil lama tidak berlaku untuk skema baru, dan dokumen mencatat versi yang
 benar-benar dipakai.
+
+Konversi yang masih berjalan tidak dapat dijadwalkan ulang (409
+`INVALID_REQUEST`), kecuali barisnya sudah lebih tua dari lease — jalan keluar
+untuk pemrosesan yang terputus.
 
 ### Docling adalah dependensi opsional
 
@@ -389,16 +426,29 @@ docling-tools models download --output-dir ./var/docling-models
 ### RPS Structured Data Schema (BE-05.3)
 
 `src/schemas/rps_structured.py` adalah kontrak bersama backend dan AI untuk
-tahap ekstraksi (BE-08), mengikuti content-schema §6/§7:
+tahap ekstraksi (BE-08), mengikuti content-schema §6.1/§6.2:
 
+- hierarki capaian pembelajaran eksplisit: **CPL → CPMK → Sub-CPMK**
+  (`cpl`/`cpmk`/`sub_cpmk`), karena itulah yang tercantum pada template RPS
+  program studi;
+- rencana mingguan dengan `week_type` (`regular`/`uts`/`uas`), media
+  pembelajaran, dan bobot penilaian `weight_percent` (0–100);
+- `extraction` mencatat bagaimana data diperoleh (konverter, model, halaman
+  sumber, keyakinan, peringatan);
 - seluruh field akademik **opsional** — RPS antar-program studi berbeda-beda,
   dan sistem tidak boleh mengarang nilai yang tidak ada di dokumen;
 - `extra="forbid"` pada setiap object: field di luar kontrak adalah kegagalan
   validasi, bukan data yang dibuang diam-diam (§3.2/§3.4);
-- `RPS_SCHEMA_VERSION` (kini `"1.0"`) menjadi versi skema — terpisah dari content
-  version dan dipakai pada kunci idempotency;
+- `validate_references()` melaporkan rujukan silang yang tidak menemukan sasaran
+  (Sub-CPMK → CPMK → CPL dan rujukan mingguan) sebagai **temuan, bukan error**
+  (§3.3);
+- `RPS_SCHEMA_VERSION` (kini `"2.0"`) menjadi versi skema — terpisah dari content
+  version dan dipakai pada kunci idempotency. Naik dari 1.0 ke 2.0 bersifat
+  *breaking* (§44): padanan field lamanya `learning_outcomes` → `cpmk` dan
+  `objectives` → `sub_cpmk`;
 - `to_rps_analysis_payload()` memetakan hasil ekstraksi ke kolom `rps_analyses`
-  (data-model §9), sehingga BE-08 tidak perlu menebak nama kolom;
+  (data-model §9): CPMK → `learning_outcomes`, Sub-CPMK → `objectives`,
+  sedangkan CPL/media/metadata ekstraksi tersimpan utuh pada `raw_analysis`;
 - `RPSStructuredData.model_json_schema()` dapat dibagikan ke tim AI sebagai
   JSON Schema (§45).
 
@@ -420,14 +470,16 @@ tahap ekstraksi (BE-08), mengikuti content-schema §6/§7:
 4. **Tabel dipisahkan, bukan diratakan.** Tabel RPS (distribusi mingguan, bobot
    penilaian) adalah data akademik; `tables.json` menyimpan baris/kolomnya
    sehingga BE-08 dapat membacanya tanpa mem-parsing Markdown kembali.
-5. **Pemrosesan bersifat synchronous pada S0.** Response process sudah memuat
-   status akhir (`PROCESSED`/`FAILED`), bukan `202` + polling. design-api §6.3
-   menyebutkan `agent_run_id`, tetapi tabel `agent_runs` mensyaratkan
-   `course_id` yang belum ada pada tahap RPS; Agent Run dan workflow
-   asynchronous menyusul pada BE-08.
-6. **Kegagalan konversi tidak menghapus dokumen.** Status menjadi `FAILED` dan
-   dokumen dapat diproses ulang; penyebab sebenarnya hanya dicatat server-side,
-   sedangkan client menerima pesan publik yang seragam.
+5. **Pemrosesan asynchronous (design-api §6.3).** `POST /process` menjawab
+   `202` + `PROCESSING` dan konversinya berjalan di background; client memantau
+   `GET /rps/{id}`. `agent_run_id` belum ada pada response karena tabel
+   `agent_runs` mensyaratkan `course_id` yang baru ada setelah RPS dianalisis
+   (data-model §10) — Agent Run menyusul pada BE-08.
+6. **Kegagalan konversi tidak menghapus dokumen.** Status menjadi `FAILED`,
+   dokumen dapat diproses ulang, dan penyebab sebenarnya hanya dicatat
+   server-side. Yang dibaca client saat polling adalah
+   `processing_error_code` + `processing_error_message` — alasan publik yang
+   ditulis pada titik kegagalannya, bukan pesan library mentah.
 7. **Dokumen milik instructor lain menghasilkan 404**, bukan 403 — keberadaan
    RPS orang lain tidak dapat disimpulkan dari perbedaan response.
 8. **Validasi berkas berlapis:** ekstensi (mengikuti `RPS_ALLOWED_EXTENSIONS`),
@@ -446,11 +498,12 @@ tahap ekstraksi (BE-08), mengikuti content-schema §6/§7:
 | Port konversi dokumen | `src/services/rps/converter.py` |
 | Adapter Docling | `src/services/rps/docling_converter.py` |
 | Pemilihan konverter & penyimpanan | `src/services/rps/factory.py` |
+| Runner pemrosesan background | `src/services/rps/runner.py` |
 | Error domain + kontrak HTTP-nya | `src/services/rps/errors.py` |
 | DTO endpoint RPS | `src/schemas/rps.py` |
 | RPS Structured Data Schema | `src/schemas/rps_structured.py` |
 | Endpoint HTTP | `src/routes/rps.py` |
-| Kolom `rps.schema_version` | `src/models/rps.py` + `migrations/versions/b3c9e14a7f52_*.py` |
+| Kolom `rps` (`schema_version`, `source_document`, `processing_*`) | `src/models/rps.py` + migrasi `b3c9e14a7f52_*.py`, `c8f4a1d27e93_*.py` |
 
 ### Pengujian
 
@@ -460,6 +513,7 @@ uv run pytest tests/test_rps_domain.py              # domain + validasi berkas
 uv run pytest tests/test_rps_storage.py             # penyimpanan & path traversal
 uv run pytest tests/test_rps_service.py             # unggah, idempotency, kegagalan
 uv run pytest tests/test_rps_routes.py              # endpoint (butuh PostgreSQL)
+uv run pytest tests/test_rps_runner.py              # runner background (butuh PostgreSQL)
 uv run pytest tests/test_rps_docling_converter.py   # adapter Docling
 
 # Konversi Docling sungguhan (opt-in; memakai tests/fixtures/test.pdf dan

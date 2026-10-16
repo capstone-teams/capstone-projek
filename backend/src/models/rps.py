@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy import Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,7 +16,7 @@ SCHEMA_VERSION_LENGTH = 50
 # ditulis tanpa melalui domain. Domain selalu mengirim versi yang berlaku
 # (``RPSDocument.schema_version``), jadi nilai ini hanya jaring pengaman dan
 # harus ikut naik ketika versi skema naik.
-DEFAULT_SCHEMA_VERSION = "1.0"
+DEFAULT_SCHEMA_VERSION = "2.0"
 
 
 class RPSStatus(str, enum.Enum):
@@ -74,6 +74,37 @@ class RPS(BaseModel):
     )
 
     source_markdown: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    # Representasi penuh dokumen hasil konversi Docling (DoclingDocument sebagai
+    # JSON), termasuk teks, heading, tabel, dan nomor halaman. Disimpan di sini
+    # supaya tahap berikutnya (pemetaan field pada BE-08) tidak perlu
+    # menjalankan Docling ulang.
+    source_document: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    # Durasi konversi dalam milidetik, dicatat untuk evaluasi performa.
+    # NULL berarti dokumen belum pernah selesai diproses.
+    processing_duration_ms: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    # Kegagalan pemrosesan. Karena konversi berjalan di background, kegagalan
+    # tidak dapat muncul pada response request — client membacanya lewat polling
+    # ``GET /rps/{id}`` ketika statusnya FAILED. Nilainya sengaja hanya berisi
+    # kode error (design-api §18) dan alasan publik yang aman ditampilkan;
+    # penyebab teknisnya tetap hanya ada di log server-side.
+    processing_error_code: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    processing_error: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )

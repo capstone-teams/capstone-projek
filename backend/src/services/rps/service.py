@@ -5,12 +5,16 @@ bukan "bagaimana berkasnya disimpan?" (itu
 :mod:`src.services.rps.storage`) dan bukan "bagaimana dokumen dikonversi?" (itu
 :mod:`src.services.rps.converter` beserta adapter Docling-nya).
 
-Dua operasi yang disediakan:
+Operasi yang disediakan:
 
-- :meth:`RPSService.upload_rps` — validasi berkas, hitung ``file_hash``,
-  simpan berkas asli, lalu catat dokumennya (BE-05.1);
-- :meth:`RPSService.process_rps` — konversi dokumen menjadi ``source_markdown``
-  beserta artefak JSON/YAML/tabel (BE-05.2).
+- :meth:`RPSService.upload_rps` — validasi berkas, hitung ``file_hash``, simpan
+  berkas asli, lalu catat dokumennya (BE-05.1);
+- :meth:`RPSService.begin_processing` — bagian pemrosesan yang dijalankan **saat
+  request**: periksa idempotency lalu tandai dokumen ``PROCESSING``;
+- :meth:`RPSService.convert` — konversi dokumen yang sudah ``PROCESSING``
+  (dijalankan di luar siklus request; lihat :mod:`src.services.rps.runner`);
+- :meth:`RPSService.process_rps` — jalur lengkap keduanya, dipakai pemanggil
+  non-HTTP dan pengujian.
 
 **Idempotency.** Sesuai acceptance criteria BE-05, dokumen dengan ``file_hash``
 dan ``schema_version`` yang sama tidak diproses ulang:
@@ -29,8 +33,9 @@ benar-benar dipakai.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,7 +61,13 @@ from src.services.rps.validation import (
     normalize_schema_version,
 )
 
-__all__ = ["RPSProcessResult", "RPSService", "RPSUploadResult"]
+__all__ = [
+    "RPSConversionResult",
+    "RPSProcessResult",
+    "RPSProcessStart",
+    "RPSService",
+    "RPSUploadResult",
+]
 
 # Nama artefak konversi yang ditulis di samping dokumen asli.
 DOCUMENT_JSON_ARTIFACT = "document.json"
@@ -74,16 +85,33 @@ class RPSUploadResult:
 
 
 @dataclass(frozen=True, slots=True)
-class RPSProcessResult:
-    """Hasil pemrosesan: dokumennya, dan apakah konversi benar-benar dijalankan.
+class RPSProcessStart:
+    """Hasil tahap permulaan pemrosesan (bagian yang berjalan saat request).
 
-    ``reused=True`` berarti dokumen sudah pernah diproses untuk ``file_hash`` dan
-    ``schema_version`` yang sama, sehingga konverter tidak dijalankan lagi
+    ``reused=True`` berarti tidak ada pekerjaan yang perlu dijadwalkan: dokumen
+    sudah diproses untuk ``file_hash`` dan ``schema_version`` yang sama
     (acceptance criteria BE-05).
     """
 
     document: RPSDocument
     reused: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RPSConversionResult:
+    """Hasil konversi satu dokumen."""
+
+    document: RPSDocument
+    conversion: DocumentConversion
+
+
+@dataclass(frozen=True, slots=True)
+class RPSProcessResult:
+    """Hasil pemrosesan lengkap (permulaan + konversi)."""
+
+    document: RPSDocument
+    reused: bool
+    conversion: DocumentConversion | None = None
 
 
 class RPSService:
@@ -187,20 +215,21 @@ class RPSService:
             raise RPSNotFoundError(identifier)
         return document
 
-    async def process_rps(
+    async def begin_processing(
         self,
         *,
         rps_id: str,
         owner_id: str,
         schema_version: str | None = None,
-    ) -> RPSProcessResult:
-        """Konversi dokumen menjadi ``source_markdown`` beserta artefaknya.
+    ) -> RPSProcessStart:
+        """Siapkan pemrosesan: periksa idempotency, tandai ``PROCESSING``.
 
-        Pemrosesan bersifat *synchronous* pada tahap S0: hasilnya sudah tersedia
-        ketika response dikembalikan, sehingga status akhir (``PROCESSED`` /
-        ``FAILED``) dapat langsung dibaca client. Workflow asynchronous beserta
-        Agent Run menyusul pada BE-08, yang memiliki ``course_id`` sebagai
-        induk Agent Run (tabel ``agent_runs`` mensyaratkannya).
+        Inilah bagian yang berjalan **saat request**. Konversinya sendiri
+        dijalankan di background (design-api §6.3), sehingga request tidak
+        tertahan selama model Docling bekerja.
+
+        Bila dokumen sudah diproses untuk ``file_hash`` + ``schema_version`` yang
+        sama, tidak ada yang ditandai dan ``reused=True`` dikembalikan.
         """
         document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
         target_version = normalize_schema_version(schema_version or document.schema_version)
@@ -208,36 +237,88 @@ class RPSService:
         if document.already_processed_as(
             file_hash=document.file_hash, schema_version=target_version
         ):
-            return RPSProcessResult(document=document, reused=True)
+            return RPSProcessStart(document=document, reused=True)
 
         document.retarget_schema_version(target_version)
-        document.start_processing()
-        await self._persist(document)
+        document.start_processing(stale_after=self._processing_lease())
+        persisted = await self._persist(document)
+        return RPSProcessStart(document=persisted, reused=False)
 
+    async def convert(self, *, rps_id: str, owner_id: str) -> RPSConversionResult:
+        """Konversi dokumen yang sudah berstatus ``PROCESSING``.
+
+        Dipanggil di luar siklus request (lihat
+        :func:`src.services.rps.runner.run_rps_processing`), sehingga kegagalan
+        apa pun berakhir sebagai status ``FAILED`` pada dokumen — bukan sebagai
+        500 yang menggantung di request.
+        """
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+        if not document.is_processing:
+            raise RPSDomainError(
+                f"rps {document.id} tidak sedang diproses (status: {document.status.value})"
+            )
+
+        started_at = time.perf_counter()
         try:
             content = await self._storage.read_document(document.file_path)
             conversion = await self._converter.convert(
                 content=content, file_name=document.file_name
             )
             _require_usable_markdown(conversion)
+            duration_ms = _elapsed_ms(started_at)
             # Artefak ditulis sebelum status diubah menjadi PROCESSED: dokumen
             # yang tercatat selesai harus benar-benar punya hasilnya.
-            await self._write_artifacts(document, conversion)
-        except RPSDomainError:
-            await self._mark_failed(document)
+            await self._write_artifacts(document, conversion, duration_ms=duration_ms)
+        except RPSDomainError as exc:
+            await self._mark_failed(document, error=exc)
             raise
         except Exception as exc:
-            await self._mark_failed(document)
-            raise DocumentConversionError(
-                f"pemrosesan dokumen gagal: {type(exc).__name__}"
-            ) from exc
+            failure = DocumentConversionError(
+                f"pemrosesan dokumen gagal: {type(exc).__name__}",
+                public_reason="Dokumen RPS gagal diproses karena kesalahan tak terduga.",
+            )
+            await self._mark_failed(document, error=failure)
+            raise failure from exc
 
-        document.complete_processing(conversion.markdown)
+        document.complete_processing(
+            conversion.markdown,
+            source_document=conversion.document_json,
+            duration_ms=duration_ms,
+        )
         persisted = await self._persist(document)
-        return RPSProcessResult(document=persisted, reused=False)
+        return RPSConversionResult(document=persisted, conversion=conversion)
+
+    async def process_rps(
+        self,
+        *,
+        rps_id: str,
+        owner_id: str,
+        schema_version: str | None = None,
+    ) -> RPSProcessResult:
+        """Jalankan pemrosesan lengkap secara langsung (permulaan + konversi).
+
+        Endpoint HTTP memakai :meth:`begin_processing` + background runner agar
+        request tidak tertahan; jalur ini disediakan untuk pemanggil non-HTTP
+        (skrip, pengujian, dan pekerjaan lanjutan) yang memang ingin menunggu
+        hasilnya.
+        """
+        start = await self.begin_processing(
+            rps_id=rps_id, owner_id=owner_id, schema_version=schema_version
+        )
+        if start.reused:
+            return RPSProcessResult(document=start.document, reused=True)
+
+        result = await self.convert(rps_id=rps_id, owner_id=owner_id)
+        return RPSProcessResult(
+            document=result.document, reused=False, conversion=result.conversion
+        )
 
     async def _write_artifacts(
-        self, document: RPSDocument, conversion: DocumentConversion
+        self,
+        document: RPSDocument,
+        conversion: DocumentConversion,
+        *,
+        duration_ms: int,
     ) -> None:
         """Tulis artefak konversi (JSON, YAML, tabel, manifest) di samping dokumen."""
         await self._storage.save_artifacts(
@@ -256,6 +337,7 @@ class RPSService:
                         "converter_version": conversion.converter_version,
                         "table_count": conversion.table_count,
                         "markdown_length": len(conversion.markdown),
+                        "duration_ms": duration_ms,
                         "converted_at": datetime.now(timezone.utc).isoformat(),
                     }
                 ),
@@ -269,9 +351,16 @@ class RPSService:
             raise RPSNotFoundError(document.id)
         return persisted
 
-    async def _mark_failed(self, document: RPSDocument) -> None:
-        """Catat kegagalan pemrosesan tanpa menutupi error aslinya."""
-        document.fail_processing()
+    async def _mark_failed(self, document: RPSDocument, *, error: RPSDomainError) -> None:
+        """Catat kegagalan pemrosesan tanpa menutupi error aslinya.
+
+        Kode dan alasan publik error disimpan pada dokumen supaya client yang
+        melakukan polling melihat **mengapa** pemrosesan gagal — bukan sekadar
+        status ``FAILED``. Detail teknisnya tetap hanya di log server-side.
+        """
+        document.fail_processing(
+            error_code=error.error_code, reason=error.public_reason
+        )
         try:
             await self._persist(document)
         except RPSDomainError:
@@ -281,6 +370,20 @@ class RPSService:
 
     def _allowed(self) -> tuple[str, ...]:
         return get_settings().rps_allowed_extensions
+
+    def _processing_lease(self) -> timedelta:
+        """Batas waktu pemrosesan yang dianggap masih berjalan (lihat domain)."""
+        return timedelta(seconds=get_settings().rps_processing_lease_seconds)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    """Durasi sejak ``started_at`` dalam milidetik (minimal 1).
+
+    Dibulatkan ke atas ke 1 ms supaya durasi yang sangat cepat tidak tercatat
+    sebagai 0 — kolomnya hanya menerima nilai positif, dan "0 ms" tidak
+    membedakan "hampir instan" dari "tidak tercatat".
+    """
+    return max(1, round((time.perf_counter() - started_at) * 1000))
 
 
 def _require_usable_markdown(conversion: DocumentConversion) -> None:
@@ -295,7 +398,11 @@ def _require_usable_markdown(conversion: DocumentConversion) -> None:
     if not conversion.markdown.strip():
         raise DocumentConversionError(
             "konversi tidak menghasilkan markdown; dokumen tidak memuat teks yang "
-            "dapat diekstrak (aktifkan RPS_CONVERTER_OCR untuk dokumen pindai)"
+            "dapat diekstrak (aktifkan RPS_CONVERTER_OCR untuk dokumen pindai)",
+            public_reason=(
+                "Dokumen RPS tidak memuat teks yang dapat diekstrak. Bila RPS berupa "
+                "hasil pindai, OCR perlu diaktifkan (RPS_CONVERTER_OCR)."
+            ),
         )
 
 

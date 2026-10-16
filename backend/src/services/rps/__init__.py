@@ -47,7 +47,14 @@ from src.services.rps.errors import (
     RPSValidationError,
 )
 from src.services.rps.repository import RPSRepository
-from src.services.rps.service import RPSProcessResult, RPSService, RPSUploadResult
+from src.services.rps.runner import run_rps_processing
+from src.services.rps.service import (
+    RPSConversionResult,
+    RPSProcessResult,
+    RPSProcessStart,
+    RPSService,
+    RPSUploadResult,
+)
 from src.services.rps.storage import (
     DocumentStorage,
     LocalDocumentStorage,
@@ -67,7 +74,10 @@ __all__ = [
     "RPSService",
     "RPSRepository",
     "RPSUploadResult",
+    "RPSProcessStart",
+    "RPSConversionResult",
     "RPSProcessResult",
+    "run_rps_processing",
     # Konversi dokumen (BE-05.2)
     "DocumentConverter",
     "DocumentConversion",

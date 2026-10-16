@@ -9,6 +9,7 @@ disimpan selalu tervalidasi, status hanya berpindah lewat transisi yang sah, dan
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import shortuuid
@@ -37,6 +38,10 @@ from src.services.rps.validation import (
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
 OWNER_ID = shortuuid.uuid()
 FILE_PATH = "owner/ab/abcdef.pdf"
+
+# Versi skema yang **berbeda** dari yang berlaku: dipakai untuk menguji kunci
+# idempotency tanpa terikat pada nomor versi saat ini.
+OTHER_SCHEMA_VERSION = "1.0" if RPS_SCHEMA_VERSION != "1.0" else "3.0"
 
 
 # --- Validasi murni --------------------------------------------------------
@@ -270,7 +275,7 @@ def test_already_processed_as_matches_on_hash_and_schema_version():
         file_hash=document.file_hash, schema_version=RPS_SCHEMA_VERSION
     )
     assert not document.already_processed_as(
-        file_hash=document.file_hash, schema_version="2.0"
+        file_hash=document.file_hash, schema_version=OTHER_SCHEMA_VERSION
     )
     assert not document.already_processed_as(
         file_hash=compute_file_hash(b"dokumen lain"), schema_version=RPS_SCHEMA_VERSION
@@ -295,14 +300,14 @@ def test_a_processed_document_is_stale_for_a_newer_schema_version():
         file_hash=document.file_hash, schema_version=RPS_SCHEMA_VERSION
     )
     assert not document.already_processed_as(
-        file_hash=document.file_hash, schema_version="2.0"
+        file_hash=document.file_hash, schema_version=OTHER_SCHEMA_VERSION
     )
 
     # Setelah diputuskan diproses ulang, dokumen mencatat versi yang benar-benar
     # dipakai — bukan membiarkan hasil lama mengaku berasal dari skema baru.
-    document.retarget_schema_version("2.0")
+    document.retarget_schema_version(OTHER_SCHEMA_VERSION)
 
-    assert document.schema_version == "2.0"
+    assert document.schema_version == OTHER_SCHEMA_VERSION
     assert not document.already_processed_as(
         file_hash=document.file_hash, schema_version=RPS_SCHEMA_VERSION
     )
@@ -330,3 +335,150 @@ def test_repr_never_embeds_the_converted_markdown():
 
     assert "RAHASIA" not in repr(document)
     assert "source_markdown=set" in repr(document)
+
+
+# --- Hasil konversi yang disimpan (issue #98) ------------------------------
+
+
+def test_complete_processing_stores_the_document_and_the_duration():
+    document = make_document()
+    document.start_processing()
+
+    document.complete_processing(
+        "# RPS",
+        source_document={"schema_name": "DoclingDocument", "pages": {}},
+        duration_ms=1234,
+    )
+
+    assert document.source_document == {"schema_name": "DoclingDocument", "pages": {}}
+    assert document.processing_duration_ms == 1234
+    assert document.processing_error_code is None
+    assert document.processing_error is None
+
+
+def test_duration_must_be_a_positive_integer():
+    document = make_document()
+    document.start_processing()
+
+    for invalid in [0, -5, 1.5, "1234", True]:
+        with pytest.raises(RPSValidationError):
+            document.complete_processing("# RPS", duration_ms=invalid)
+
+
+def test_source_document_must_be_a_json_object():
+    document = make_document()
+    document.start_processing()
+
+    for invalid in [[], "bukan object", 42, {}]:
+        with pytest.raises(RPSValidationError):
+            document.complete_processing("# RPS", source_document=invalid)
+
+
+def test_the_document_may_be_absent_for_converters_that_do_not_produce_one():
+    document = make_document()
+    document.start_processing()
+
+    document.complete_processing("# RPS")
+
+    assert document.source_document is None
+    assert document.processing_duration_ms is None
+
+
+def test_fail_processing_records_the_code_and_a_readable_reason():
+    """Kegagalan background harus terbaca client lewat polling."""
+    document = make_document()
+    document.start_processing()
+
+    document.fail_processing(
+        error_code="rps_processing_failed",
+        reason="Dokumen tidak dapat dibaca — berkas mungkin rusak.",
+    )
+
+    assert document.status is RPSStatus.FAILED
+    # Kode dinormalkan ke bentuk kanonik design-api §18.
+    assert document.processing_error_code == "RPS_PROCESSING_FAILED"
+    assert document.processing_error == "Dokumen tidak dapat dibaca — berkas mungkin rusak."
+    assert document.source_markdown is None
+
+
+def test_fail_processing_without_details_still_marks_the_document_failed():
+    document = make_document()
+    document.start_processing()
+
+    document.fail_processing()
+
+    assert document.status is RPSStatus.FAILED
+    assert document.processing_error_code is None
+    assert document.processing_error is None
+
+
+def test_a_successful_run_clears_an_earlier_failure():
+    document = make_document()
+    document.start_processing()
+    document.fail_processing(error_code="RPS_PROCESSING_FAILED", reason="gagal")
+
+    document.start_processing()
+    document.complete_processing("# RPS", duration_ms=10)
+
+    assert document.processing_error_code is None
+    assert document.processing_error is None
+
+
+def test_repr_hides_the_source_document_payload():
+    """Dokumen Docling berukuran besar; repr-nya dipakai pada log."""
+    document = make_document()
+    document.start_processing()
+    document.complete_processing(
+        "# RPS", source_document={"RAHASIA": "isi dokumen"}, duration_ms=5
+    )
+
+    assert "RAHASIA" not in repr(document)
+    assert "source_document=set" in repr(document)
+
+
+# --- Pemrosesan yang terlantar (lease) -------------------------------------
+
+
+def test_processing_cannot_be_taken_over_while_it_is_still_fresh():
+    document = make_document()
+    document.updated_at = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    document.start_processing()
+
+    with pytest.raises(RPSStateError):
+        document.start_processing(
+            stale_after=timedelta(minutes=15),
+            now=datetime(2026, 1, 1, 12, 5, tzinfo=timezone.utc),
+        )
+
+
+def test_a_processing_run_older_than_the_lease_can_be_taken_over():
+    """Konversi yang terputus (server mati) tidak boleh mengunci dokumen."""
+    document = make_document()
+    document.updated_at = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    document.start_processing()
+
+    document.start_processing(
+        stale_after=timedelta(minutes=15),
+        now=datetime(2026, 1, 1, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert document.is_processing
+
+
+def test_without_a_lease_window_a_running_processing_stays_locked():
+    """Tanpa batas waktu, perilakunya tetap konservatif: tolak pemrosesan ganda."""
+    document = make_document()
+    document.updated_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    document.start_processing()
+
+    with pytest.raises(RPSStateError):
+        document.start_processing()
+
+
+def test_an_untimestamped_document_never_looks_stale():
+    """Dokumen yang belum dipersist tidak punya ``updated_at`` untuk dibandingkan."""
+    document = make_document()
+    document.start_processing()
+
+    with pytest.raises(RPSStateError):
+        document.start_processing(stale_after=timedelta(seconds=1))
