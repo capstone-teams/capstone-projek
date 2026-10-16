@@ -21,6 +21,21 @@ dependencies = [
     "websockets>=13.0",
 ]
 
+[project.optional-dependencies]
+# Konverter dokumen RPS (BE-05.2). Sengaja **bukan** dependensi utama: Docling
+# menarik torch, docling-ibm-models, opencv, dan model ML berukuran ratusan MB
+# (unduhan model pertama kali sekitar 0,5 GB), sehingga pemasangannya menjadi
+# pilihan operator — bukan beban wajib seluruh tim dan image Docker:
+#
+#     uv sync --extra docling
+#
+# Tanpa extra ini aplikasi tetap berjalan; endpoint pemrosesan RPS gagal dengan
+# error domain `RPS_PROCESSING_FAILED` beserta pesan yang menyebutkan perintah
+# pemasangannya (lihat src/services/rps/docling_converter.py).
+docling = [
+    "docling>=2.140.0,<3.0.0",
+]
+
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",

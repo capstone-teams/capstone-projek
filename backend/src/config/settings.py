@@ -12,6 +12,26 @@ ROOT_DIR = BACKEND_DIR.parent
 # Accepted aliases for LLM_PROVIDER ("google" is a legacy spelling of "gemini").
 LLM_PROVIDER_ALIASES = {"google": "gemini"}
 
+# Mode TableFormer Docling yang didukung (BE-05.2). Didefinisikan di sini supaya
+# konfigurasi yang salah gagal saat startup — bukan saat request pertama —
+# sementara adapter Docling tetap memakai daftar yang sama (layer `services/`
+# boleh mengimpor `config/`, bukan sebaliknya).
+RPS_TABLE_MODES = ("accurate", "fast")
+
+# Nilai bawaan konfigurasi RPS (BE-05). Diletakkan di luar kelas ``Settings``
+# dengan sengaja: seluruh field Settings hanya berisi nilai yang benar-benar
+# dikonfigurasi (default-nya kosong), dan nilai bawaan diterapkan oleh property.
+# Konvensi ini menjaga ``tests/test_config.py`` (tidak ada nilai yang
+# ter-hardcode pada field Settings) sekaligus membuat tempat nilai bawaan hanya
+# satu.
+DEFAULT_RPS_STORAGE_DIR = BACKEND_DIR / "var" / "rps"
+DEFAULT_RPS_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+DEFAULT_RPS_ALLOWED_EXTENSIONS = "pdf"
+DEFAULT_RPS_CONVERTER = "docling"
+DEFAULT_RPS_CONVERTER_OCR = True
+DEFAULT_RPS_CONVERTER_TABLE_STRUCTURE = True
+DEFAULT_RPS_CONVERTER_TABLE_MODE = "accurate"
+
 
 class Settings(BaseSettings):
     APP_NAME: str
@@ -59,6 +79,34 @@ class Settings(BaseSettings):
     # Ollama (http://localhost:11434/v1). Empty means the official OpenAI API.
     OPENAI_BASE_URL: str = ""
 
+    # --- RPS upload & Docling conversion (BE-05) ---------------------------
+    # Seluruh nilai default-nya kosong; nilai bawaan diterapkan oleh property
+    # ``rps_*`` di bawah (lihat DEFAULT_RPS_* pada modul ini). Kosong berarti
+    # "tidak dikonfigurasi", bukan "nonaktif".
+    #
+    # Direktori penyimpanan dokumen RPS; kosong berarti DEFAULT_RPS_STORAGE_DIR
+    # (backend/var/rps). Isi folder ini tidak masuk repository.
+    RPS_STORAGE_DIR: str = ""
+    # Batas ukuran berkas RPS yang diterima (byte). RPS berupa dokumen teks, dan
+    # batas ini melindungi server dari unggahan tak wajar.
+    RPS_MAX_UPLOAD_BYTES: int | None = None
+    # Ekstensi yang diterima, dipisah koma. Bawaannya hanya PDF sesuai cakupan
+    # M02 (issue BE-05); design-api §6.1 juga mengizinkan DOCX, yang dapat
+    # diaktifkan lewat konfigurasi tanpa mengubah kode.
+    RPS_ALLOWED_EXTENSIONS: str = ""
+    # Nama konverter dokumen; lihat src/services/rps/factory.py.
+    RPS_CONVERTER: str = ""
+    # OCR untuk halaman tanpa lapisan teks (RPS hasil pindai). Bawaannya aktif
+    # mengikuti default Docling; menonaktifkannya mempercepat PDF digital.
+    RPS_CONVERTER_OCR: bool | None = None
+    # Ekstraksi struktur tabel. Bawaannya aktif: tabel RPS (distribusi mingguan,
+    # bobot penilaian) adalah data akademik yang tidak boleh hilang.
+    RPS_CONVERTER_TABLE_STRUCTURE: bool | None = None
+    # "accurate" atau "fast" (mode TableFormer Docling).
+    RPS_CONVERTER_TABLE_MODE: str = ""
+    # Direktori model Docling yang sudah diunduh lebih dulu (deployment offline).
+    RPS_CONVERTER_ARTIFACTS_PATH: str = ""
+
     model_config = SettingsConfigDict(
         # Urutan penting: pydantic-settings menggabungkan file-file ini secara
         # berurutan dan file TERAKHIR yang menang. ``.env.example`` diletakkan
@@ -88,6 +136,92 @@ class Settings(BaseSettings):
                     pass
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @field_validator("RPS_CONVERTER_TABLE_MODE", mode="after")
+    @classmethod
+    def parse_rps_table_mode(cls, v: str) -> str:
+        """Mode tabel tidak dikenal gagal saat startup, bukan saat request pertama."""
+        mode = (v or "").strip().lower()
+        if mode and mode not in RPS_TABLE_MODES:
+            raise ValueError(
+                f"RPS_CONVERTER_TABLE_MODE harus salah satu dari: {', '.join(RPS_TABLE_MODES)}"
+            )
+        return mode
+
+    @field_validator("RPS_MAX_UPLOAD_BYTES", mode="after")
+    @classmethod
+    def parse_rps_max_upload_bytes(cls, v: int | None) -> int | None:
+        """Batas 0 atau negatif akan menolak seluruh unggahan tanpa penjelasan jelas."""
+        if v is not None and v <= 0:
+            raise ValueError("RPS_MAX_UPLOAD_BYTES harus lebih besar dari 0")
+        return v
+
+    @field_validator("RPS_ALLOWED_EXTENSIONS", mode="after")
+    @classmethod
+    def parse_rps_allowed_extensions(cls, v: str) -> str:
+        """Daftar berisi pemisah saja (mis. ``",,"``) adalah salah konfigurasi."""
+        if (v or "").strip() and not _split_extensions(v):
+            raise ValueError(
+                "RPS_ALLOWED_EXTENSIONS tidak boleh kosong; contoh: pdf atau pdf,docx"
+            )
+        return v
+
+    @property
+    def rps_storage_path(self) -> Path:
+        """Direktori absolut penyimpanan dokumen RPS."""
+        raw = (self.RPS_STORAGE_DIR or "").strip()
+        return Path(raw).expanduser() if raw else DEFAULT_RPS_STORAGE_DIR
+
+    @property
+    def rps_max_upload_bytes(self) -> int:
+        """Batas ukuran unggahan yang berlaku (byte)."""
+        return (
+            DEFAULT_RPS_MAX_UPLOAD_BYTES
+            if self.RPS_MAX_UPLOAD_BYTES is None
+            else self.RPS_MAX_UPLOAD_BYTES
+        )
+
+    @property
+    def rps_allowed_extensions(self) -> tuple[str, ...]:
+        """Ekstensi yang diterima, huruf kecil tanpa titik."""
+        return _split_extensions(self.RPS_ALLOWED_EXTENSIONS) or (
+            DEFAULT_RPS_ALLOWED_EXTENSIONS,
+        )
+
+    @property
+    def rps_converter(self) -> str:
+        """Nama konverter dokumen yang aktif."""
+        return (self.RPS_CONVERTER or "").strip().lower() or DEFAULT_RPS_CONVERTER
+
+    @property
+    def rps_converter_ocr(self) -> bool:
+        """Apakah OCR dijalankan untuk halaman tanpa lapisan teks."""
+        return (
+            DEFAULT_RPS_CONVERTER_OCR
+            if self.RPS_CONVERTER_OCR is None
+            else self.RPS_CONVERTER_OCR
+        )
+
+    @property
+    def rps_converter_table_structure(self) -> bool:
+        """Apakah struktur tabel diekstrak."""
+        return (
+            DEFAULT_RPS_CONVERTER_TABLE_STRUCTURE
+            if self.RPS_CONVERTER_TABLE_STRUCTURE is None
+            else self.RPS_CONVERTER_TABLE_STRUCTURE
+        )
+
+    @property
+    def rps_converter_table_mode(self) -> str:
+        """Mode TableFormer yang berlaku."""
+        return (self.RPS_CONVERTER_TABLE_MODE or "").strip().lower() or (
+            DEFAULT_RPS_CONVERTER_TABLE_MODE
+        )
+
+    @property
+    def rps_converter_artifacts_path(self) -> str | None:
+        """Direktori model Docling, atau ``None`` bila memakai cache bawaan."""
+        return (self.RPS_CONVERTER_ARTIFACTS_PATH or "").strip() or None
 
     @property
     def llm_provider(self) -> str:
@@ -128,6 +262,12 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+def _split_extensions(value: str) -> tuple[str, ...]:
+    """Ubah ``"pdf, .DOCX"`` menjadi ``("pdf", "docx")``."""
+    parts = (part.strip().lower().lstrip(".") for part in (value or "").split(","))
+    return tuple(part for part in parts if part)
 
 
 settings = get_settings()

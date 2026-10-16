@@ -36,6 +36,11 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        # Kosong berarti tanpa extra. Isi dengan "--extra docling" untuk
+        # mengaktifkan konversi RPS (BE-05) di dalam container:
+        #   UV_SYNC_ARGS="--extra docling" docker compose build backend
+        UV_SYNC_ARGS: ${UV_SYNC_ARGS:-}
     container_name: capstone-backend
     environment:
       # Di dalam network compose, database dijangkau lewat nama service.
@@ -61,6 +66,10 @@ services:
       # tertimpa karena hanya subfolder ini yang di-mount.
       - ./backend/src:/app/src:ro
       - ./backend/tests:/app/tests:ro
+      # Dokumen RPS yang diunggah beserta artefak konversinya (BE-05). Disimpan
+      # di volume agar tidak hilang saat container dibuat ulang; lokasinya
+      # mengikuti default RPS_STORAGE_DIR (backend/var/rps di host).
+      - backend-storage:/app/var
     command:
       - .venv/bin/uvicorn
       - src.main:app
@@ -82,3 +91,4 @@ services:
 
 volumes:
   postgres-data:
+  backend-storage:

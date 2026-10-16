@@ -19,18 +19,22 @@ backend/
 │   ├── routes/                   # Definition Endpoint API & HTTP Router (FastAPI)
 │   │   ├── admin.py              # GET /admin/users (ADMIN only)
 │   │   ├── auth.py               # POST /auth/login, GET /auth/me
+│   │   ├── rps.py                # POST /rps, GET /rps/{id}, POST /rps/{id}/process
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
 │   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
+│   │   ├── rps/                  # Unggah, penyimpanan, & konversi dokumen RPS (BE-05)
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
 │   │   └── dependencies.py       # Dependency provider untuk routes (+ require_roles)
 │   ├── models/                   # Database Entities / ORM Models (SQLAlchemy)
 │   ├── schemas/                  # Request & Response DTOs / Data Validation (Pydantic)
 │   │   ├── admin.py              # DTO operasi administrasi
-│   │   └── auth.py
+│   │   ├── auth.py
+│   │   ├── rps.py                # DTO endpoint RPS
+│   │   └── rps_structured.py     # Kontrak RPS Structured Data (BE-05.3)
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
 │   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
 │   ├── utils/                    # Helper functions & pure utilities
@@ -302,6 +306,170 @@ Respons kegagalan mengikuti design-api §18/§19:
 7. **Kegagalan authorization konsisten dan tidak membocorkan detail.** Selalu 403 `AUTHORIZATION_DENIED` dengan pesan publik yang sama, tanpa menyebut role yang dibutuhkan maupun role user tersebut; detailnya hanya dicatat server-side. 403 juga tidak memakai header `WWW-Authenticate` karena bukan kegagalan authentication.
 8. **Mekanisme siap diperluas.** `RolePolicy` adalah titik perluasan untuk resource/policy authorization pada tahap berikutnya (cukup menambah aturan di `RolePolicy.enforce` atau menyediakan policy baru dengan bentuk yang sama) tanpa mengubah cara endpoint memakainya.
 9. **Satu policy dapat dipakai oleh banyak endpoint.** Router `admin` mendefinisikan `admin_only` sekali dan memakainya di dua endpoint; endpoint fitur lain (mis. RPS instructor-only) cukup memakai `require_roles(...)` yang sama ketika fiturnya diimplementasikan.
+
+---
+
+## 📄 RPS Upload & Docling Conversion (BE-05)
+
+Modul ini menyediakan alur awal pemrosesan RPS: mengunggah dan menyimpan dokumen
+RPS, mengonversinya menjadi Markdown/JSON/YAML beserta struktur tabel, dan
+menetapkan **RPS Structured Data Schema** yang menjadi kontrak data untuk tahap
+ekstraksi pada BE-08.
+
+```text
+RPS PDF ──▶ unggah (file_hash) ──▶ simpan berkas asli
+                                        │
+                                        ▼
+                          POST /rps/{id}/process
+                                        │
+                        Docling ────────┴───────▶ source_markdown  (kolom rps)
+                                                 ├─ document.json  ┐
+                                                 ├─ document.yaml  ├─ artefak di
+                                                 ├─ tables.json    │  samping berkas
+                                                 └─ conversion.json┘
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/rps` | `INSTRUCTOR` | Unggah RPS (`multipart/form-data`, field `file`). `201` untuk dokumen baru, `200` + `deduplicated: true` bila isi yang sama sudah pernah diunggah |
+| `GET` | `/api/v1/rps/{rps_id}` | `INSTRUCTOR` | Detail dokumen beserta `source_markdown`-nya |
+| `POST` | `/api/v1/rps/{rps_id}/process` | `INSTRUCTOR` | Konversi dokumen menjadi `source_markdown`; body opsional `{"schema_version": "..."}` |
+
+Authorization mengikuti design-api §22 (Student: `No` untuk seluruh operasi RPS).
+Seluruh endpoint memakai satu policy `instructor_only`.
+
+Respons kegagalan mengikuti design-api §18/§19:
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Ekstensi/ukuran/isi berkas tidak sah | 400 | `INVALID_FILE` |
+| Nilai domain tidak valid (mis. hash cacat) | 422 | `INVALID_REQUEST` |
+| RPS tidak ada atau milik instructor lain | 404 | `RESOURCE_NOT_FOUND` |
+| Status RPS tidak mengizinkan operasi (mis. sedang diproses request lain) | 409 | `INVALID_REQUEST` |
+| Konversi gagal (dokumen rusak, hasil kosong, model tidak tersedia) | 500 | `RPS_PROCESSING_FAILED` |
+| Penyimpanan berkas gagal | 500 | `INTERNAL_ERROR` |
+
+### Idempotency: `file_hash` + `schema_version`
+
+Dokumen dengan `file_hash` dan `schema_version` yang sama **tidak diproses ulang**:
+
+1. unggahan ulang dokumen identik mengembalikan baris yang sudah ada
+   (`200`, `deduplicated: true`) alih-alih membuat baris kedua;
+2. pemrosesan dokumen yang sudah `PROCESSED` untuk versi skema yang sama
+   mengembalikan hasil tersimpan (`reused: true`) tanpa menjalankan Docling lagi.
+
+Meminta pemrosesan dengan `schema_version` **berbeda** justru memproses ulang:
+hasil lama tidak berlaku untuk skema baru, dan dokumen mencatat versi yang
+benar-benar dipakai.
+
+### Docling adalah dependensi opsional
+
+Docling menarik `torch` dan model ML (unduhan model pertama kali ±0,5 GB),
+sehingga dipasang sebagai *extra* — bukan beban wajib seluruh tim:
+
+```bash
+uv sync --extra docling                                  # host
+UV_SYNC_ARGS="--extra docling" docker compose build backend   # container
+```
+
+Tanpa extra tersebut aplikasi tetap berjalan; `POST /rps/{id}/process` gagal
+dengan 500 `RPS_PROCESSING_FAILED` dan pesan server-side yang menyebutkan
+perintah pemasangannya. Modul `src/services/rps/docling_converter.py` mengimpor
+Docling secara *lazy*, sehingga tidak ada layer lain yang perlu tahu hal ini.
+
+Konfigurasi terkait ada pada `.env.example` (`RPS_*`). Untuk deployment offline,
+unduh model lebih dulu dan arahkan `RPS_CONVERTER_ARTIFACTS_PATH`:
+
+```bash
+docling-tools models download --output-dir ./var/docling-models
+```
+
+### RPS Structured Data Schema (BE-05.3)
+
+`src/schemas/rps_structured.py` adalah kontrak bersama backend dan AI untuk
+tahap ekstraksi (BE-08), mengikuti content-schema §6/§7:
+
+- seluruh field akademik **opsional** — RPS antar-program studi berbeda-beda,
+  dan sistem tidak boleh mengarang nilai yang tidak ada di dokumen;
+- `extra="forbid"` pada setiap object: field di luar kontrak adalah kegagalan
+  validasi, bukan data yang dibuang diam-diam (§3.2/§3.4);
+- `RPS_SCHEMA_VERSION` (kini `"1.0"`) menjadi versi skema — terpisah dari content
+  version dan dipakai pada kunci idempotency;
+- `to_rps_analysis_payload()` memetakan hasil ekstraksi ke kolom `rps_analyses`
+  (data-model §9), sehingga BE-08 tidak perlu menebak nama kolom;
+- `RPSStructuredData.model_json_schema()` dapat dibagikan ke tim AI sebagai
+  JSON Schema (§45).
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Berkas disimpan berdasarkan isinya (content-addressed).**
+   Path-nya `<owner_id>/<hash[:2]>/<hash>.<ext>` di bawah `RPS_STORAGE_DIR`
+   (default `backend/var/rps`, tidak masuk repository). Nama file dari client
+   hanya menjadi metadata; ia tidak pernah dipakai membentuk path, dan path
+   relatif yang tersimpan di `rps.file_path` diperiksa ulang agar tidak dapat
+   keluar dari direktori penyimpanan.
+2. **Berkas asli dipertahankan** agar hasil dapat dilacak ke sumbernya
+   (data-model §8), dan `source_markdown` disimpan pada kolom `rps` supaya dapat
+   dibaca tanpa menyentuh filesystem.
+3. **Artefak konversi berada di samping dokumennya**
+   (`<hash>/conversion/`): `document.json`, `document.yaml`, `tables.json`, dan
+   `conversion.json` (manifest: versi konverter, jumlah tabel, waktu konversi).
+   Artefak ditulis **sebelum** status berubah menjadi `PROCESSED`.
+4. **Tabel dipisahkan, bukan diratakan.** Tabel RPS (distribusi mingguan, bobot
+   penilaian) adalah data akademik; `tables.json` menyimpan baris/kolomnya
+   sehingga BE-08 dapat membacanya tanpa mem-parsing Markdown kembali.
+5. **Pemrosesan bersifat synchronous pada S0.** Response process sudah memuat
+   status akhir (`PROCESSED`/`FAILED`), bukan `202` + polling. design-api §6.3
+   menyebutkan `agent_run_id`, tetapi tabel `agent_runs` mensyaratkan
+   `course_id` yang belum ada pada tahap RPS; Agent Run dan workflow
+   asynchronous menyusul pada BE-08.
+6. **Kegagalan konversi tidak menghapus dokumen.** Status menjadi `FAILED` dan
+   dokumen dapat diproses ulang; penyebab sebenarnya hanya dicatat server-side,
+   sedangkan client menerima pesan publik yang seragam.
+7. **Dokumen milik instructor lain menghasilkan 404**, bukan 403 — keberadaan
+   RPS orang lain tidak dapat disimpulkan dari perbedaan response.
+8. **Validasi berkas berlapis:** ekstensi (mengikuti `RPS_ALLOWED_EXTENSIONS`),
+   ukuran (`RPS_MAX_UPLOAD_BYTES`), dan isi (magic bytes) diperiksa sebelum
+   apa pun disimpan, sesuai design-api §23.8.
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Domain dokumen + lifecycle (`RPSDocument`) | `src/services/rps/domain.py` |
+| Operasi aplikasi (unggah, ambil, proses) | `src/services/rps/service.py` |
+| Akses tabel `rps` | `src/services/rps/repository.py` |
+| Validasi & normalisasi (murni) | `src/services/rps/validation.py` |
+| Penyimpanan berkas (port + adapter lokal) | `src/services/rps/storage.py` |
+| Port konversi dokumen | `src/services/rps/converter.py` |
+| Adapter Docling | `src/services/rps/docling_converter.py` |
+| Pemilihan konverter & penyimpanan | `src/services/rps/factory.py` |
+| Error domain + kontrak HTTP-nya | `src/services/rps/errors.py` |
+| DTO endpoint RPS | `src/schemas/rps.py` |
+| RPS Structured Data Schema | `src/schemas/rps_structured.py` |
+| Endpoint HTTP | `src/routes/rps.py` |
+| Kolom `rps.schema_version` | `src/models/rps.py` + `migrations/versions/b3c9e14a7f52_*.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_rps_structured_schema.py   # kontrak schema (BE-05.3)
+uv run pytest tests/test_rps_domain.py              # domain + validasi berkas
+uv run pytest tests/test_rps_storage.py             # penyimpanan & path traversal
+uv run pytest tests/test_rps_service.py             # unggah, idempotency, kegagalan
+uv run pytest tests/test_rps_routes.py              # endpoint (butuh PostgreSQL)
+uv run pytest tests/test_rps_docling_converter.py   # adapter Docling
+
+# Konversi Docling sungguhan (opt-in, mengunduh model saat pertama kali):
+RPS_DOCLING_TEST_PDF=/path/ke/rps.pdf uv run pytest tests/test_rps_docling_converter.py
+```
+
+`tests/test_rps_routes.py` memakai PostgreSQL (fixture `conftest.db_session`,
+default `TEST_DATABASE_URL`), sehingga native enum `rps_status` dan kolom JSONB
+benar-benar terpakai. Konverter diganti konverter palsu di sana agar suite tetap
+ringan dan deterministik.
 
 ---
 

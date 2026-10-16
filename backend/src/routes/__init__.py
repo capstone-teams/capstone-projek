@@ -18,6 +18,7 @@ from fastapi import APIRouter
 from src.routes.admin import router as admin_router
 from src.routes.auth import router as auth_router
 from src.routes.health import router as health_router
+from src.routes.rps import router as rps_router
 
 # Base URL endpoint bisnis, mengikuti dokumen design-api.
 API_V1_PREFIX = "/api/v1"
@@ -25,5 +26,13 @@ API_V1_PREFIX = "/api/v1"
 api_router = APIRouter(prefix=API_V1_PREFIX)
 api_router.include_router(auth_router)
 api_router.include_router(admin_router)
+api_router.include_router(rps_router)
 
-__all__ = ["API_V1_PREFIX", "admin_router", "api_router", "auth_router", "health_router"]
+__all__ = [
+    "API_V1_PREFIX",
+    "admin_router",
+    "api_router",
+    "auth_router",
+    "health_router",
+    "rps_router",
+]
