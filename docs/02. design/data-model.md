@@ -256,21 +256,43 @@ Represents an uploaded RPS document.
 
 Conceptual fields:
 
-| Field           | Type      | Description                                |
-| --------------- | --------- | ------------------------------------------ |
-| id              | UUID      | Primary key                                |
-| owner_id        | UUID      | FK → User                                  |
-| file_name       | String    | Original filename                          |
-| file_type       | String    | PDF / DOCX                                 |
-| file_path       | String    | Stored document location                   |
-| file_hash       | String    | Integrity/deduplication hash               |
-| status          | Enum      | Uploaded / Processing / Processed / Failed |
-| source_markdown | Text      | Normalized Markdown representation         |
-| structured_data | JSONB     | Extracted structured data                  |
-| created_at      | Timestamp | Upload time                                |
-| updated_at      | Timestamp | Last update                                |
+| Field                   | Type      | Description                                |
+| ----------------------- | --------- | ------------------------------------------ |
+| id                      | String(22) | Primary key (ShortUUID)                   |
+| owner_id                | String(22) | FK → User                                 |
+| file_name               | String    | Original filename                          |
+| file_type               | String    | PDF / DOCX                                 |
+| file_path               | String    | Stored document location (relative to storage root) |
+| file_hash               | String    | Integrity/deduplication hash (SHA-256)     |
+| schema_version          | String    | RPS Structured Data Schema version (Content Schema §44) |
+| status                  | Enum      | Uploaded / Processing / Processed / Failed |
+| source_markdown         | Text      | Normalized Markdown representation         |
+| source_document         | JSONB     | Full conversion output (DoclingDocument as JSON) |
+| processing_duration_ms  | Integer   | Conversion duration, for performance evaluation |
+| processing_error_code   | String    | Error code of the last failure (API Specification §18) |
+| processing_error        | Text      | Public failure reason, safe to display     |
+| structured_data         | JSONB     | Extracted structured data                  |
+| created_at              | Timestamp | Upload time                                |
+| updated_at              | Timestamp | Last update                                |
 
 The original file should be retained when practical so the generated result remains traceable to its source.
+
+Catatan:
+
+1. **`file_hash` + `schema_version` adalah kunci idempotency pemrosesan.**
+   Dokumen dengan keduanya sama tidak diproses ulang; permintaan dengan
+   `schema_version` berbeda memproses ulang dokumen tersebut.
+2. **`source_document` menyimpan JSON hasil Docling** (teks, heading, tabel,
+   nomor halaman) sehingga tahap pemetaan field pada BE-08 tidak perlu
+   menjalankan Docling ulang. `source_markdown` tetap diisi sebagai representasi
+   yang dibaca manusia dan untuk pratinjau.
+3. **`processing_error_code` dan `processing_error` hanya terisi ketika
+   `status` = Failed.** Karena konversi berjalan di background (API
+   Specification §6.3), kegagalan tidak dapat muncul pada response request —
+   client membacanya lewat polling. Kolomnya hanya memuat kode error dan alasan
+   publik yang aman ditampilkan; penyebab teknisnya hanya ada di log server-side.
+4. **`processing_duration_ms`** mendukung evaluasi performa dan bernilai NULL
+   selama dokumen belum pernah selesai diproses.
 
 ---
 
@@ -890,6 +912,7 @@ email UNIQUE
 
 ```text
 file_hash INDEX
+status INDEX
 owner_id FOREIGN KEY
 ```
 

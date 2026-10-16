@@ -29,14 +29,31 @@ __all__ = [
 
 
 class RPSDomainError(Exception):
-    """Base error domain RPS."""
+    """Base error domain RPS.
+
+    Tiga hal yang dibawa setiap error domain RPS:
+
+    - ``error_code`` / ``status_code`` / ``public_message`` — kontrak HTTP pada
+      envelope error (design-api §18/§19);
+    - ``log_message`` — detail untuk log server-side, tidak pernah dikirim ke
+      client;
+    - ``public_reason`` — penjelasan singkat yang **aman** ditampilkan ke client
+      dan lebih spesifik daripada ``public_message``. Diperlukan karena
+      pemrosesan RPS berjalan di background: kegagalannya tidak dapat muncul
+      pada response request, sehingga alasan yang dapat dipahami client harus
+      disimpan pada dokumen (``rps.processing_error``) dan dibaca lewat polling.
+
+    ``public_reason`` bawaannya sama dengan ``public_message``; subclass yang
+    tahu penyebabnya memberi nilai yang lebih spesifik.
+    """
 
     error_code = "INTERNAL_ERROR"
     status_code = 500
     public_message = "Permintaan RPS gagal."
 
-    def __init__(self, log_message: str | None = None) -> None:
+    def __init__(self, log_message: str | None = None, *, public_reason: str | None = None) -> None:
         self.log_message = log_message or type(self).__name__
+        self.public_reason = public_reason or self.public_message
         super().__init__(self.log_message)
 
 
@@ -123,25 +140,32 @@ class DocumentStorageError(RPSDomainError):
     status_code = 500
     public_message = "Penyimpanan dokumen gagal."
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, public_reason: str | None = None) -> None:
         self.reason = reason
-        super().__init__(reason)
+        super().__init__(reason, public_reason=public_reason)
 
 
 class DocumentConversionError(RPSDomainError):
     """Konversi dokumen menjadi representasi terstruktur gagal.
 
     Penyebab sebenarnya hanya dicatat server-side: pesan dari library konversi
-    dapat memuat path internal maupun potongan isi dokumen.
+    dapat memuat path internal maupun potongan isi dokumen. Yang dibawa ke client
+    adalah ``public_reason`` — penjelasan singkat yang ditulis tangan pada titik
+    kegagalannya (lihat :mod:`src.services.rps.docling_converter`).
     """
 
     error_code = "RPS_PROCESSING_FAILED"
     status_code = 500
     public_message = "Pemrosesan RPS gagal."
+    #: Penjelasan bawaan yang aman bila titik kegagalan tidak memberi yang lebih
+    #: spesifik. Sengaja tidak menyebut detail internal apa pun.
+    default_public_reason = "Dokumen RPS gagal diproses oleh konverter."
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, public_reason: str | None = None) -> None:
         self.reason = reason
-        super().__init__(reason)
+        super().__init__(
+            reason, public_reason=public_reason or self.default_public_reason
+        )
 
 
 class DocumentConverterUnavailableError(DocumentConversionError):
@@ -153,5 +177,9 @@ class DocumentConverterUnavailableError(DocumentConversionError):
     status di luar daftar design-api §19.
     """
 
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
+    default_public_reason = (
+        "Konverter dokumen tidak tersedia di server ini; hubungi administrator."
+    )
+
+    def __init__(self, reason: str, *, public_reason: str | None = None) -> None:
+        super().__init__(reason, public_reason=public_reason)
