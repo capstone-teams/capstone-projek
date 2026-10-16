@@ -12,13 +12,14 @@ adapter**, bukan kualitas model Docling:
 - pesan publik tidak membocorkan nama paket/path internal.
 
 Konversi sungguhan dijalankan sebagai test opt-in
-(:func:`test_real_pdf_is_converted_to_markdown`) dengan menyebutkan path PDF
-contoh lewat ``RPS_DOCLING_TEST_PDF``:
+(:func:`test_real_pdf_is_converted_to_markdown`) memakai dokumen pada
+``tests/fixtures/test.pdf`` — RPS 16 halaman dengan template program studi:
 
-    RPS_DOCLING_TEST_PDF=/path/ke/rps.pdf uv run pytest tests/test_rps_docling_converter.py
+    RPS_DOCLING_LIVE_TEST=1 uv run pytest tests/test_rps_docling_converter.py -v -s
 
-Model Docling diunduh saat pemakaian pertama (±0,5 GB) dan disimpan pada cache
-Docling (``DOCLING_CACHE_DIR``/``HF_HOME``).
+Path dokumen dapat diganti lewat ``RPS_DOCLING_TEST_PDF``. Model Docling diunduh
+saat pemakaian pertama (±0,5 GB) dan disimpan pada cache Docling
+(``DOCLING_CACHE_DIR``/``HF_HOME``).
 """
 
 from __future__ import annotations
@@ -46,6 +47,9 @@ from src.services.rps.errors import (
 )
 
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
+
+# Dokumen RPS contoh: 16 halaman, tabel distribusi mingguan dan bobot penilaian.
+FIXTURE_PDF = Path(__file__).parent / "fixtures" / "test.pdf"
 
 
 class FakeFrame:
@@ -268,14 +272,28 @@ def test_table_dict_is_ready_to_be_serialized_as_an_artifact():
 # --- Konversi sungguhan (opt-in) -------------------------------------------
 
 
+def test_the_sample_rps_fixture_is_present_and_readable():
+    """Fixture adalah bahan test live; berkas yang hilang harus terlihat jelas."""
+    assert FIXTURE_PDF.is_file(), f"fixture RPS tidak ditemukan: {FIXTURE_PDF}"
+
+    content = FIXTURE_PDF.read_bytes()
+
+    assert content.startswith(b"%PDF-")
+    assert len(content) > 10_000  # dokumen RPS nyata, bukan contoh satu halaman
+
+
 @pytest.mark.skipif(
-    not os.getenv("RPS_DOCLING_TEST_PDF"),
-    reason="opt-in live Docling test: set RPS_DOCLING_TEST_PDF=/path/ke/rps.pdf",
+    os.getenv("RPS_DOCLING_LIVE_TEST") != "1",
+    reason="opt-in live Docling test: set RPS_DOCLING_LIVE_TEST=1",
 )
 @pytest.mark.asyncio
 async def test_real_pdf_is_converted_to_markdown():
-    """Membuktikan pipeline Docling benar-benar bekerja pada dokumen RPS nyata."""
-    pdf_path = Path(os.environ["RPS_DOCLING_TEST_PDF"])
+    """Membuktikan pipeline Docling benar-benar bekerja pada dokumen RPS nyata.
+
+    Memakai ``tests/fixtures/test.pdf`` (RPS 16 halaman dengan template program
+    studi), atau path lain bila ``RPS_DOCLING_TEST_PDF`` diisi.
+    """
+    pdf_path = Path(os.environ.get("RPS_DOCLING_TEST_PDF") or FIXTURE_PDF)
     if not pdf_path.is_file():
         pytest.skip(f"berkas PDF tidak ditemukan: {pdf_path}")
 
@@ -290,5 +308,11 @@ async def test_real_pdf_is_converted_to_markdown():
     assert result.markdown.strip()
     assert result.document_json["schema_name"] == "DoclingDocument"
     assert result.document_yaml.strip()
-    print(f"\ndocling {result.converter_version}: {len(result.markdown)} karakter markdown, "
-          f"{result.table_count} tabel")
+    # RPS nyata memuat tabel akademik (distribusi mingguan, bobot penilaian);
+    # konversi yang kehilangan seluruh tabel berarti strukturnya tidak terbaca.
+    assert result.table_count > 0
+    assert all(table.num_cols > 0 for table in result.tables if table.cells)
+    print(
+        f"\ndocling {result.converter_version}: {len(result.markdown)} karakter markdown, "
+        f"{result.table_count} tabel"
+    )

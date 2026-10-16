@@ -462,9 +462,16 @@ uv run pytest tests/test_rps_service.py             # unggah, idempotency, kegag
 uv run pytest tests/test_rps_routes.py              # endpoint (butuh PostgreSQL)
 uv run pytest tests/test_rps_docling_converter.py   # adapter Docling
 
-# Konversi Docling sungguhan (opt-in, mengunduh model saat pertama kali):
-RPS_DOCLING_TEST_PDF=/path/ke/rps.pdf uv run pytest tests/test_rps_docling_converter.py
+# Konversi Docling sungguhan (opt-in; memakai tests/fixtures/test.pdf dan
+# mengunduh model ±0,5 GB saat pertama kali):
+RPS_DOCLING_LIVE_TEST=1 uv run pytest tests/test_rps_docling_converter.py -v -s
+# Ganti dokumennya bila perlu:
+RPS_DOCLING_LIVE_TEST=1 RPS_DOCLING_TEST_PDF=/path/ke/rps.pdf uv run pytest tests/test_rps_docling_converter.py
 ```
+
+`tests/fixtures/test.pdf` adalah RPS 16 halaman bertemplate program studi yang
+dipakai test live di atas; ia juga menjadi bahan verifikasi manual alur
+unggah → proses.
 
 `tests/test_rps_routes.py` memakai PostgreSQL (fixture `conftest.db_session`,
 default `TEST_DATABASE_URL`), sehingga native enum `rps_status` dan kolom JSONB
