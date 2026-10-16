@@ -18,6 +18,8 @@ adalah **janji kontraknya**, bukan sekadar parsing JSON:
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -466,6 +468,59 @@ def test_dangling_reference_is_a_serializable_contract_object():
         "value": "SUB-9",
         "week": 4,
     }
+
+
+# --- Contoh pada dokumen desain --------------------------------------------
+
+CONTENT_SCHEMA_DOC = (
+    Path(__file__).resolve().parents[2] / "docs" / "02. design" / "content-schema.md"
+)
+# Blok contoh §6.2 pada dokumen; identifier-nya dipakai sebagai penanda agar
+# test ini gagal bila blok tersebut dihapus atau diganti nama.
+DOC_EXAMPLE_PATTERN = re.compile(r'```json id="r6x2cp"\n(.*?)\n```', re.DOTALL)
+
+
+def documented_structured_data_example() -> dict:
+    """Baca contoh RPS Structured Data langsung dari content-schema §6.2."""
+    if not CONTENT_SCHEMA_DOC.is_file():  # pragma: no cover - dokumen selalu ada di repo
+        pytest.skip(f"dokumen desain tidak ditemukan: {CONTENT_SCHEMA_DOC}")
+
+    match = DOC_EXAMPLE_PATTERN.search(CONTENT_SCHEMA_DOC.read_text(encoding="utf-8"))
+    assert match is not None, "contoh §6.2 pada content-schema tidak ditemukan"
+    return json.loads(match.group(1))
+
+
+def test_the_documented_example_actually_validates():
+    """Acceptance criteria #99: contoh JSON pada Content Schema §6.2 lolos validasi.
+
+    Dibaca langsung dari dokumen, sehingga kontrak dan dokumentasinya tidak dapat
+    menyimpang tanpa membuat test ini gagal.
+    """
+    data = RPSStructuredData.model_validate(documented_structured_data_example())
+
+    assert data.schema_version == RPS_SCHEMA_VERSION
+    assert data.has_academic_content()
+    assert data.cpmk[0].cpl_ids == ["CPL-1"]
+    assert data.sub_cpmk[0].cpmk_ids == ["CPMK-1"]
+    assert data.weeks[0].week_type is RPSWeekType.REGULAR
+    assert data.weeks[1].week_type is RPSWeekType.UTS
+    assert data.validate_references() == []
+
+
+def test_invalid_data_is_rejected_with_the_offending_field_named():
+    """Acceptance criteria #99: pesan error menunjukkan field yang bermasalah."""
+    with pytest.raises(ValidationError) as excinfo:
+        RPSStructuredData.model_validate(
+            {"weeks": [{"week": 1, "week_type": "libur"}]}
+        )
+
+    message = str(excinfo.value)
+    assert "weeks" in message and "week_type" in message
+
+    with pytest.raises(ValidationError) as excinfo:
+        RPSStructuredData.model_validate({"assessments": [{"weight_percent": 250}]})
+
+    assert "weight_percent" in str(excinfo.value)
 
 
 def test_json_schema_is_publishable_for_the_ai_team():
