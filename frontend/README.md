@@ -37,8 +37,18 @@ Salin `.env.example` ke `.env.local` dan sesuaikan:
 | VITE_MOODLE_URL | http://localhost:8080 | Instance Moodle dan tautan Buka Moodle |
 | VITE_MOODLE_SERVICE | moodle_mobile_app | Service login/token.php |
 | VITE_USE_MOCK | true | false memakai backend capstone nyata |
-| VITE_API_BASE_URL | /api/v1 | Prefix API backend |
+| VITE_API_BASE_URL | /api/v1 | Prefix API backend; `/api/v1` memakai proxy, URL absolut memanggil backend langsung |
 | VITE_BACKEND_URL | http://localhost:8000 | Tujuan proxy Vite untuk /api |
+
+Backend development berjalan di `http://localhost:8000` dengan base URL API
+`/api/v1`. Pada konfigurasi default, Vite mem-proxy `/api` ke
+`VITE_BACKEND_URL`, sehingga request dianggap same-origin dan tidak memerlukan
+CORS. Bila `VITE_API_BASE_URL` diarahkan langsung ke
+`http://localhost:8000/api/v1`, browser mengirim request cross-origin dari
+`http://localhost:3000`; origin tersebut harus terdaftar pada `CORS_ORIGINS`
+backend (nilai default `backend/.env.example` sudah mencakupnya). Panduan
+lengkap ada di
+[`docs/03. quality-plan/cors-development.md`](../docs/03.%20quality-plan/cors-development.md).
 
 Mock Moodle dan mock backend dikontrol secara independen. Integrasi nyata
 memerlukan server, akun, izin web service, dan CORS yang sesuai. Semua variabel

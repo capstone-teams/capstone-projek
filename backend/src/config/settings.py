@@ -2,6 +2,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Union
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -135,15 +136,16 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
     def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str):
-            v = v.strip()
-            if v.startswith("[") and v.endswith("]"):
-                try:
-                    return json.loads(v)
-                except json.JSONDecodeError:
-                    pass
-            return [item.strip() for item in v.split(",") if item.strip()]
-        return v
+        """Normalisasi daftar origin frontend yang diizinkan (BE-06.2).
+
+        Menerima JSON array (``["http://localhost:3000"]``) maupun daftar yang
+        dipisah koma. Setiap origin divalidasi dan dinormalisasi (tanpa spasi di
+        tepi, tanpa garis miring di akhir, huruf kecil) supaya cocok persis
+        dengan nilai header ``Origin`` yang dikirim browser. Konfigurasi yang
+        salah gagal saat startup, bukan ketika browser pertama kali mengirim
+        preflight.
+        """
+        return _normalize_cors_origins(v)
 
     @field_validator("RPS_CONVERTER_TABLE_MODE", mode="after")
     @classmethod
@@ -293,6 +295,85 @@ def _split_extensions(value: str) -> tuple[str, ...]:
     """Ubah ``"pdf, .DOCX"`` menjadi ``("pdf", "docx")``."""
     parts = (part.strip().lower().lstrip(".") for part in (value or "").split(","))
     return tuple(part for part in parts if part)
+
+
+def _normalize_cors_origins(value: Union[str, List[str]]) -> List[str]:
+    """Ubah konfigurasi CORS menjadi daftar origin kanonik tanpa duplikat.
+
+    ``CORS_ORIGINS`` boleh berupa JSON array atau string dipisah koma. Origin
+    harus eksplisit (``scheme://host[:port]``); wildcard dan URL dengan path
+    ditolak, sehingga "origin yang tidak terdaftar ditolak" tetap dapat
+    dibuktikan dan tidak ada konfigurasi development yang terbawa ke produksi
+    secara tidak sengaja.
+    """
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "CORS_ORIGINS harus berupa JSON array yang valid atau daftar "
+                    "origin yang dipisah koma"
+                ) from exc
+            if not isinstance(parsed, list):
+                raise ValueError("CORS_ORIGINS JSON harus berupa array string")
+            items: list[object] = parsed
+        else:
+            items = raw.split(",")
+    else:
+        items = list(value)
+
+    origins: List[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            raise ValueError("Setiap CORS origin harus berupa string")
+        origin = _normalize_cors_origin(item)
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+def _normalize_cors_origin(value: str) -> str:
+    """Validasi satu origin dan kembalikan bentuk kanoniknya.
+
+    Nilai kosong diabaikan (mis. sisa koma pada daftar). Origin kosong secara
+    total tetap diperbolehkan: artinya tidak ada frontend yang diizinkan, bukan
+    "izinkan semua".
+    """
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    if candidate == "*":
+        raise ValueError(
+            "CORS_ORIGINS tidak boleh memakai wildcard '*'; daftarkan origin "
+            "frontend secara eksplisit"
+        )
+
+    normalized = candidate.rstrip("/")
+    parts = urlsplit(normalized)
+    if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+        raise ValueError(
+            f"CORS origin tidak valid: {candidate!r}; gunakan format "
+            "scheme://host[:port], contoh http://localhost:3000"
+        )
+    if parts.path or parts.query or parts.fragment:
+        raise ValueError(
+            f"CORS origin tidak boleh memuat path/query/fragment: {candidate!r}"
+        )
+    if parts.username or parts.password:
+        raise ValueError(f"CORS origin tidak boleh memuat credential: {candidate!r}")
+    try:
+        # Port yang tidak valid (mis. ":abc") baru terdeteksi saat diakses.
+        parts.port
+    except ValueError as exc:
+        raise ValueError(f"CORS origin memuat port tidak valid: {candidate!r}") from exc
+
+    # Browser mengirim scheme dan host dalam huruf kecil; normalisasi yang sama
+    # membuat pencocokan di middleware bersifat persis (exact match).
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"
 
 
 settings = get_settings()
