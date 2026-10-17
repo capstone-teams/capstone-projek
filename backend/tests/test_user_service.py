@@ -5,8 +5,8 @@ lapisan ini dapat diverifikasi tanpa server PostgreSQL. Perilaku database
 spesifik PostgreSQL diuji pada pengujian integrasi terpisah.
 
 Field identity memakai nama atribut user Moodle (``username``, ``firstname``,
-``lastname``, ``email``, ``password``); ``email`` tetap menjadi identity
-attribute untuk login aplikasi.
+``lastname``, ``email``, ``password``); ``username`` dan ``email`` sama-sama
+dapat menjadi identifier login aplikasi.
 """
 
 import ast
@@ -180,6 +180,42 @@ async def test_find_by_email_matches_case_insensitively(repository, service):
 
     assert found is not None
     assert found.id == created.id
+
+
+@pytest.mark.asyncio
+async def test_find_by_username_returns_none_when_missing(repository):
+    assert await repository.find_by_username("tidak-ada") is None
+
+
+@pytest.mark.asyncio
+async def test_find_by_username_matches_stored_username(repository, service):
+    created = await create_user(service, username="dosen.itk")
+
+    found = await repository.find_by_username("  dosen.itk  ")
+
+    assert found is not None
+    assert found.id == created.id
+
+
+@pytest.mark.asyncio
+async def test_find_by_username_matches_case_insensitively_when_unique(repository, service):
+    created = await create_user(service, username="dosen.itk")
+
+    found = await repository.find_by_username("DOSEN.ITK")
+
+    assert found is not None
+    assert found.id == created.id
+
+
+@pytest.mark.asyncio
+async def test_find_by_username_prefers_exact_match_when_cases_collide(repository, service):
+    lower = await create_user(service, username="dosen.itk", email="dosen@itk.ac.id")
+    upper = await create_user(service, username="Dosen.ITK", email="dosen2@itk.ac.id")
+
+    assert (await repository.find_by_username("dosen.itk")).id == lower.id
+    assert (await repository.find_by_username("Dosen.ITK")).id == upper.id
+    # Tidak ada yang persis dan hasil case-insensitive ambigu: tidak ditemukan.
+    assert await repository.find_by_username("DOSEN.ITK") is None
 
 
 @pytest.mark.asyncio
@@ -358,6 +394,27 @@ async def test_get_user_by_email_raises_same_not_found_error(service):
 @pytest.mark.asyncio
 async def test_find_user_by_email_returns_none_for_unknown_identity(service):
     assert await service.find_user_by_email("tidak-ada@itk.ac.id") is None
+
+
+@pytest.mark.asyncio
+async def test_get_user_by_username_returns_user(service):
+    created = await create_user(service, username="dosen.itk")
+
+    assert (await service.get_user_by_username("DOSEN.ITK")).id == created.id
+
+
+@pytest.mark.asyncio
+async def test_get_user_by_username_raises_same_not_found_error(service):
+    with pytest.raises(UserNotFoundError) as error:
+        await service.get_user_by_username("tidak-ada")
+
+    assert error.value.identifier == "tidak-ada"
+    assert isinstance(error.value, UserDomainError)
+
+
+@pytest.mark.asyncio
+async def test_find_user_by_username_returns_none_for_unknown_identity(service):
+    assert await service.find_user_by_username("tidak-ada") is None
 
 
 @pytest.mark.asyncio

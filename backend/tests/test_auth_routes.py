@@ -4,9 +4,9 @@ Endpoint diuji melalui ASGI app (httpx ASGITransport) dengan dependency
 override ke session test, sehingga kontrak HTTP, pemetaan error 401, dan
 response DTO benar-benar terverifikasi.
 
-Body login tetap memakai field ``username`` (kontrak API) yang berisi **email**
-user; response ``/auth/me`` memuat atribut identity Moodle (``username``,
-``firstname``, ``lastname``, ``email``).
+Body login memakai field ``username`` (kontrak API) yang berisi identifier
+login: **username** atau **email** user. Response ``/auth/me`` memuat atribut
+identity Moodle (``username``, ``firstname``, ``lastname``, ``email``).
 """
 
 from datetime import timedelta
@@ -70,10 +70,11 @@ async def login(client: httpx.AsyncClient, **overrides) -> httpx.Response:
 
 
 @pytest.mark.asyncio
-async def test_login_returns_access_token_and_role(client, user_service):
-    created = await create_user(user_service)
+@pytest.mark.parametrize("identifier", ["dosen@itk.ac.id", "dosen.itk"])
+async def test_login_returns_access_token_and_role(client, user_service, identifier):
+    created = await create_user(user_service, username="dosen.itk")
 
-    response = await login(client)
+    response = await login(client, username=identifier)
 
     assert response.status_code == 200
     body = response.json()
@@ -113,12 +114,15 @@ async def test_login_failures_are_indistinguishable(client, user_service):
 
     responses = [
         await login(client, username="tidak-ada@itk.ac.id"),
+        await login(client, username="tidak-ada"),
         await login(client, password="PasswordSalah123"),
         await login(client, username="nonaktif@itk.ac.id"),
+        await login(client, username="nonaktif"),
         await login(client, username="tanpa-hash@itk.ac.id"),
+        await login(client, username="tanpa.hash"),
     ]
 
-    assert [response.status_code for response in responses] == [401, 401, 401, 401]
+    assert [response.status_code for response in responses] == [401] * len(responses)
     assert len({response.text for response in responses}) == 1
 
 
@@ -146,15 +150,36 @@ async def test_login_ignores_client_supplied_role(client, user_service):
 
 
 @pytest.mark.asyncio
-async def test_login_body_username_carries_the_email(client, user_service):
-    """Field ``username`` pada body login berisi email, bukan kolom users.username."""
+async def test_login_body_username_accepts_username_or_email(client, user_service):
+    """Field ``username`` pada body login berisi username atau email user."""
     await create_user(user_service, username="dosen.itk", email="dosen@itk.ac.id")
 
-    accepted = await login(client, username="dosen@itk.ac.id")
-    rejected = await login(client, username="dosen.itk")
+    by_email = await login(client, username="dosen@itk.ac.id")
+    by_username = await login(client, username="dosen.itk")
 
-    assert accepted.status_code == 200
-    assert rejected.status_code == 401
+    assert by_email.status_code == 200
+    assert by_username.status_code == 200
+    assert by_email.json()["user"] == by_username.json()["user"]
+
+
+@pytest.mark.asyncio
+async def test_login_is_case_insensitive_for_both_identifiers(client, user_service):
+    await create_user(user_service, username="dosen.itk", email="dosen@itk.ac.id")
+
+    by_email = await login(client, username="DOSEN@ITK.AC.ID")
+    by_username = await login(client, username="DOSEN.ITK")
+
+    assert by_email.status_code == 200
+    assert by_username.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_login_trims_surrounding_whitespace(client, user_service):
+    await create_user(user_service, username="dosen.itk", email="dosen@itk.ac.id")
+
+    response = await login(client, username="  dosen.itk  ")
+
+    assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------

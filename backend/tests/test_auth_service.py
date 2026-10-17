@@ -4,9 +4,10 @@ Cakupan: hashing password, penerbitan/validasi token, verifikasi kredensial,
 penolakan user non-aktif dan user tanpa credential lokal, serta pembacaan
 role/status dari record User (bukan dari klaim token).
 
-Login memakai **email** sebagai identity attribute; ``users.username`` (atribut
-Moodle) tidak dipakai untuk login lokal. Identifier user adalah ShortUUID
-(22 karakter), bukan UUID.
+Login menerima **username** maupun **email** sebagai identifier. Email
+dicocokkan tanpa membedakan kapitalisasi; username dicocokkan persis lebih
+dulu, lalu tanpa membedakan kapitalisasi bila hasilnya tunggal. Identifier
+user adalah ShortUUID (22 karakter), bukan UUID.
 """
 
 import ast
@@ -170,7 +171,7 @@ def test_token_does_not_carry_trusted_role_claim():
 async def test_valid_credentials_authenticate_the_user(auth_service, user_service):
     created = await create_user(user_service, role=UserRole.STUDENT)
 
-    authenticated = await auth_service.authenticate(email="dosen@itk.ac.id", password=PASSWORD)
+    authenticated = await auth_service.authenticate(identifier="dosen@itk.ac.id", password=PASSWORD)
 
     assert authenticated.id == created.id
     assert authenticated.role is UserRole.STUDENT
@@ -178,21 +179,74 @@ async def test_valid_credentials_authenticate_the_user(auth_service, user_servic
 
 
 @pytest.mark.asyncio
-async def test_email_lookup_is_case_insensitive_at_login(auth_service, user_service):
+async def test_email_identifier_matches_case_insensitively_at_login(auth_service, user_service):
     await create_user(user_service)
 
-    authenticated = await auth_service.authenticate(email="DOSEN@ITK.AC.ID", password=PASSWORD)
+    authenticated = await auth_service.authenticate(identifier="DOSEN@ITK.AC.ID", password=PASSWORD)
 
     assert authenticated.email == "dosen@itk.ac.id"
 
 
 @pytest.mark.asyncio
-async def test_username_is_not_accepted_as_a_login_identity(auth_service, user_service):
-    """``username`` adalah atribut Moodle; login hanya lewat email."""
-    await create_user(user_service, username="dosen.itk", email="dosen@itk.ac.id")
+async def test_username_is_accepted_as_a_login_identity(auth_service, user_service):
+    """Username (atribut Moodle) dapat dipakai sebagai identifier login."""
+    created = await create_user(user_service, username="dosen.itk", email="dosen@itk.ac.id")
 
-    with pytest.raises(InvalidCredentialsError):
-        await auth_service.authenticate(email="dosen.itk", password=PASSWORD)
+    authenticated = await auth_service.authenticate(identifier="dosen.itk", password=PASSWORD)
+
+    assert authenticated.id == created.id
+
+
+@pytest.mark.asyncio
+async def test_username_identifier_matches_case_insensitively_at_login(auth_service, user_service):
+    await create_user(user_service, username="dosen.itk")
+
+    authenticated = await auth_service.authenticate(identifier="DOSEN.ITK", password=PASSWORD)
+
+    assert authenticated.username == "dosen.itk"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("identifier", ["  dosen.itk  ", "  DOSEN@ITK.AC.ID  "])
+async def test_identifier_is_trimmed_before_lookup(auth_service, user_service, identifier):
+    await create_user(user_service, username="dosen.itk")
+
+    authenticated = await auth_service.authenticate(identifier=identifier, password=PASSWORD)
+
+    assert authenticated.username == "dosen.itk"
+
+
+@pytest.mark.asyncio
+async def test_username_that_looks_like_an_email_can_still_log_in(auth_service, user_service):
+    """Email dicoba lebih dulu, tetapi username berbentuk email tetap berlaku."""
+    created = await create_user(
+        user_service, username="dosen@itk.ac.id", email="dosen.lain@itk.ac.id"
+    )
+
+    authenticated = await auth_service.authenticate(identifier="dosen@itk.ac.id", password=PASSWORD)
+
+    assert authenticated.id == created.id
+    assert authenticated.email == "dosen.lain@itk.ac.id"
+
+
+@pytest.mark.asyncio
+async def test_email_takes_precedence_when_it_collides_with_a_username(auth_service, user_service):
+    """Nilai yang cocok dengan email user A dan username user B memilih email."""
+    email_owner = await create_user(
+        user_service, username="pemilik.email", email="bentrok@itk.ac.id"
+    )
+    await create_user(
+        user_service,
+        username="bentrok@itk.ac.id",
+        email="pemilik.username@itk.ac.id",
+        password=hash_password("PasswordLain123"),
+    )
+
+    authenticated = await auth_service.authenticate(
+        identifier="bentrok@itk.ac.id", password=PASSWORD
+    )
+
+    assert authenticated.id == email_owner.id
 
 
 @pytest.mark.asyncio
@@ -200,13 +254,16 @@ async def test_wrong_password_is_rejected(auth_service, user_service):
     await create_user(user_service)
 
     with pytest.raises(InvalidCredentialsError):
-        await auth_service.authenticate(email="dosen@itk.ac.id", password="PasswordSalah123")
+        await auth_service.authenticate(
+            identifier="dosen@itk.ac.id", password="PasswordSalah123"
+        )
 
 
 @pytest.mark.asyncio
-async def test_unknown_email_is_rejected(auth_service):
+@pytest.mark.parametrize("identifier", ["tidak-ada@itk.ac.id", "tidak-ada"])
+async def test_unknown_identifier_is_rejected(auth_service, identifier):
     with pytest.raises(InvalidCredentialsError):
-        await auth_service.authenticate(email="tidak-ada@itk.ac.id", password=PASSWORD)
+        await auth_service.authenticate(identifier=identifier, password=PASSWORD)
 
 
 @pytest.mark.asyncio
@@ -214,34 +271,40 @@ async def test_user_without_local_credential_cannot_login(auth_service, user_ser
     await create_user(user_service, password=None)
 
     with pytest.raises(InvalidCredentialsError):
-        await auth_service.authenticate(email="dosen@itk.ac.id", password=PASSWORD)
+        await auth_service.authenticate(identifier="dosen@itk.ac.id", password=PASSWORD)
 
 
 @pytest.mark.asyncio
-async def test_inactive_user_is_rejected(auth_service, user_service):
-    created = await create_user(user_service)
+@pytest.mark.parametrize("identifier", ["dosen@itk.ac.id", "dosen.itk"])
+async def test_inactive_user_is_rejected(auth_service, user_service, identifier):
+    created = await create_user(user_service, username="dosen.itk")
     await user_service.deactivate_user(created.id)
 
     with pytest.raises(InactiveUserError):
-        await auth_service.authenticate(email="dosen@itk.ac.id", password=PASSWORD)
+        await auth_service.authenticate(identifier=identifier, password=PASSWORD)
 
 
 @pytest.mark.asyncio
 async def test_all_authentication_failures_share_one_public_response(auth_service, user_service):
     """Response publik identik untuk semua penyebab: mencegah user enumeration."""
+    await create_user(user_service, username="aktif", email="aktif@itk.ac.id")
     await create_user(user_service, username="nonaktif", email="nonaktif@itk.ac.id")
     await user_service.deactivate_user((await user_service.get_user_by_email("nonaktif@itk.ac.id")).id)
     await create_user(user_service, username="tanpa.hash", email="tanpa-hash@itk.ac.id", password=None)
 
     failures = []
-    for email, password in (
+    for identifier, password in (
         ("tidak-ada@itk.ac.id", PASSWORD),
-        ("dosen@itk.ac.id", "PasswordSalah123"),
+        ("tidak-ada", PASSWORD),
+        ("aktif@itk.ac.id", "PasswordSalah123"),
+        ("aktif", "PasswordSalah123"),
         ("nonaktif@itk.ac.id", PASSWORD),
+        ("nonaktif", PASSWORD),
         ("tanpa-hash@itk.ac.id", PASSWORD),
+        ("tanpa.hash", PASSWORD),
     ):
         with pytest.raises(AuthDomainError) as error:
-            await auth_service.authenticate(email=email, password=password)
+            await auth_service.authenticate(identifier=identifier, password=password)
         failures.append((error.value.status_code, error.value.error_code, error.value.public_message))
 
     assert len(set(failures)) == 1

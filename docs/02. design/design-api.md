@@ -107,6 +107,8 @@ Request:
 }
 ```
 
+Field `username` berisi **identifier login**: username user atau email user.
+
 Response:
 
 ```json

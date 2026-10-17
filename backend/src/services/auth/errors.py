@@ -7,8 +7,8 @@ gagalnya dipetakan ke HTTP 403 dengan kode ``AUTHORIZATION_DENIED``
 (lihat ``docs/02. design/design-api.md`` §18 dan §19).
 
 Pesan publik authentication sengaja **identik** untuk seluruh penyebab kegagalan
-— email tidak terdaftar, password salah, user tidak aktif, maupun user tanpa
-credential lokal — supaya response tidak dapat dipakai melakukan *user
+— username/email tidak terdaftar, password salah, user tidak aktif, maupun user
+tanpa credential lokal — supaya response tidak dapat dipakai melakukan *user
 enumeration*. Detail penyebab tetap dicatat server-side melalui ``log_message``.
 """
 
@@ -35,7 +35,7 @@ class AuthDomainError(Exception):
 
 
 class InvalidCredentialsError(AuthDomainError):
-    """Kredensial tidak valid: email tidak terdaftar atau password tidak cocok."""
+    """Kredensial tidak valid: username/email tidak terdaftar atau password salah."""
 
 
 class InactiveUserError(AuthDomainError):
