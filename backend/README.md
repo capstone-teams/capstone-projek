@@ -717,3 +717,85 @@ Catatan:
 2. Kredensial default mengikuti `backend/.env.example`. Bila menjalankan backend langsung di host, siapkan `backend/.env` dan pastikan `DB_PORT` sama dengan port yang dipublikasikan compose.
 3. `./backend/src` dan `./backend/tests` di-mount ke container sehingga perubahan kode langsung terpakai (uvicorn `--reload`); `.venv` di dalam image tidak tertimpa.
 4. Port yang sudah dipakai dapat ditimpa: `DB_PORT=5433 APP_PORT=8001 docker compose up -d`.
+
+---
+
+## 🌱 Seed Akun Uji (BE-06.3)
+
+Tim frontend dan backend memakai akun uji yang sama untuk authentication dan
+authorization. Seed membuat akun berikut:
+
+| Role | Username | Email | Password |
+| :--- | :--- | :--- | :--- |
+| `INSTRUCTOR` | `dosen.demo` | `dosen.demo@itk.ac.id` | Dari environment/argumen — **tidak** di-commit |
+| `STUDENT` | `mahasiswa.demo` | `mahasiswa.demo@itk.ac.id` | Dari environment/argumen — **tidak** di-commit |
+
+Password akun uji dibagikan melalui kanal internal tim. Repository tidak
+menyimpan password, hash, maupun nilai default-nya.
+
+### Menjalankan seed (backend di host)
+
+Prasyarat: database berjalan dan migrasi sudah diterapkan.
+
+```bash
+cd backend
+uv run alembic upgrade head
+
+# Disarankan: password lewat environment, tidak muncul di shell history/process list
+SEED_INSTRUCTOR_PASSWORD='<password-internal>' \
+SEED_STUDENT_PASSWORD='<password-internal>' \
+uv run python -m scripts.seed_test_accounts
+
+# Alternatif: script membuatkan password acak dan menampilkannya sekali
+uv run python -m scripts.seed_test_accounts --generate-passwords
+
+# Alternatif lain (password dapat terlihat di process list)
+uv run python -m scripts.seed_test_accounts \
+  --instructor-password '<password-internal>' \
+  --student-password '<password-internal>'
+```
+
+### Menjalankan seed (Docker Compose)
+
+```bash
+docker compose exec backend uv run python -m scripts.seed_test_accounts --generate-passwords
+
+# atau berikan password lewat environment container
+docker compose exec \
+  -e SEED_INSTRUCTOR_PASSWORD='<password-internal>' \
+  -e SEED_STUDENT_PASSWORD='<password-internal>' \
+  backend uv run python -m scripts.seed_test_accounts
+```
+
+Script aman dijalankan berulang:
+
+- akun dicari berdasarkan email (unik dan stabil), bukan dibuat ulang;
+- field yang sudah sesuai tidak diubah;
+- password hanya di-hash ulang bila nilainya berbeda dari hash tersimpan;
+- role/nama/username yang berbeda diperbarui dan user non-aktif diaktifkan;
+- percobaan kedua melaporkan `unchanged` untuk kedua akun.
+
+Konflik identitas tidak ditimpa: bila username akun uji sudah dipakai user lain,
+seed berhenti dengan pesan yang aman (tanpa credential) alih-alih mengubah user
+tersebut.
+
+### Verifikasi login
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"dosen.demo@itk.ac.id","password":"<password-internal>"}'
+```
+
+Response `200` memuat `access_token`, `token_type`, dan `user.role` (untuk akun
+di atas: `INSTRUCTOR` / `STUDENT`). Panduan authentication lengkap ada di
+[`docs/02. design/auth-api-integration.md`](../docs/02.%20design/auth-api-integration.md).
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Definisi akun dan operasi seed idempotent | `src/services/seed/test_accounts.py` |
+| CLI (environment/argumen/generate password) | `scripts/seed_test_accounts.py` |
+| Pengujian, termasuk login melalui API | `tests/test_seed_test_accounts.py` |
+
+Exit code script: `0` berhasil, `1` kegagalan database/seed, `2` konfigurasi
+password tidak valid.
