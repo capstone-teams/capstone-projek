@@ -55,6 +55,10 @@ services:
       # SECRET_KEY dari environment configuration yang aman.
       APP_ENV: ${APP_ENV:-development}
       SECRET_KEY: ${SECRET_KEY:-dev-only-insecure-secret-key-change-me-32}
+      # Origin frontend development yang boleh memanggil API (BE-06.2).
+      # Nilai dapat ditimpa dari shell, contoh:
+      #   CORS_ORIGINS="http://localhost:3000,http://localhost:4173" docker compose up -d backend
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:

@@ -639,6 +639,83 @@ Pengujian yang membutuhkan PostgreSQL (`tests/test_auth_postgres.py`) dijalankan
 
 ---
 
+## 🌐 CORS & Akses Frontend Development (BE-06.2)
+
+Frontend Vite development berjalan di `http://localhost:3000`, sedangkan backend
+di `http://localhost:8000`. Daftar origin yang boleh memanggil API berasal dari
+environment, bukan di-hardcode:
+
+```dotenv
+# backend/.env
+CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+```
+
+Nilai default `backend/.env.example` sudah mencakup origin Vite tersebut.
+`CORS_ORIGINS` menerima JSON array atau daftar dipisah koma. Origin harus
+eksplisit `scheme://host[:port]`; wildcard (`*`), path, dan credential ditolak
+saat startup. Setiap origin dinormalisasi (lowercase, tanpa trailing slash) agar
+cocok persis dengan header `Origin` browser.
+
+| Kebutuhan | Development |
+| :--- | :--- |
+| Base URL API | `http://localhost:8000/api/v1` |
+| Port backend | `8000` (`APP_PORT` pada Docker Compose) |
+| Port frontend | `3000` (Vite `strictPort`) |
+| Origin yang diizinkan | `http://localhost:3000`, `http://127.0.0.1:3000` |
+
+Perilaku middleware:
+
+- preflight dari origin terdaftar → `200` + `Access-Control-Allow-Origin`,
+  `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`;
+- preflight dari origin tidak terdaftar → `400 Disallowed CORS origin`;
+- request sederhana dari origin tidak terdaftar tetap diproses server, tetapi
+  **tanpa** header CORS sehingga browser memblokir responsnya;
+- header CORS tetap ada pada response error (`401`, `422`, dst.);
+- `allow_credentials=False` karena authentication memakai bearer token, bukan
+  cookie;
+- `Idempotency-Key` dan `Authorization` diizinkan sejak awal, dan
+  `WWW-Authenticate` diekspos agar frontend dapat membaca challenge 401.
+
+Frontend memakai dua mode:
+
+```dotenv
+# Default: lewat proxy Vite, same-origin, tidak perlu CORS.
+VITE_API_BASE_URL=/api/v1
+VITE_BACKEND_URL=http://localhost:8000
+
+# Memanggil backend langsung: cross-origin, CORS wajib cocok.
+VITE_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+Verifikasi cepat dari terminal:
+
+```bash
+# Preflight dari origin frontend -> 200 + allow-origin
+curl -i -X OPTIONS http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Origin: http://localhost:3000" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization,content-type"
+
+# Origin yang tidak terdaftar -> 400
+curl -i -X OPTIONS http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Origin: http://evil.example" \
+  -H "Access-Control-Request-Method: POST"
+```
+
+Origin production ditentukan pada environment deployment; jangan menambahkan
+origin production ke `.env.example`. Panduan lengkap, termasuk env frontend dan
+troubleshooting, ada di
+[`docs/03. quality-plan/cors-development.md`](../docs/03.%20quality-plan/cors-development.md).
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Middleware CORS | `src/middlewares/cors.py` |
+| Parsing/validasi `CORS_ORIGINS` | `src/config/settings.py` |
+| Pemasangan pada aplikasi | `src/main.py` (`create_app`) |
+| Pengujian | `tests/test_cors.py`, `tests/test_config.py` |
+
+---
+
 ## 🐳 Menjalankan dengan Docker
 
 `docker-compose.yml` di root repository menjalankan **PostgreSQL 16 + backend** dengan konfigurasi yang sama untuk seluruh tim, termasuk migrasi Alembic yang dijalankan otomatis saat container start.
