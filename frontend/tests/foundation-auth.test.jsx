@@ -4,14 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/hooks/useAuth';
 import { MOODLE_SESSION_KEY } from '../src/services/config';
+import { AUTH_STATUS, SESSION_NOTICE } from '../src/types/auth';
 
 const service = vi.hoisted(() => ({
   requestToken: vi.fn(), resolveSession: vi.fn(), setMoodleToken: vi.fn(),
   onMoodleTokenInvalid: vi.fn(), login: vi.fn(), logout: vi.fn(),
 }));
+const apiClient = vi.hoisted(() => ({
+  onUnauthorized: vi.fn(),
+}));
 vi.mock('../src/services/moodle/moodleClient', () => service);
 vi.mock('../src/services/moodle/moodleApi', () => service);
 vi.mock('../src/services/authService', () => service);
+vi.mock('../src/services/apiClient', () => apiClient);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const teacher = { user: { id: 3, fullname: 'Rina Kartika', role: 'dosen' }, site: { name: 'Moodle ITK' } };
@@ -117,5 +122,53 @@ describe('FE-04.1 session lifecycle', () => {
     await act(async () => state.login('dosen', 'dosen123'));
     expect(state.user).toEqual(teacher.user);
     expect(JSON.parse(localStorage.getItem(MOODLE_SESSION_KEY)).token).toBe('mock-3-test');
+  });
+
+  it('preserves Moodle session and records backendError when backend login returns 401 error', async () => {
+    service.requestToken.mockResolvedValueOnce('mock-3-test');
+    service.resolveSession.mockResolvedValueOnce(teacher);
+    const authFailedError = new Error('Authentication failed (HTTP 401)');
+    authFailedError.status = 401;
+    service.login.mockRejectedValueOnce(authFailedError);
+    await mount();
+    await act(async () => state.login('dosen', 'dosen123'));
+    expect(state.user).toEqual(teacher.user);
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.sessionNotice).toBeNull();
+    expect(state.backendError).toBe(authFailedError);
+    expect(JSON.parse(localStorage.getItem(MOODLE_SESSION_KEY)).token).toBe('mock-3-test');
+  });
+
+  it('triggers expire, clears session, and notifies SESSION_NOTICE.EXPIRED when unauthorized (401) occurs', async () => {
+    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
+    service.resolveSession.mockResolvedValueOnce(teacher);
+    await mount();
+    expect(state.user).toEqual(teacher.user);
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.sessionNotice).toBeNull();
+
+    const onExpire = apiClient.onUnauthorized.mock.calls.find(
+      (call) => typeof call[0] === 'function',
+    )?.[0];
+    expect(onExpire).toBeDefined();
+
+    await act(async () => {
+      onExpire();
+    });
+
+    expect(state.user).toBeNull();
+    expect(state.status).toBe(AUTH_STATUS.ANONYMOUS);
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
+    expect(localStorage.getItem(MOODLE_SESSION_KEY)).toBeNull();
+    expect(service.logout).toHaveBeenCalled();
+  });
+
+  it('unregisters onUnauthorized handler on unmount', async () => {
+    await mount();
+    expect(apiClient.onUnauthorized).toHaveBeenCalledWith(expect.any(Function));
+    await act(async () => root?.unmount());
+    root = null;
+    expect(apiClient.onUnauthorized).toHaveBeenLastCalledWith(null);
   });
 });

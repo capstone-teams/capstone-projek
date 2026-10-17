@@ -6,6 +6,7 @@ import * as backendAuth from '../services/authService';
 import { MOODLE_SESSION_KEY } from '../services/config';
 import { readJson, writeJson } from '../utils/storage';
 import { AUTH_STATUS, SESSION_NOTICE } from '../types/auth';
+import { onUnauthorized } from '../services/apiClient';
 
 // Bila localStorage tidak tersedia, sesi hanya hidup selama tab terbuka.
 function readStoredToken() {
@@ -50,6 +51,7 @@ export function AuthProvider({ children }) {
     const id = ++generation.current;
     const isCurrent = () => id === generation.current;
     onMoodleTokenInvalid(expire);
+    onUnauthorized(expire);
     const token = readStoredToken();
     if (token) {
       setMoodleToken(token);
@@ -61,6 +63,7 @@ export function AuthProvider({ children }) {
     return () => {
       generation.current += 1;
       onMoodleTokenInvalid(null);
+      onUnauthorized(null);
     };
   }, [expire]);
 
