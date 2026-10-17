@@ -6,7 +6,11 @@ dipakai tim frontend dan backend saat menguji authentication/authorization:
 | Role | Username | Email |
 | :--- | :--- | :--- |
 | INSTRUCTOR | `dosen.demo` | `dosen.demo@itk.ac.id` |
-| STUDENT | `mahasiswa.demo` | `mahasiswa.demo@itk.ac.id` |
+| STUDENT | `11231023` | `11231023@student.itk.ac.id` |
+
+Identitas student mengikuti konvensi ITK: username adalah NIM dan email adalah
+``<NIM>@student.itk.ac.id``. Instructor memakai alamat berbasis nama, bukan NIP
+(``<NIP>@dosen.itk.ac.id``).
 
 Password **tidak** ditentukan di repository. Pemanggil wajib memberikannya dari
 environment/argumen (lihat ``scripts/seed_test_accounts.py``), sehingga tidak
@@ -109,10 +113,10 @@ INSTRUCTOR_ACCOUNT = SeedAccount(
 )
 
 STUDENT_ACCOUNT = SeedAccount(
-    username="mahasiswa.demo",
+    username="11231023",
     firstname="Mahasiswa",
     lastname="Demo",
-    email="mahasiswa.demo@itk.ac.id",
+    email="11231023@student.itk.ac.id",
     role=UserRole.STUDENT,
 )
 
