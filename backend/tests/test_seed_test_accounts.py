@@ -92,6 +92,17 @@ def test_default_accounts_cover_one_instructor_and_one_student():
     assert len({account.username for account in DEFAULT_SEED_ACCOUNTS}) == 2
 
 
+def test_default_accounts_follow_itk_identity_format():
+    """Mahasiswa memakai NIM@student, dosen memakai alamat berbasis nama."""
+
+    assert STUDENT_ACCOUNT.username.isdigit()
+    assert STUDENT_ACCOUNT.email == f"{STUDENT_ACCOUNT.username}@student.itk.ac.id"
+
+    assert not INSTRUCTOR_ACCOUNT.username.isdigit()
+    assert INSTRUCTOR_ACCOUNT.email == f"{INSTRUCTOR_ACCOUNT.username}@itk.ac.id"
+    assert not INSTRUCTOR_ACCOUNT.email.endswith("@dosen.itk.ac.id")
+
+
 # ---------------------------------------------------------------------------
 # Membuat dan mengulang seed
 # ---------------------------------------------------------------------------

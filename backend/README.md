@@ -728,7 +728,11 @@ authorization. Seed membuat akun berikut:
 | Role | Username | Email | Password |
 | :--- | :--- | :--- | :--- |
 | `INSTRUCTOR` | `dosen.demo` | `dosen.demo@itk.ac.id` | Dari environment/argumen — **tidak** di-commit |
-| `STUDENT` | `mahasiswa.demo` | `mahasiswa.demo@itk.ac.id` | Dari environment/argumen — **tidak** di-commit |
+| `STUDENT` | `11231023` | `11231023@student.itk.ac.id` | Dari environment/argumen — **tidak** di-commit |
+
+Identitas mengikuti konvensi ITK: mahasiswa memakai NIM sebagai username dan
+`<NIM>@student.itk.ac.id` sebagai email; dosen memakai alamat berbasis nama,
+bukan `<NIP>@dosen.itk.ac.id`.
 
 Password akun uji dibagikan melalui kanal internal tim. Repository tidak
 menyimpan password, hash, maupun nilai default-nya.
@@ -784,11 +788,13 @@ tersebut.
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"dosen.demo@itk.ac.id","password":"<password-internal>"}'
+  -d '{"username":"11231023@student.itk.ac.id","password":"<password-internal>"}'
 ```
 
-Response `200` memuat `access_token`, `token_type`, dan `user.role` (untuk akun
-di atas: `INSTRUCTOR` / `STUDENT`). Panduan authentication lengkap ada di
+Identifier dapat berupa username (`11231023`) maupun email
+(`11231023@student.itk.ac.id`). Response `200` memuat `access_token`,
+`token_type`, dan `user.role` (untuk akun di atas: `INSTRUCTOR` / `STUDENT`).
+Panduan authentication lengkap ada di
 [`docs/02. design/auth-api-integration.md`](../docs/02.%20design/auth-api-integration.md).
 
 | Komponen | Lokasi |
