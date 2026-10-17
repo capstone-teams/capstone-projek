@@ -4,8 +4,9 @@ Router ini hanya menangani urusan HTTP: kontrak endpoint, dependency, dan
 response DTO. Verifikasi kredensial, penerbitan token, serta pemulihan current
 user berada di ``src.services.auth``.
 
-Field ``username`` pada body login berisi email user (kontrak API design-api
-§5.1) — lihat :class:`src.schemas.auth.LoginRequest`.
+Field ``username`` pada body login berisi identifier login — username atau email
+user (kontrak API design-api §5.1) — lihat
+:class:`src.schemas.auth.LoginRequest`.
 """
 
 from __future__ import annotations
@@ -32,11 +33,12 @@ async def login(
 ) -> LoginResponse:
     """Verifikasi kredensial dan terbitkan access token.
 
-    Role pada authentication state berasal dari record User — client tidak dapat
+    ``payload.username`` boleh berisi username atau email user. Role pada
+    authentication state berasal dari record User — client tidak dapat
     menentukan role-nya sendiri. Kegagalan authentication menghasilkan
     401 ``AUTHENTICATION_FAILED`` dengan pesan publik yang seragam.
     """
-    user = await service.authenticate(email=payload.username, password=payload.password)
+    user = await service.authenticate(identifier=payload.username, password=payload.password)
     access_token = await service.issue_access_token(user)
 
     return LoginResponse(

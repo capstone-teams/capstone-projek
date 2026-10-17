@@ -14,7 +14,7 @@ service tidak melakukan pre-check yang bisa kalah cepat.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +22,7 @@ from src.models.user import User as UserEntity
 from src.services.user.domain import User
 from src.services.user.errors import DuplicateEmailError, DuplicateUsernameError
 from src.services.user.mappers import apply_to_entity, to_domain
-from src.services.user.validation import normalize_email
+from src.services.user.validation import normalize_email, normalize_username
 
 __all__ = ["UserRepository"]
 
@@ -57,7 +57,7 @@ class UserRepository:
         return to_domain(entity) if entity is not None else None
 
     async def find_by_email(self, email: str) -> User | None:
-        """Cari user berdasarkan email (identity attribute authentication).
+        """Cari user berdasarkan email (salah satu identifier login aplikasi).
 
         Email dinormalisasi lebih dulu supaya pencarian konsisten dengan nilai
         yang disimpan (lowercase), dan mengembalikan ``None`` bila tidak ada.
@@ -65,6 +65,35 @@ class UserRepository:
         statement = select(UserEntity).where(UserEntity.email == normalize_email(email))
         entity = (await self._session.execute(statement)).scalar_one_or_none()
         return to_domain(entity) if entity is not None else None
+
+    async def find_by_username(self, username: str) -> User | None:
+        """Cari user berdasarkan username (atribut Moodle yang juga dipakai login).
+
+        Pencocokan persis diutamakan agar hasilnya deterministik bila ada dua
+        user yang username-nya hanya berbeda kapitalisasi (unique constraint
+        database bersifat case-sensitive). Bila tidak ada yang persis, pencarian
+        diulang tanpa membedakan kapitalisasi dan hanya dipakai bila hasilnya
+        tunggal; identifier yang ambigu diperlakukan seperti tidak ditemukan.
+        """
+        wanted = normalize_username(username)
+
+        exact = (
+            await self._session.execute(
+                select(UserEntity).where(UserEntity.username == wanted)
+            )
+        ).scalar_one_or_none()
+        if exact is not None:
+            return to_domain(exact)
+
+        statement = (
+            select(UserEntity)
+            .where(func.lower(UserEntity.username) == wanted.lower())
+            .limit(2)
+        )
+        matches = (await self._session.execute(statement)).scalars().all()
+        if len(matches) == 1:
+            return to_domain(matches[0])
+        return None
 
     async def update(self, user: User) -> User | None:
         """Perbarui user yang sudah dipersist; ``None`` bila barisnya tidak ada."""

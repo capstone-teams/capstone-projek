@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.services.auth.passwords import MAX_PASSWORD_LENGTH
 from src.services.user.enums import UserRole
-from src.services.user.validation import MAX_EMAIL_LENGTH
+from src.services.user.validation import MAX_EMAIL_LENGTH, MAX_USERNAME_LENGTH
 
 __all__ = [
     "AuthenticatedUser",
@@ -26,21 +26,30 @@ __all__ = [
     "LoginResponse",
 ]
 
+# Field login menerima username atau email; batas panjangnya mengikuti yang
+# terpanjang agar nilai valid untuk salah satu bentuk tidak ditolak schema.
+MAX_LOGIN_IDENTIFIER_LENGTH = max(MAX_EMAIL_LENGTH, MAX_USERNAME_LENGTH)
+
 
 class LoginRequest(BaseModel):
     """Body ``POST /api/v1/auth/login``.
 
-    Field ``username`` mengikuti kontrak API (design-api §5.1) dan **berisi
-    email** user, karena email adalah identity attribute untuk login aplikasi.
-    Ini bukan kolom ``users.username`` (username Moodle) — nilai username tidak
-    pernah dipakai untuk login lokal.
+    Field ``username`` mengikuti kontrak API (design-api §5.1) dan berisi
+    **identifier login**: username (kolom ``users.username``, atribut Moodle)
+    atau email user. Keduanya menunjuk ke record User yang sama dan password
+    tetap diverifikasi terhadap credential lokal.
     """
 
     model_config = ConfigDict(
-        json_schema_extra={"example": {"username": "dosen@itk.ac.id", "password": "rahasia123"}}
+        json_schema_extra={"example": {"username": "dosen.itk", "password": "rahasia123"}}
     )
 
-    username: str = Field(min_length=1, max_length=MAX_EMAIL_LENGTH)
+    username: str = Field(
+        min_length=1,
+        max_length=MAX_LOGIN_IDENTIFIER_LENGTH,
+        description="Username atau email user.",
+        examples=["dosen.itk", "dosen@itk.ac.id"],
+    )
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
 
 

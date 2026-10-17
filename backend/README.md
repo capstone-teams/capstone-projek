@@ -189,7 +189,7 @@ Authentication menjawab **"siapa User ini?"**. Keputusan boleh/tidaknya sebuah o
 | `POST` | `/api/v1/auth/login` | Verifikasi kredensial; mengembalikan `access_token`, `token_type`, dan identitas (`id`, `role`) |
 | `GET` | `/api/v1/auth/me` | Mengembalikan current user (`id`, `username`, `firstname`, `lastname`, `email`, `role`); membutuhkan header `Authorization: Bearer <access_token>` |
 
-`username` pada login adalah **email** user (email adalah identity attribute untuk login aplikasi). Kolom `users.username` adalah atribut user Moodle — dipakai saat user dibuat/di-sinkronkan ke Moodle (BE-04) — dan **tidak** dipakai untuk login lokal.
+Field `username` pada body login adalah **identifier login** dan boleh berisi **username** maupun **email** user. Email dicocokkan tanpa membedakan kapitalisasi; username dicocokkan persis terlebih dahulu, lalu tanpa membedakan kapitalisasi bila hasilnya tunggal. Kolom `users.username` adalah atribut user Moodle — dipakai saat user dibuat/di-sinkronkan ke Moodle (BE-04) — dan sekarang juga dapat dipakai untuk login lokal. Bila sebuah nilai cocok dengan email user A sekaligus username user B, email diutamakan.
 
 Field identity user (`username`, `firstname`, `lastname`, `email`, `password`) sengaja memakai nama atribut Moodle (`core_user_create_users`) supaya sinkronisasi tidak memerlukan tabel pemetaan tersendiri. `password` menyimpan **hash** bcrypt (lihat `src/services/auth/passwords.py`); password mentah tidak pernah disimpan.
 

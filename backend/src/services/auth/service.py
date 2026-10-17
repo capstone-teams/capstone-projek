@@ -2,8 +2,9 @@
 
 Alur yang disediakan:
 
-1. ``authenticate(email, password)`` — memverifikasi kredensial terhadap record
-   User dan mengembalikan user yang terautentikasi (atau error domain);
+1. ``authenticate(identifier, password)`` — memverifikasi kredensial terhadap
+   record User dan mengembalikan user yang terautentikasi (atau error domain);
+   ``identifier`` boleh berupa **username** maupun **email**;
 2. ``issue_access_token(user)`` — membentuk authentication state untuk request
    berikutnya;
 3. ``get_authenticated_user(token)`` — memulihkan current user dari token,
@@ -14,9 +15,9 @@ sebuah operasi adalah tanggung jawab authorization (BE-03.4). Tidak ada logika
 Moodle, agent, maupun fitur bisnis di sini.
 
 Catatan field: ``users.username`` adalah atribut Moodle (dipakai saat membuat
-user di Moodle), sedangkan **login aplikasi memakai email** sebagai identity
-attribute. Kontrak API ``POST /api/v1/auth/login`` mengirim field ``username``
-(design-api §5.1), dan nilainya adalah email — lihat
+user di Moodle) yang juga dapat dipakai login. Kontrak API
+``POST /api/v1/auth/login`` mengirim field ``username`` (design-api §5.1) yang
+berisi identifier login: username atau email — lihat
 :class:`src.schemas.auth.LoginRequest`.
 """
 
@@ -51,30 +52,28 @@ class AuthService:
         """Bangun service dengan User Service di atas session yang diberikan."""
         return cls(UserService.from_session(session))
 
-    async def authenticate(self, *, email: str, password: str) -> User:
+    async def authenticate(self, *, identifier: str, password: str) -> User:
         """Verifikasi kredensial dan kembalikan user yang terautentikasi.
 
-        ``email`` adalah identity attribute pada data model dan menjadi satu-
-        satunya jalur login; ``username`` (atribut Moodle) tidak dipakai untuk
-        login lokal.
+        ``identifier`` boleh berupa **email** maupun **username** (atribut
+        Moodle). Email dicoba lebih dulu karena bersifat case-insensitive dan
+        merupakan identifier login historis; bila tidak ada yang cocok,
+        username dicoba sehingga akun yang username-nya kebetulan berbentuk
+        email tetap dapat login.
 
-        Semua penyebab kegagalan menghasilkan error publik yang sama: email
-        tidak terdaftar, email tidak berbentuk email yang valid, password tidak
-        cocok, user non-aktif, dan user tanpa credential lokal (``password``
-        kosong). Identifier yang salah bentuk karena itu tidak boleh menjadi
-        500 maupun membocorkan perbedaan perilaku.
+        Semua penyebab kegagalan menghasilkan error publik yang sama:
+        identifier tidak terdaftar, identifier tidak berbentuk email/username
+        yang valid, password tidak cocok, user non-aktif, dan user tanpa
+        credential lokal (``password`` kosong). Identifier yang salah bentuk
+        karena itu tidak boleh menjadi 500 maupun membocorkan perbedaan
+        perilaku.
         """
-        try:
-            user = await self._users.find_user_by_email(email)
-        except UserValidationError:
-            # Email yang tidak valid tidak mungkin cocok dengan record mana pun;
-            # diperlakukan seperti email tidak terdaftar.
-            user = None
+        user = await self._find_user(identifier)
 
         if user is None:
-            # Verifikasi dummy agar waktu respons tidak membocorkan keberadaan email.
+            # Verifikasi dummy agar waktu respons tidak membocorkan keberadaan user.
             verify_password(password, None)
-            raise InvalidCredentialsError("login gagal: email tidak terdaftar")
+            raise InvalidCredentialsError("login gagal: identifier tidak terdaftar")
 
         if not verify_password(password, user.password):
             raise InvalidCredentialsError(
@@ -87,6 +86,37 @@ class AuthService:
             )
 
         return user
+
+    async def _find_user(self, identifier: str) -> User | None:
+        """Cari user yang cocok dengan email atau username.
+
+        Identifier dinormalisasi seperlunya oleh masing-masing lookup. Bila
+        identifier tidak valid untuk salah satu bentuk, lookup tersebut
+        dianggap tidak menemukan apa pun — bukan error — supaya kegagalan
+        authentication tetap seragam.
+
+        Bila sebuah nilai cocok dengan email user A sekaligus username user B,
+        email diutamakan. Aturan ini deterministik dan menjaga kompatibilitas
+        dengan klien yang selama ini mengirim email pada field ``username``.
+        """
+        if not isinstance(identifier, str):
+            return None
+
+        candidate = identifier.strip()
+        if not candidate:
+            return None
+
+        try:
+            user = await self._users.find_user_by_email(candidate)
+        except UserValidationError:
+            user = None
+        if user is not None:
+            return user
+
+        try:
+            return await self._users.find_user_by_username(candidate)
+        except UserValidationError:
+            return None
 
     async def issue_access_token(
         self, user: User, *, expires_delta: timedelta | None = None
