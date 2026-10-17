@@ -117,10 +117,14 @@ Response:
   "token_type": "bearer",
   "user": {
     "id": "string",
-    "role": "instructor"
+    "role": "INSTRUCTOR"
   }
 }
 ```
+
+Token adalah JWT `HS256` dengan masa berlaku `ACCESS_TOKEN_EXPIRE_MINUTES`
+(default 30 menit). Role tidak menjadi klaim token; backend membacanya ulang
+dari record User pada setiap request.
 
 ---
 
@@ -135,11 +139,23 @@ Response:
 ```json
 {
   "id": "string",
-  "name": "string",
+  "username": "string",
+  "firstname": "string",
+  "lastname": "string",
   "email": "string",
-  "role": "instructor"
+  "role": "INSTRUCTOR"
 }
 ```
+
+Field identity mengikuti atribut user Moodle (`username`, `firstname`,
+`lastname`, `email`). Nilai `role` adalah enum kanonik backend: `INSTRUCTOR`,
+`STUDENT`, atau `ADMIN`.
+
+> Panduan integrasi lengkap — contoh request/response, format dan masa berlaku
+> token, perilaku token kedaluwarsa, matriks role, serta daftar kode error —
+> tersedia di
+> [`auth-api-integration.md`](auth-api-integration.md) (BE-06.1). Dokumentasi
+> OpenAPI interaktif tersedia pada `/docs` di environment development.
 
 ---
 

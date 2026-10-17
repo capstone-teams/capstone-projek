@@ -309,6 +309,45 @@ Respons kegagalan mengikuti design-api §18/§19:
 
 ---
 
+## 📘 Dokumentasi API Authentication (BE-06.1)
+
+Frontend dapat memakai endpoint authentication tanpa membaca source code
+backend. Dokumentasi tersedia otomatis dari OpenAPI saat server development
+berjalan:
+
+| URL | Isi |
+| :--- | :--- |
+| `http://localhost:8000/docs` | Swagger UI dengan contoh request/response dan tombol **Try it out** |
+| `http://localhost:8000/redoc` | ReDoc |
+| `http://localhost:8000/openapi.json` | Dokumen OpenAPI mentah |
+
+Panduan integrasi lengkap — contoh login dan current user, format/masa berlaku
+token, perilaku token kedaluwarsa, matriks role, format error §18, serta
+walkthrough `curl` — berada di
+[`docs/02. design/auth-api-integration.md`](../docs/02.%20design/auth-api-integration.md).
+
+Ringkasan kontrak:
+
+| Endpoint | Sukses | Gagal |
+| :--- | :--- | :--- |
+| `POST /api/v1/auth/login` | `200` + `access_token`, `token_type`, `user.id`, `user.role` | `401 AUTHENTICATION_FAILED`, `422 VALIDATION_FAILED` |
+| `GET /api/v1/auth/me` | `200` + identity user dan role | `401 AUTHENTICATION_FAILED` (+ `WWW-Authenticate: Bearer`) |
+
+Token adalah JWT `HS256` dengan klaim `sub`/`iat`/`exp`; role **tidak** menjadi
+klaim token dan selalu dibaca ulang dari database. Masa berlaku mengikuti
+`ACCESS_TOKEN_EXPIRE_MINUTES` (default 30 menit). Tidak ada endpoint
+refresh/logout — logout dilakukan client dengan menghapus token.
+
+Semua error memakai amplop design-api §18. Sejak BE-06.1, error validasi request
+juga memakai amplop tersebut (`422 VALIDATION_FAILED`) alih-alih bentuk default
+FastAPI, dan nilai input (termasuk password) tidak pernah di-echo.
+
+Dokumentasi ini diuji otomatis oleh `tests/test_auth_documentation.py`, termasuk
+ketersediaan `/docs`, `/redoc`, `/openapi.json`, kelengkapan contoh, security
+scheme Bearer, dan format error.
+
+---
+
 ## 📄 RPS Upload & Docling Conversion (BE-05)
 
 Modul ini menyediakan alur awal pemrosesan RPS: mengunggah dan menyimpan dokumen

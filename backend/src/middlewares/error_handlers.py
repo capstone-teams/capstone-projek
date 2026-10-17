@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.services.auth.errors import AuthDomainError
@@ -17,6 +18,7 @@ def _error_response(
     error_code: str,
     message: str,
     headers: dict[str, str] | None = None,
+    details: list[dict[str, str]] | None = None,
 ) -> JSONResponse:
     """Build the standard API error envelope (design-api §18)."""
     return JSONResponse(
@@ -25,10 +27,48 @@ def _error_response(
             "error": {
                 "code": error_code,
                 "message": message,
-                "details": [],
+                "details": details or [],
             }
         },
         headers=headers,
+    )
+
+
+def _validation_details(exc: RequestValidationError) -> list[dict[str, str]]:
+    """Ringkas error validasi request menjadi ``details`` yang aman.
+
+    Hanya lokasi dan pesan validasi yang dikembalikan. Nilai input sengaja
+    **tidak** disalin ke response: body login memuat password, sehingga echo
+    input akan membocorkan credential ke response dan melanggar design-api §23.
+    """
+    details: list[dict[str, str]] = []
+    for error in exc.errors():
+        location = [str(part) for part in error.get("loc", ()) if part != "body"]
+        details.append(
+            {
+                "field": ".".join(location) or "body",
+                "message": str(error.get("msg", "Nilai tidak valid.")),
+            }
+        )
+    return details
+
+
+async def request_validation_error_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Kembalikan 422 ``VALIDATION_FAILED`` dengan amplop error standar.
+
+    Tanpa handler ini FastAPI memakai bentuk default ``{"detail": [...]}`` yang
+    berbeda dari design-api §18, sehingga frontend harus menangani dua bentuk
+    error. Handler ini menyatukannya untuk seluruh endpoint, dan tidak pernah
+    mengembalikan nilai input yang dikirim client.
+    """
+    logger.info("Request validation failed on %s", request.url.path)
+    return _error_response(
+        status_code=422,
+        error_code="VALIDATION_FAILED",
+        message="Data request tidak valid.",
+        details=_validation_details(exc),
     )
 
 
@@ -106,9 +146,60 @@ async def rps_error_handler(request: Request, exc: RPSDomainError) -> JSONRespon
     )
 
 
+ERROR_RESPONSE_SCHEMA_REF = "#/components/schemas/ErrorResponse"
+
+
+def _document_standard_validation_error(app: FastAPI) -> None:
+    """Ganti schema 422 default FastAPI dengan amplop error design-api §18.
+
+    ``request_validation_error_handler`` membuat response 422 yang sebenarnya
+    memakai amplop standar. OpenAPI, bagaimanapun, tetap menyertakan
+    ``HTTPValidationError`` default pada setiap endpoint yang memiliki body atau
+    path parameter. Tanpa penyesuaian ini dokumentasi endpoint selain
+    authentication akan menampilkan bentuk error yang tidak pernah dikirim
+    server.
+
+    Response 422 yang sudah didokumentasikan eksplisit (mis. login) dibiarkan,
+    sehingga contoh dan deskripsinya tidak tertimpa.
+    """
+    original_openapi = app.openapi
+
+    def openapi() -> dict:
+        schema = original_openapi()
+        for path_item in schema.get("paths", {}).values():
+            for operation in path_item.values():
+                if not isinstance(operation, dict):
+                    continue
+                response = operation.get("responses", {}).get("422")
+                if response is None:
+                    continue
+                media_type = response.setdefault("content", {}).setdefault(
+                    "application/json", {}
+                )
+                current_ref = media_type.get("schema", {}).get("$ref", "")
+                if current_ref.endswith("/ErrorResponse"):
+                    continue
+
+                media_type["schema"] = {"$ref": ERROR_RESPONSE_SCHEMA_REF}
+                response["description"] = (
+                    "Request tidak valid. Body mengikuti design-api §18; "
+                    "`error.code` adalah `VALIDATION_FAILED` untuk schema request "
+                    "atau `INVALID_REQUEST` untuk nilai domain."
+                )
+        return schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
+
+
 def register_exception_handlers(app: FastAPI) -> None:
-    """Register the application-wide exception handlers."""
+    """Register the application-wide exception handlers.
+
+    Handler validasi request juga menyelaraskan schema 422 pada OpenAPI, supaya
+    dokumentasi menampilkan amplop error yang benar-benar dikirim server.
+    """
+    app.add_exception_handler(RequestValidationError, request_validation_error_handler)
     app.add_exception_handler(LLMProviderError, llm_provider_error_handler)
     app.add_exception_handler(AuthDomainError, auth_error_handler)
     app.add_exception_handler(UserNotFoundError, user_not_found_error_handler)
     app.add_exception_handler(RPSDomainError, rps_error_handler)
+    _document_standard_validation_error(app)
