@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 export async function seedSession(page, role = 'dosen') {
   await page.addInitScript(({ role }) => {
     localStorage.setItem('agentic-lms.moodle-session', JSON.stringify({ token: role === 'dosen' ? 'mock-3-test' : 'mock-5-test' }));
-    if (role === 'dosen') localStorage.setItem('agentic-lms.token', 'mock-token:user_001');
+    localStorage.setItem('agentic-lms.token', role === 'dosen' ? 'mock-token:user_001' : 'mock-token:user_002');
   }, { role });
 }
 
@@ -20,14 +20,14 @@ test('anonymous access requires Moodle login and reaches the dashboard', async (
   await expect(page).toHaveURL(/\/my\/courses$/);
 });
 
-test('Moodle rejects the wrong password and preserves the login view', async ({ page }) => {
+test('backend rejects the wrong password and preserves the login view', async ({ page }) => {
   await page.goto('/login');
   await page.getByLabel('Username', { exact: true }).fill('dosen');
   await page.getByLabel('Kata sandi', { exact: true }).fill('keliru');
   await page.getByRole('button', { name: 'Masuk', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Username atau password salah');
+  await expect(page.getByRole('alert')).toContainText('Autentikasi gagal.');
   await expect(page).toHaveURL(/\/login$/);
-  expect(await page.evaluate(() => localStorage.getItem('agentic-lms.moodle-session'))).toBeNull();
+  expect(await page.evaluate(() => [localStorage.getItem('agentic-lms.token'), localStorage.getItem('agentic-lms.moodle-session')])).toEqual([null, null]);
 });
 
 test('mobile login controls and password recovery keep navigation usable', async ({ page }) => {

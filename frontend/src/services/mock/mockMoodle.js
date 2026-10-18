@@ -14,6 +14,9 @@ const USERS = {
   5: { id: 5, username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id' },
   6: { id: 6, username: 'mahasiswa2', firstname: 'Siti', lastname: 'Rahmawati', email: 'mahasiswa2@student.itk.ac.id' },
   7: { id: 7, username: 'mahasiswa3', firstname: 'Dimas', lastname: 'Nugroho', email: 'mahasiswa3@student.itk.ac.id' },
+  // Akun uji backend (BE-06.3); login aplikasi mewajibkan akun yang sama di backend dan Moodle.
+  8: { id: 8, username: 'dosen.demo', firstname: 'Dosen', lastname: 'Demo', email: 'dosen.demo@itk.ac.id' },
+  9: { id: 9, username: '11231023', firstname: 'Mahasiswa', lastname: 'Demo', email: '11231023@student.itk.ac.id' },
 };
 const fullname = (u) => `${u.firstname} ${u.lastname}`;
 const ROLE_NAMES = { editingteacher: 'Teacher', teacher: 'Non-editing teacher', student: 'Student' };
@@ -25,7 +28,7 @@ const COURSE_DEFS = [
     fullname: 'Pemrograman Web',
     category: 'Teknik Informatika',
     summary: '<p>Pengembangan aplikasi web modern: HTML, CSS, JavaScript, HTTP, REST API, dan framework berbasis komponen.</p>',
-    enrol: { 3: 'editingteacher', 5: 'student', 6: 'student', 7: 'student' },
+    enrol: { 3: 'editingteacher', 8: 'editingteacher', 5: 'student', 6: 'student', 7: 'student', 9: 'student' },
     weeks: [
       ['Pengantar Pemrograman Web', 'Arsitektur client-server, cara kerja browser, dan protokol HTTP.'],
       ['HTML5 dan Semantik', 'Struktur dokumen, elemen semantik, formulir, dan aksesibilitas dasar.'],
@@ -41,7 +44,7 @@ const COURSE_DEFS = [
     fullname: 'Basis Data',
     category: 'Teknik Informatika',
     summary: '<p>Konsep basis data relasional, pemodelan ER, normalisasi, dan SQL.</p>',
-    enrol: { 4: 'editingteacher', 3: 'teacher', 5: 'student', 6: 'student', 7: 'student' },
+    enrol: { 4: 'editingteacher', 3: 'teacher', 5: 'student', 6: 'student', 7: 'student', 9: 'student' },
     weeks: [
       ['Pengantar Basis Data', 'Konsep data, DBMS, dan arsitektur tiga level.'],
       ['Model Entity-Relationship', 'Entitas, atribut, relasi, dan kardinalitas.'],
@@ -55,7 +58,7 @@ const COURSE_DEFS = [
     fullname: 'Pemrograman Web (Kelas B)',
     category: 'Teknik Informatika',
     summary: '<p>Kelas paralel Pemrograman Web. Materi mingguan disiapkan dengan generator AI.</p>',
-    enrol: { 3: 'editingteacher', 6: 'student', 7: 'student' },
+    enrol: { 3: 'editingteacher', 8: 'editingteacher', 6: 'student', 7: 'student' },
     weeks: [
       ['Pengantar Pemrograman Web', 'Arsitektur client-server, cara kerja browser, dan protokol HTTP.'],
       ['HTML5 dan Semantik', 'Struktur dokumen, elemen semantik, formulir, dan aksesibilitas dasar.'],

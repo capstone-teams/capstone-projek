@@ -6,8 +6,8 @@
  * Semua data hanya di memori dan hilang saat halaman di-reload.
  */
 import {
-  MOCK_INVALID_PASSWORD,
   MOCK_USERS,
+  mockPassword,
   SAMPLE_TOPICS,
   buildPlanWeeks,
   buildRpsAnalysis,
@@ -216,22 +216,30 @@ function startPlanning(course, instruction) {
 // ---------------------------------------------------------------- handlers
 
 const handlers = {
+  // Mengikuti backend: schema menolak field kosong/terlalu panjang (422); identifier di-strip lalu
+  // dicocokkan sebagai email atau username; pesan 401 identik untuk semua penyebab.
   login(_p, { body }) {
-    if (!body?.username || !body?.password || body.password === MOCK_INVALID_PASSWORD) {
-      return fail(401, 'AUTHENTICATION_FAILED', 'Username atau password salah.');
-    }
-    // Akun dosen Moodle mana pun diterima sebagai instructor.
-    let user = MOCK_USERS.find((u) => u.username === body.username);
-    if (!user) {
-      user = { id: `user_${body.username}`, username: body.username, name: body.username, email: '', role: 'instructor' };
-      MOCK_USERS.push(user);
+    const username = typeof body?.username === 'string' ? body.username : '';
+    const password = typeof body?.password === 'string' ? body.password : '';
+    const invalid = [
+      ...(username.length >= 1 && username.length <= 255 ? [] : [{ field: 'username', message: 'Field required' }]),
+      ...(password.length >= 1 && password.length <= 72 ? [] : [{ field: 'password', message: 'Field required' }]),
+    ];
+    if (invalid.length) return fail(422, 'VALIDATION_FAILED', 'Data request tidak valid.', invalid);
+    const identifier = username.trim();
+    const user =
+      MOCK_USERS.find((u) => u.email === identifier.toLowerCase()) ??
+      MOCK_USERS.find((u) => u.username === identifier) ??
+      MOCK_USERS.find((u) => u.username.toLowerCase() === identifier.toLowerCase());
+    if (!user || password !== mockPassword(user.username)) {
+      return fail(401, 'AUTHENTICATION_FAILED', 'Autentikasi gagal.');
     }
     return ok({ access_token: `mock-token:${user.id}`, token_type: 'bearer', user: { id: user.id, role: user.role } });
   },
 
   me(_p, { user }) {
-    const { id, name, email, role } = user;
-    return ok({ id, name, email, role });
+    const { id, username, firstname, lastname, email, role } = user;
+    return ok({ id, username, firstname, lastname, email, role });
   },
 
   // RPS
@@ -653,10 +661,10 @@ export async function handleMockRequest({ method, path, query, body, token }) {
   const ctx = { query, body };
   if (!route.opts.public) {
     ctx.user = userFromToken(token);
-    if (!ctx.user) return fail(401, 'AUTHENTICATION_FAILED', 'Sesi berakhir, silakan login kembali.');
+    if (!ctx.user) return fail(401, 'AUTHENTICATION_FAILED', 'Autentikasi gagal.');
     // Authorization matrix (design-api.md §22): semua operasi khusus instructor.
-    if (!route.opts.anyRole && ctx.user.role !== 'instructor') {
-      return fail(403, 'AUTHORIZATION_DENIED', 'Operasi ini hanya untuk dosen.');
+    if (!route.opts.anyRole && ctx.user.role !== 'INSTRUCTOR') {
+      return fail(403, 'AUTHORIZATION_DENIED', 'Akses ditolak.');
     }
   }
   if (route.params.courseId) {

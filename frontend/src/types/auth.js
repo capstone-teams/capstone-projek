@@ -7,4 +7,6 @@ export const AUTH_STATUS = {
 // Alasan sesi berakhir tanpa logout eksplisit.
 export const SESSION_NOTICE = {
     EXPIRED: 'expired',
+    // Sesi belum dapat dipulihkan karena server tidak terjangkau; token tetap disimpan.
+    UNAVAILABLE: 'unavailable',
 };

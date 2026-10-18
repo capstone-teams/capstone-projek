@@ -1,4 +1,5 @@
 import { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CoursePlanPage from '../src/pages/ai/course/CoursePlanPage';
 import { ApiError } from '../src/services/apiClient';
@@ -24,6 +25,7 @@ beforeEach(() => {
   document.body.appendChild(node);
 });
 afterEach(async () => { await act(async () => root?.unmount()); root = null; node.remove(); });
+async function render() { root ??= createRoot(node); await act(async () => root.render(<CoursePlanPage />)); }
 
 describe('FE-05.1 Course Plan screen', () => {
   it('shows course information, outcomes, objectives, topics, methods, activities and status', async () => {

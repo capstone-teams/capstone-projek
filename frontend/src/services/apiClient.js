@@ -24,7 +24,8 @@ export function setToken(token) {
   writeString(TOKEN_STORAGE_KEY, token || null);
 }
 
-// Dipanggil saat backend membalas 401 agar AuthContext bisa logout.
+// Dipanggil saat backend menolak token (401) agar AuthContext bisa logout.
+// 401 tanpa token (mis. password salah saat login) bukan sesi yang berakhir.
 let unauthorizedHandler = null;
 export function onUnauthorized(handler) {
   unauthorizedHandler = handler;
@@ -48,7 +49,7 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
 
   if (USE_MOCK) {
     const res = await handleMockRequest({ method, path, query, body, token });
-    if (res.status === 401 && unauthorizedHandler) unauthorizedHandler();
+    if (res.status === 401 && token && unauthorizedHandler) unauthorizedHandler();
     if (res.status >= 400) throw toApiError(res.status, res.data);
     return res.data;
   }
@@ -83,7 +84,7 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
     }
   }
 
-  if (response.status === 401 && unauthorizedHandler) unauthorizedHandler();
+  if (response.status === 401 && token && unauthorizedHandler) unauthorizedHandler();
   if (!response.ok) throw toApiError(response.status, data);
   return data;
 }

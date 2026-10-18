@@ -59,12 +59,22 @@ describe('apiClient (mode backend)', () => {
     expect(err).toMatchObject({ status: 422, code: 'VALIDATION_FAILED', message: 'Gagal', details: ['x'] });
   });
 
-  it('memanggil handler unauthorized saat 401', async () => {
+  it('memanggil handler unauthorized saat token ditolak (401)', async () => {
     const handler = vi.fn();
     onUnauthorized(handler);
+    setToken('expired');
     mockFetch(401, { error: { code: 'AUTHENTICATION_FAILED', message: 'x' } });
     await request('GET', '/auth/me').catch(() => {});
     expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it('401 tanpa token (password salah saat login) tidak dianggap sesi berakhir', async () => {
+    const handler = vi.fn();
+    onUnauthorized(handler);
+    mockFetch(401, { error: { code: 'AUTHENTICATION_FAILED', message: 'Autentikasi gagal.' } });
+    await expect(login('dosen', 'salah')).rejects.toMatchObject({ code: 'AUTHENTICATION_FAILED', message: 'Autentikasi gagal.' });
+    expect(handler).not.toHaveBeenCalled();
+    expect(getToken()).toBeNull();
   });
 
   it('melaporkan NETWORK_ERROR bila backend mati', async () => {
