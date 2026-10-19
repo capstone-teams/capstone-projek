@@ -67,9 +67,10 @@ test('revision dialog prevents background focus and Escape returns it to the tri
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Minta revisi rencana' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Regenerasi rencana', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Regenerasi rencana', exact: true }).click();
+  await expect(dialog.getByText('Instruksi perbaikan wajib diisi.', { exact: true })).toBeVisible();
   await dialog.getByRole('textbox').fill('Perjelas contoh minggu pertama.');
-  await expect(dialog.getByRole('button', { name: 'Regenerasi rencana', exact: true })).toBeEnabled();
+  await expect(dialog.getByText('Instruksi perbaikan wajib diisi.', { exact: true })).toHaveCount(0);
   for (const key of ['Tab', 'Shift+Tab']) {
     for (let i = 0; i < 6; i++) {
       await page.keyboard.press(key);
@@ -101,13 +102,12 @@ test('profile save updates shared data and shows success feedback', async ({ pag
   await expect(page.getByLabel('Gaya mengajar', { exact: false })).toHaveValue('Diskusi studi kasus untuk pengujian FE-04.1');
 });
 
-test('backend errors are visible while the independent Moodle session stays usable', async ({ page }) => {
+test('expired backend token returns to login and clears both sessions', async ({ page }) => {
   await seed(page, 'mock-3-test', 'expired-backend-token');
   await page.goto('/user/profile');
-  await expect(page.getByRole('alert')).toBeVisible();
-  await page.getByRole('button', { name: 'Menu pengguna' }).click();
-  await page.getByRole('menuitem', { name: 'Kursus saya', exact: true }).click();
-  await expect(page.getByRole('link', { name: /^IF2105 Pemrograman Web/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Masuk ke akun Anda' })).toBeVisible();
+  await expect(page.getByText('Sesi Anda telah berakhir. Silakan masuk kembali.', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => [localStorage.getItem('agentic-lms.moodle-session'), localStorage.getItem('agentic-lms.token')])).toEqual([null, null]);
 });
 
 const layouts = [
@@ -124,7 +124,8 @@ for (const width of [375, 768, 1440]) {
       await seed(page);
       await page.goto(route);
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-      await expect(page.locator('main [role="status"]')).toHaveCount(0);
+      // Spinner loading sudah selesai (alert status biasa, mis. "rencana disetujui", boleh tampil).
+      await expect(page.locator('main [role="status"]', { has: page.locator('.animate-spin') })).toHaveCount(0);
       const main = await page.locator('main').boundingBox();
       expect(main.x).toBeGreaterThanOrEqual(0);
       expect(main.x + main.width).toBeLessThanOrEqual(width + 1);

@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ForbiddenPage } from '../../pages/StatusPage';
 import { Spinner } from '../ui';
 
-/** Melindungi route: wajib login Moodle, dan opsional membatasi peran (dosen/mahasiswa). */
+/** Melindungi route: wajib login (backend + Moodle), dan opsional membatasi peran (dosen/mahasiswa). */
 export default function RequireAuth({ roles }) {
   const { user, initializing } = useAuth();
   const location = useLocation();
@@ -13,7 +13,7 @@ export default function RequireAuth({ roles }) {
   if (initializing) {
     return (
       <div className="grid min-h-screen place-items-center">
-        <Spinner label="Menghubungkan ke Moodle…" />
+        <Spinner label="Memulihkan sesi…" />
       </div>
     );
   }

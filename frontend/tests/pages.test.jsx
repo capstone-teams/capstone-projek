@@ -39,7 +39,8 @@ afterEach(() => {
 async function render(path, as) {
   if (as) {
     localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: TOKENS[as] }));
-    if (as === 'dosen') await backendLogin('dosen', 'x');
+    // Sesi lengkap = token backend + token Moodle (FE-06.2). Password mock: <username>123.
+    await backendLogin(as, `${as}123`);
   }
   root = createRoot(container);
   await act(async () => {
@@ -107,11 +108,21 @@ describe('login', () => {
     expect(container.querySelector('#password').placeholder).toBe('Password');
   });
 
-  it('tidak menolak username yang benar dan menampilkan notifikasi untuk password yang salah', async () => {
+  it('menampilkan pesan error dari backend untuk password yang salah', async () => {
     await render('/login');
     await fillAndSubmit('dosen', 'keliru');
-    await waitForText('Username atau password salah');
+    await waitForText('Autentikasi gagal.');
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Login gagal');
+  });
+
+  it.each([
+    ['dosen.demo', 'dosen.demo123', 'Kursus yang Anda ajar', 'Dosen Demo'],
+    ['11231023@student.itk.ac.id', '11231023123', 'Halo, Mahasiswa!', 'Mahasiswa Demo'],
+  ])('login akun uji backend %s', async (username, password, landing, name) => {
+    await render('/login');
+    await fillAndSubmit(username, password);
+    await waitForText(landing);
+    expect(container.textContent).toContain(name);
   });
 
   it('menyediakan kontrol emoji mata, tombol Google, dan menyembunyikan tautan Masuk di navbar', async () => {

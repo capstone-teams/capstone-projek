@@ -1,12 +1,19 @@
 // Data dummy untuk mode mock. Bentuk mengikuti contoh response di design-api.md.
 
+// Akun sama dengan mock Moodle (mockMoodle.js); field mengikuti GET /auth/me backend.
+// dosen.demo & 11231023 adalah akun uji backend (BE-06.3).
 export const MOCK_USERS = [
-  { id: 'user_001', username: 'dosen', name: 'Dr. Rina Kartika', email: 'rina.kartika@lecturer.itk.ac.id', role: 'instructor' },
-  { id: 'user_002', username: 'mahasiswa', name: 'Andi Saputra', email: 'andi@student.itk.ac.id', role: 'student' },
+  { id: 'user_001', username: 'dosen', firstname: 'Rina', lastname: 'Kartika', email: 'dosen@lecturer.itk.ac.id', role: 'INSTRUCTOR' },
+  { id: 'user_002', username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id', role: 'STUDENT' },
+  { id: 'user_003', username: 'dosen2', firstname: 'Bayu', lastname: 'Pratama', email: 'dosen2@lecturer.itk.ac.id', role: 'INSTRUCTOR' },
+  { id: 'user_004', username: 'mahasiswa2', firstname: 'Siti', lastname: 'Rahmawati', email: 'mahasiswa2@student.itk.ac.id', role: 'STUDENT' },
+  { id: 'user_005', username: 'mahasiswa3', firstname: 'Dimas', lastname: 'Nugroho', email: 'mahasiswa3@student.itk.ac.id', role: 'STUDENT' },
+  { id: 'user_006', username: 'dosen.demo', firstname: 'Dosen', lastname: 'Demo', email: 'dosen.demo@itk.ac.id', role: 'INSTRUCTOR' },
+  { id: 'user_007', username: '11231023', firstname: 'Mahasiswa', lastname: 'Demo', email: '11231023@student.itk.ac.id', role: 'STUDENT' },
 ];
 
-// Password apa pun diterima kecuali "salah" (untuk mencoba alur error login).
-export const MOCK_INVALID_PASSWORD = 'salah';
+// Password mock sama dengan mock Moodle: "<username>123".
+export const mockPassword = (username) => `${username}123`;
 
 export const SAMPLE_TOPICS = [
   'Pengantar Pemrograman Web dan Arsitektur Client-Server',

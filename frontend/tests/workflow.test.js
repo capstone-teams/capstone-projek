@@ -14,7 +14,7 @@ beforeEach(async () => {
   configureMock({ latencyMs: 0, stepMs: 10 });
   resetMockDb();
   localStorage.clear();
-  await auth.login('dosen', 'rahasia');
+  await auth.login('dosen', 'dosen123');
 });
 
 afterEach(() => {
@@ -29,13 +29,30 @@ async function expectApiError(promise, status, code) {
 }
 
 describe('auth', () => {
-  it('mengembalikan user setelah login', async () => {
+  it('mengembalikan user setelah login dengan bentuk GET /auth/me backend', async () => {
     const me = await auth.getCurrentUser();
-    expect(me).toMatchObject({ name: 'Dr. Rina Kartika', role: 'instructor' });
+    expect(me).toEqual({ id: 'user_001', username: 'dosen', firstname: 'Rina', lastname: 'Kartika', email: 'dosen@lecturer.itk.ac.id', role: 'INSTRUCTOR' });
+    expect(auth.toUiRole(me.role)).toBe('dosen');
   });
 
   it('menolak password salah dengan format error standar', async () => {
-    await expectApiError(auth.login('dosen', 'salah'), 401, 'AUTHENTICATION_FAILED');
+    const err = await auth.login('dosen', 'salah').catch((e) => e);
+    expect(err).toMatchObject({ status: 401, code: 'AUTHENTICATION_FAILED', message: 'Autentikasi gagal.' });
+    await expectApiError(auth.login('tidak-ada', 'tidak-ada123'), 401, 'AUTHENTICATION_FAILED');
+  });
+
+  it('menolak field kosong dengan VALIDATION_FAILED seperti schema backend', async () => {
+    const err = await auth.login('', '').catch((e) => e);
+    expect(err).toMatchObject({ status: 422, code: 'VALIDATION_FAILED', message: 'Data request tidak valid.' });
+    expect(err.details.map((d) => d.field)).toEqual(['username', 'password']);
+    await expectApiError(auth.login('dosen', 'x'.repeat(73)), 422, 'VALIDATION_FAILED');
+    // Spasi saja lolos schema (min_length=1), lalu di-strip backend dan tidak cocok → 401.
+    await expectApiError(auth.login('   ', 'dosen123'), 401, 'AUTHENTICATION_FAILED');
+  });
+
+  it('menerima akun uji backend lewat username atau email', async () => {
+    expect((await auth.login('dosen.demo', 'dosen.demo123')).user).toEqual({ id: 'user_006', role: 'INSTRUCTOR' });
+    expect((await auth.login(' 11231023@STUDENT.itk.ac.id ', '11231023123')).user).toEqual({ id: 'user_007', role: 'STUDENT' });
   });
 
   it('mewajibkan token', async () => {
@@ -44,8 +61,8 @@ describe('auth', () => {
   });
 
   it('menolak mahasiswa untuk operasi dosen (authorization matrix)', async () => {
-    await auth.login('mahasiswa', 'x');
-    expect((await auth.getCurrentUser()).role).toBe('student');
+    await auth.login('mahasiswa', 'mahasiswa123');
+    expect((await auth.getCurrentUser()).role).toBe('STUDENT');
     await expectApiError(courses.listCourses(), 403, 'AUTHORIZATION_DENIED');
   });
 });
@@ -100,14 +117,10 @@ describe('workflow course end-to-end', () => {
     expect(await status()).toBe('PLANNING');
     await flush();
     expect(await status()).toBe('WAITING_PLAN_REVIEW');
-<<<<<<< HEAD
-    expect((await courses.getPlan(id)).weeks).toHaveLength(16);
-=======
     const generatedPlan = await courses.getPlan(id);
     expect(generatedPlan.weeks).toHaveLength(16);
     expect(generatedPlan.course).toMatchObject({ code: 'IF2105', credits: 3 });
     expect(generatedPlan.weeks[0]).toMatchObject({ week_number: 1, learning_outcomes: ['CPMK-1'], teaching_methods: ['Ceramah', 'diskusi', 'praktikum'] });
->>>>>>> origin/develop
 
     await courses.regeneratePlan(id, 'Perbaiki minggu 5-8');
     await flush();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from './authContext';
 import { onMoodleTokenInvalid, requestToken, setMoodleToken } from '../services/moodle/moodleClient';
 import { resolveSession } from '../services/moodle/moodleApi';
+import { ApiError, onUnauthorized } from '../services/apiClient';
 import * as backendAuth from '../services/authService';
 import { MOODLE_SESSION_KEY } from '../services/config';
 import { readJson, writeJson } from '../utils/storage';
@@ -17,17 +18,35 @@ function storeToken(token) {
   writeJson(MOODLE_SESSION_KEY, token ? { token } : null);
 }
 
+// Backend tidak terjangkau atau error server: token mungkin masih berlaku, jadi jangan dihapus.
+function isTransient(error) {
+  return error instanceof ApiError && (error.status === 0 || error.status >= 500);
+}
+
+// Tandai kegagalan langkah Moodle agar halaman login dapat membedakannya dari error backend.
+function fromMoodle(error) {
+  if (error && typeof error === 'object') error.source = 'moodle';
+  return error;
+}
+
+/** Identitas & role dari backend (GET /auth/me); data kursus dan hak mengajar dari Moodle. */
+function buildSession(moodle, me) {
+  return {
+    site: moodle.site,
+    user: { ...moodle.user, role: backendAuth.toUiRole(me.role), backendId: me.id, email: me.email },
+  };
+}
+
 /**
- * Sesi login memakai akun Moodle (login/token.php).
- * Peran dosen/mahasiswa diturunkan dari hak akses user di course Moodle.
+ * Sesi login memakai akun backend (POST /auth/login, dipulihkan via GET /auth/me) dan
+ * akun Moodle dengan kredensial yang sama, karena halaman kursus membaca data dari Moodle.
+ * Keduanya wajib: kegagalan salah satunya membatalkan login.
  */
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
-  const [initializing, setInitializing] = useState(() => !!readStoredToken());
+  const [initializing, setInitializing] = useState(() => !!readStoredToken() && backendAuth.hasToken());
   // Alasan sesi berakhir di luar kehendak user (mis. token kedaluwarsa), untuk halaman login.
   const [sessionNotice, setSessionNotice] = useState(null);
-  // Kegagalan login backend AI; Moodle tetap dapat dipakai.
-  const [backendError, setBackendError] = useState(null);
   const generation = useRef(0);
 
   const logout = useCallback(() => {
@@ -36,7 +55,6 @@ export function AuthProvider({ children }) {
     storeToken(null);
     backendAuth.logout();
     setSession(null);
-    setBackendError(null);
     setSessionNotice(null);
     setInitializing(false);
   }, []);
@@ -50,17 +68,31 @@ export function AuthProvider({ children }) {
     const id = ++generation.current;
     const isCurrent = () => id === generation.current;
     onMoodleTokenInvalid(expire);
+    onUnauthorized(expire);
     const token = readStoredToken();
-    if (token) {
+    if (token && backendAuth.hasToken()) {
       setMoodleToken(token);
-      resolveSession()
-        .then((next) => { if (isCurrent()) setSession(next); })
-        .catch(() => { if (isCurrent()) expire(); })
+      Promise.all([backendAuth.getCurrentUser(), resolveSession()])
+        .then(([me, next]) => { if (isCurrent()) setSession(buildSession(next, me)); })
+        .catch((e) => {
+          if (!isCurrent()) return;
+          if (isTransient(e)) {
+            setMoodleToken(null);
+            setSessionNotice(SESSION_NOTICE.UNAVAILABLE);
+          } else {
+            expire();
+          }
+        })
         .finally(() => { if (isCurrent()) setInitializing(false); });
+    } else if (token || backendAuth.hasToken()) {
+      // Sesi tidak lengkap (mis. hanya login Moodle dari versi sebelumnya): buang, mulai dari login.
+      storeToken(null);
+      backendAuth.logout();
     }
     return () => {
       generation.current += 1;
       onMoodleTokenInvalid(null);
+      onUnauthorized(null);
     };
   }, [expire]);
 
@@ -70,30 +102,31 @@ export function AuthProvider({ children }) {
     const ensureCurrent = () => {
       if (!isCurrent()) throw new DOMException('Permintaan login tidak lagi aktif.', 'AbortError');
     };
-    const token = await requestToken(username, password);
+    await backendAuth.login(username, password, { isCurrent });
     ensureCurrent();
-    setMoodleToken(token);
-    let next;
+    let me, token, next;
     try {
-      next = await resolveSession();
+      me = await backendAuth.getCurrentUser();
+      ensureCurrent();
+      // Username dari backend dipakai untuk Moodle, sehingga login memakai email tetap berhasil.
+      token = await requestToken(me.username, password).catch((e) => { throw fromMoodle(e); });
+      ensureCurrent();
+      setMoodleToken(token);
+      next = await resolveSession().catch((e) => { throw fromMoodle(e); });
+      ensureCurrent();
     } catch (e) {
-      if (isCurrent()) setMoodleToken(null);
+      if (isCurrent()) {
+        setMoodleToken(null);
+        backendAuth.logout();
+      }
       throw e;
     }
-    ensureCurrent();
     storeToken(token);
-    setSession(next);
+    const nextSession = buildSession(next, me);
+    setSession(nextSession);
     setSessionNotice(null);
-    setBackendError(null);
     setInitializing(false);
-
-    // Fitur Generator AI memakai backend capstone; kegagalannya tidak menghalangi akses Moodle.
-    if (next.user.role === 'dosen') {
-      backendAuth.login(username, password, { isCurrent }).catch((e) => {
-        if (isCurrent()) setBackendError(e);
-      });
-    }
-    return next;
+    return nextSession;
   }, []);
 
   const status = initializing ? AUTH_STATUS.INITIALIZING : session ? AUTH_STATUS.AUTHENTICATED : AUTH_STATUS.ANONYMOUS;
@@ -106,11 +139,10 @@ export function AuthProvider({ children }) {
       isAuthenticated: status === AUTH_STATUS.AUTHENTICATED,
       initializing,
       sessionNotice,
-      backendError,
       login,
       logout,
     }),
-    [session, status, initializing, sessionNotice, backendError, login, logout],
+    [session, status, initializing, sessionNotice, login, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

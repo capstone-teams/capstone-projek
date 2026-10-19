@@ -3,8 +3,6 @@ import { AppStateContext } from './appStateContext';
 import { useAuth } from '../hooks/useAuth';
 import { appStateReducer, createAppState, loadPreferences, savePreferences, toErrorEntry } from '../state/appState';
 
-const BACKEND_ERROR_SOURCE = 'backend-auth';
-
 function isAbort(error) {
   return error?.name === 'AbortError';
 }
@@ -14,7 +12,7 @@ function isAbort(error) {
  * loading global dan error global. Harus berada di dalam <AuthProvider>.
  */
 export function AppStateProvider({ children }) {
-  const { user, backendError } = useAuth();
+  const { user } = useAuth();
   const userId = user?.id ?? null;
   const [state, dispatch] = useReducer(appStateReducer, userId, createAppState);
   const nextId = useRef(0);
@@ -67,15 +65,6 @@ export function AppStateProvider({ children }) {
   const dismissError = useCallback((id) => dispatch({ type: 'error/dismiss', id }), []);
   const dismissErrorSource = useCallback((source) => dispatch({ type: 'error/dismiss', source }), []);
   const clearErrors = useCallback(() => dispatch({ type: 'error/clear' }), []);
-
-  // Backend AI opsional: kegagalannya tidak memblokir Moodle, tetapi perlu terlihat oleh dosen.
-  useEffect(() => {
-    if (backendError) {
-      reportError(backendError, { title: 'Generator AI belum dapat digunakan', source: BACKEND_ERROR_SOURCE });
-    } else {
-      dismissErrorSource(BACKEND_ERROR_SOURCE);
-    }
-  }, [backendError, reportError, dismissErrorSource]);
 
   const value = useMemo(
     () => ({
