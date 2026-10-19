@@ -205,7 +205,6 @@ Response:
   "filename": "rps.pdf",
   "status": "processed",
   "created_at": "datetime",
-  "has_source_markdown": true,
   "has_source_document": true,
   "processing_duration_ms": 8421,
   "processing_error_code": null,

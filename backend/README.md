@@ -351,9 +351,11 @@ scheme Bearer, dan format error.
 ## 📄 RPS Upload & Docling Conversion (BE-05)
 
 Modul ini menyediakan alur awal pemrosesan RPS: mengunggah dan menyimpan dokumen
-RPS, mengonversinya menjadi Markdown/JSON/YAML beserta struktur tabel, dan
-menetapkan **RPS Structured Data Schema** yang menjadi kontrak data untuk tahap
-ekstraksi pada BE-08.
+RPS, mengonversinya menjadi **JSON Docling** (teks, heading, tabel, dan nomor
+halaman) beserta struktur tabel turunan, dan menetapkan **RPS Structured Data
+Schema** yang menjadi kontrak data untuk tahap ekstraksi pada BE-08. Markdown
+tidak dibentuk dari RPS: DL-008 menetapkan JSON sebagai satu-satunya format hasil
+konversi, sedangkan YAML baru diserialisasi BE-08.1 saat dibutuhkan (DL-006).
 
 ```text
 RPS PDF ──▶ unggah (file_hash) ──▶ simpan berkas asli
@@ -363,12 +365,10 @@ RPS PDF ──▶ unggah (file_hash) ──▶ simpan berkas asli
                                         │                      │
                                         │              GET /rps/{id}  ← polling
                                         ▼
-                        Docling ────────┴──▶ source_markdown  (kolom rps)
-                                             source_document  (JSONB: JSON Docling)
+                        Docling ────────┴──▶ source_document  (JSONB: JSON Docling)
                                              ├─ document.json  ┐
-                                             ├─ document.yaml  ├─ artefak di
-                                             ├─ tables.json    │  samping berkas
-                                             └─ conversion.json┘
+                                             ├─ tables.json    ├─ artefak di
+                                             └─ conversion.json┘  samping berkas
 ```
 
 ### Endpoint
@@ -376,7 +376,7 @@ RPS PDF ──▶ unggah (file_hash) ──▶ simpan berkas asli
 | Method | Path | Role | Keterangan |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/v1/rps` | `INSTRUCTOR` | Unggah RPS (`multipart/form-data`, field `file`). `201` untuk dokumen baru, `200` + `deduplicated: true` bila isi yang sama sudah pernah diunggah |
-| `GET` | `/api/v1/rps/{rps_id}` | `INSTRUCTOR` | Detail dokumen beserta `source_markdown`-nya |
+| `GET` | `/api/v1/rps/{rps_id}` | `INSTRUCTOR` | Detail dokumen beserta status pemrosesan dan indikator `has_source_document` |
 | `POST` | `/api/v1/rps/{rps_id}/process` | `INSTRUCTOR` | **Menjadwalkan** konversi: `202` + `PROCESSING`, atau `200` + `reused: true` bila sudah pernah diproses. Body opsional `{"schema_version": "..."}` |
 
 Authorization mengikuti design-api §22 (Student: `No` untuk seluruh operasi RPS).
@@ -425,7 +425,9 @@ BE-08.
 
 ### Idempotency: `file_hash` + `schema_version`
 
-Dokumen dengan `file_hash` dan `schema_version` yang sama **tidak diproses ulang**:
+Dokumen dengan `file_hash` dan `schema_version` yang sama **tidak diproses ulang**
+selama hasilnya sudah berupa JSON pada `source_document`. Baris lama yang hanya
+memiliki Markdown (format sebelum BE-13) otomatis dikonversi ulang:
 
 1. unggahan ulang dokumen identik mengembalikan baris yang sudah ada
    (`200`, `deduplicated: true`) alih-alih membuat baris kedua;
@@ -435,6 +437,19 @@ Dokumen dengan `file_hash` dan `schema_version` yang sama **tidak diproses ulang
 Meminta pemrosesan dengan `schema_version` **berbeda** justru memproses ulang:
 hasil lama tidak berlaku untuk skema baru, dan dokumen mencatat versi yang
 benar-benar dipakai.
+
+Untuk memproses ulang **seluruh** data lama sekaligus (bukan satu per satu lewat
+API), gunakan script BE-13:
+
+```bash
+uv run python -m scripts.reprocess_rps --dry-run  # hitung dokumen lama
+uv run python -m scripts.reprocess_rps            # konversi ulang semuanya
+uv run python -m scripts.reprocess_rps --limit 5  # bertahap
+```
+
+Script hanya memilih baris `PROCESSED` yang belum memiliki `source_document`,
+memakai session baru per dokumen, dan melaporkan dokumen yang gagal tanpa
+menghentikan sisanya.
 
 Konversi yang masih berjalan tidak dapat dijadwalkan ulang (409
 `INVALID_REQUEST`), kecuali barisnya sudah lebih tua dari lease — jalan keluar
@@ -500,15 +515,17 @@ tahap ekstraksi (BE-08), mengikuti content-schema §6.1/§6.2:
    relatif yang tersimpan di `rps.file_path` diperiksa ulang agar tidak dapat
    keluar dari direktori penyimpanan.
 2. **Berkas asli dipertahankan** agar hasil dapat dilacak ke sumbernya
-   (data-model §8), dan `source_markdown` disimpan pada kolom `rps` supaya dapat
-   dibaca tanpa menyentuh filesystem.
+   (data-model §8), dan `source_document` (JSON Docling) disimpan pada kolom
+   `rps` supaya dapat dibaca tanpa menyentuh filesystem.
 3. **Artefak konversi berada di samping dokumennya**
-   (`<hash>/conversion/`): `document.json`, `document.yaml`, `tables.json`, dan
-   `conversion.json` (manifest: versi konverter, jumlah tabel, waktu konversi).
-   Artefak ditulis **sebelum** status berubah menjadi `PROCESSED`.
+   (`<hash>/conversion/`): `document.json`, `tables.json`, dan `conversion.json`
+   (manifest: versi konverter, jumlah tabel/halaman, waktu konversi). Tidak ada
+   artefak Markdown/YAML. Artefak ditulis **sebelum** status berubah menjadi
+   `PROCESSED`.
 4. **Tabel dipisahkan, bukan diratakan.** Tabel RPS (distribusi mingguan, bobot
-   penilaian) adalah data akademik; `tables.json` menyimpan baris/kolomnya
-   sehingga BE-08 dapat membacanya tanpa mem-parsing Markdown kembali.
+   penilaian) adalah data akademik; `tables.json` menyimpan baris/kolom beserta
+   nomor halamannya sehingga BE-08 dapat membacanya tanpa menelusuri ulang
+   struktur JSON.
 5. **Pemrosesan asynchronous (design-api §6.3).** `POST /process` menjawab
    `202` + `PROCESSING` dan konversinya berjalan di background; client memantau
    `GET /rps/{id}`. `agent_run_id` belum ada pada response karena tabel
@@ -542,7 +559,7 @@ tahap ekstraksi (BE-08), mengikuti content-schema §6.1/§6.2:
 | DTO endpoint RPS | `src/schemas/rps.py` |
 | RPS Structured Data Schema | `src/schemas/rps_structured.py` |
 | Endpoint HTTP | `src/routes/rps.py` |
-| Kolom `rps` (`schema_version`, `source_document`, `processing_*`) | `src/models/rps.py` + migrasi `b3c9e14a7f52_*.py`, `c8f4a1d27e93_*.py` |
+| Kolom `rps` (`schema_version`, `source_document`, `processing_*`) | `src/models/rps.py` + migrasi `b3c9e14a7f52_*.py`, `c8f4a1d27e93_*.py`, `e1a7c4b9d2f6_*.py` |
 
 ### Pengujian
 
@@ -553,6 +570,7 @@ uv run pytest tests/test_rps_storage.py             # penyimpanan & path travers
 uv run pytest tests/test_rps_service.py             # unggah, idempotency, kegagalan
 uv run pytest tests/test_rps_routes.py              # endpoint (butuh PostgreSQL)
 uv run pytest tests/test_rps_runner.py              # runner background (butuh PostgreSQL)
+uv run pytest tests/test_reprocess_rps_script.py    # proses ulang data lama (butuh PostgreSQL)
 uv run pytest tests/test_rps_docling_converter.py   # adapter Docling
 
 # Konversi Docling sungguhan (opt-in; memakai tests/fixtures/test.pdf dan

@@ -266,7 +266,6 @@ Conceptual fields:
 | file_hash               | String    | Integrity/deduplication hash (SHA-256)     |
 | schema_version          | String    | RPS Structured Data Schema version (Content Schema §44) |
 | status                  | Enum      | Uploaded / Processing / Processed / Failed |
-| source_markdown         | Text      | Normalized Markdown representation         |
 | source_document         | JSONB     | Full conversion output (DoclingDocument as JSON) |
 | processing_duration_ms  | Integer   | Conversion duration, for performance evaluation |
 | processing_error_code   | String    | Error code of the last failure (API Specification §18) |
@@ -282,10 +281,13 @@ Catatan:
 1. **`file_hash` + `schema_version` adalah kunci idempotency pemrosesan.**
    Dokumen dengan keduanya sama tidak diproses ulang; permintaan dengan
    `schema_version` berbeda memproses ulang dokumen tersebut.
-2. **`source_document` menyimpan JSON hasil Docling** (teks, heading, tabel,
-   nomor halaman) sehingga tahap pemetaan field pada BE-08 tidak perlu
-   menjalankan Docling ulang. `source_markdown` tetap diisi sebagai representasi
-   yang dibaca manusia dan untuk pratinjau.
+2. **`source_document` adalah satu-satunya hasil konversi.** Kolom ini
+   menyimpan JSON hasil Docling (teks, heading, tabel, nomor halaman) sehingga
+   tahap pemetaan field pada BE-08 tidak perlu menjalankan Docling ulang.
+   Markdown tidak disimpan (DL-008, BE-13); YAML baru diserialisasi BE-08.1 dari
+   `source_document` ketika dibutuhkan sebagai input LLM (DL-006). Baris lama
+   yang hanya memiliki Markdown akan dikonversi ulang saat `POST /process`
+   dipanggil.
 3. **`processing_error_code` dan `processing_error` hanya terisi ketika
    `status` = Failed.** Karena konversi berjalan di background (API
    Specification §6.3), kegagalan tidak dapat muncul pada response request —

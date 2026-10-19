@@ -1,7 +1,7 @@
 """DTO endpoint RPS (BE-05.1 & BE-05.2).
 
 Kontrak HTTP mengikuti ``docs/02. design/design-api.md`` §6.1 (upload), §6.2
-(detail), dan §6.3 (process), dengan dua catatan yang disengaja:
+(detail), dan §6.3 (process), dengan satu catatan yang disengaja:
 
 1. **``agent_run_id`` tidak ada pada response process.** design-api §6.3
    menyebutkannya, tetapi Agent Run pada ``agent_runs`` mensyaratkan
@@ -9,11 +9,11 @@ Kontrak HTTP mengikuti ``docs/02. design/design-api.md`` §6.1 (upload), §6.2
    dianalisis — data-model §10). Workflow asynchronous beserta Agent Run
    dikerjakan pada BE-08; menampilkan field yang selalu ``null`` akan
    menyesatkan client.
-2. **``RPSDetailResponse`` menyertakan ``source_markdown``.** Response §6.2 pada
-   dokumen hanya memuat metadata dan status; hasil konversi ikut dikembalikan di
-   sini supaya hasil BE-05.2 dapat diperiksa lewat API tanpa membuka database
-   (artefak JSON/YAML/tabel tetap berada di storage, bukan di response, karena
-   ukurannya besar).
+
+Detail dokumen hanya membawa indikator ``has_source_document``; JSON hasil
+Docling berukuran besar dan tidak dikembalikan di response. Markdown tidak lagi
+dibentuk dari RPS (DL-008, BE-13), sehingga tidak ada field markdown pada
+kontrak ini.
 
 Nama field mengikuti dokumen API (``filename``), bukan nama kolom database
 (``file_name``), karena inilah kontrak yang dibaca client.
@@ -71,12 +71,11 @@ class RPSUploadResponse(BaseModel):
 class RPSDetailResponse(BaseModel):
     """Response ``GET /api/v1/rps/{rps_id}`` (design-api §6.2).
 
-    ``has_source_markdown`` dan ``has_source_document`` adalah indikator ringan
-    untuk client yang memantau status pemrosesan (mereka yang melakukan polling
-    setelah ``POST /process`` menerima 202), sedangkan ``source_markdown``
-    memuat hasil konversinya. ``source_document`` — representasi penuh dokumen
-    hasil Docling — tidak dikembalikan di sini karena ukurannya besar; ia
-    tersedia bagi tahap ekstraksi (BE-08) dan dapat diangkat menjadi endpoint
+    ``has_source_document`` adalah indikator ringan untuk client yang memantau
+    status pemrosesan (mereka yang melakukan polling setelah
+    ``POST /process`` menerima 202). ``source_document`` — representasi penuh
+    dokumen hasil Docling — tidak dikembalikan di sini karena ukurannya besar;
+    ia tersedia bagi tahap ekstraksi (BE-08) dan dapat diangkat menjadi endpoint
     tersendiri bila client membutuhkannya.
 
     ``processing_duration_ms`` adalah durasi konversi yang tercatat, berguna
@@ -100,12 +99,10 @@ class RPSDetailResponse(BaseModel):
     schema_version: str
     created_at: datetime
     updated_at: datetime
-    has_source_markdown: bool
     has_source_document: bool
     processing_duration_ms: int | None = None
     processing_error_code: str | None = None
     processing_error_message: str | None = None
-    source_markdown: str | None = None
 
 
 class RPSProcessRequest(BaseModel):

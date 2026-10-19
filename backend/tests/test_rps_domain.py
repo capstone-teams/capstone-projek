@@ -43,6 +43,20 @@ FILE_PATH = "owner/ab/abcdef.pdf"
 # idempotency tanpa terikat pada nomor versi saat ini.
 OTHER_SCHEMA_VERSION = "1.0" if RPS_SCHEMA_VERSION != "1.0" else "3.0"
 
+# Hasil konversi yang sah: JSON Docling dengan teks, tabel, dan nomor halaman.
+SOURCE_DOCUMENT = {
+    "schema_name": "DoclingDocument",
+    "pages": {"1": {"page_no": 1}, "2": {"page_no": 2}},
+    "texts": [{"label": "section_header", "text": "CPMK", "prov": [{"page_no": 1}]}],
+    "tables": [
+        {
+            "label": "table",
+            "prov": [{"page_no": 2}],
+            "data": {"num_rows": 2, "num_cols": 2},
+        }
+    ],
+}
+
 
 # --- Validasi murni --------------------------------------------------------
 
@@ -197,7 +211,7 @@ def test_register_computes_hash_and_derives_file_type():
     assert document.schema_version == RPS_SCHEMA_VERSION
     assert document.status is RPSStatus.UPLOADED
     assert document.id is None
-    assert document.source_markdown is None
+    assert document.source_document is None
 
 
 def test_register_accepts_a_precomputed_hash_to_avoid_hashing_twice():
@@ -224,9 +238,9 @@ def test_processing_transitions_uploaded_to_processed():
     document.start_processing()
     assert document.is_processing
 
-    document.complete_processing("# RPS Basis Data")
+    document.complete_processing(SOURCE_DOCUMENT)
     assert document.is_processed
-    assert document.source_markdown == "# RPS Basis Data"
+    assert document.source_document == SOURCE_DOCUMENT
 
 
 def test_a_document_cannot_be_processed_twice_at_once():
@@ -245,7 +259,7 @@ def test_a_failed_document_can_be_processed_again():
     assert document.status is RPSStatus.FAILED
 
     document.start_processing()
-    document.complete_processing("# percobaan kedua")
+    document.complete_processing(SOURCE_DOCUMENT)
 
     assert document.is_processed
 
@@ -254,11 +268,11 @@ def test_completing_without_processing_is_a_state_error():
     document = make_document()
 
     with pytest.raises(RPSStateError):
-        document.complete_processing("# markdown")
+        document.complete_processing(SOURCE_DOCUMENT)
 
 
-@pytest.mark.parametrize("empty", ["", "   ", None])
-def test_empty_conversion_output_is_not_a_valid_result(empty):
+@pytest.mark.parametrize("empty", ["", "   ", [], {}, None, 42])
+def test_empty_or_missing_source_document_is_not_a_valid_result(empty):
     document = make_document()
     document.start_processing()
 
@@ -269,7 +283,7 @@ def test_empty_conversion_output_is_not_a_valid_result(empty):
 def test_already_processed_as_matches_on_hash_and_schema_version():
     document = make_document()
     document.start_processing()
-    document.complete_processing("# RPS")
+    document.complete_processing(SOURCE_DOCUMENT)
 
     assert document.already_processed_as(
         file_hash=document.file_hash, schema_version=RPS_SCHEMA_VERSION
@@ -290,11 +304,28 @@ def test_already_processed_as_is_false_while_still_unprocessed():
     )
 
 
+def test_a_legacy_markdown_only_result_is_not_considered_processed():
+    """Baris sebelum BE-13 hanya punya Markdown; harus diproses ulang."""
+    document = make_document()
+    document.status = RPSStatus.PROCESSED
+
+    assert document.source_document is None
+    assert not document.already_processed_as(
+        file_hash=document.file_hash, schema_version=RPS_SCHEMA_VERSION
+    )
+
+    document.source_document = SOURCE_DOCUMENT
+
+    assert document.already_processed_as(
+        file_hash=document.file_hash, schema_version=RPS_SCHEMA_VERSION
+    )
+
+
 def test_a_processed_document_is_stale_for_a_newer_schema_version():
     """Inilah pertanyaan yang diajukan service sebelum memutuskan memproses ulang."""
     document = make_document()
     document.start_processing()
-    document.complete_processing("# RPS")
+    document.complete_processing(SOURCE_DOCUMENT)
 
     assert document.already_processed_as(
         file_hash=document.file_hash, schema_version=RPS_SCHEMA_VERSION
@@ -327,16 +358,6 @@ def test_ownership_is_decided_by_the_owner_identifier():
     assert not document.belongs_to(shortuuid.uuid())
 
 
-def test_repr_never_embeds_the_converted_markdown():
-    """Representasi dipakai pada log; dokumen RPS bisa ribuan baris."""
-    document = make_document()
-    document.start_processing()
-    document.complete_processing("# RAHASIA PANJANG")
-
-    assert "RAHASIA" not in repr(document)
-    assert "source_markdown=set" in repr(document)
-
-
 # --- Hasil konversi yang disimpan (issue #98) ------------------------------
 
 
@@ -344,13 +365,9 @@ def test_complete_processing_stores_the_document_and_the_duration():
     document = make_document()
     document.start_processing()
 
-    document.complete_processing(
-        "# RPS",
-        source_document={"schema_name": "DoclingDocument", "pages": {}},
-        duration_ms=1234,
-    )
+    document.complete_processing(SOURCE_DOCUMENT, duration_ms=1234)
 
-    assert document.source_document == {"schema_name": "DoclingDocument", "pages": {}}
+    assert document.source_document == SOURCE_DOCUMENT
     assert document.processing_duration_ms == 1234
     assert document.processing_error_code is None
     assert document.processing_error is None
@@ -362,7 +379,7 @@ def test_duration_must_be_a_positive_integer():
 
     for invalid in [0, -5, 1.5, "1234", True]:
         with pytest.raises(RPSValidationError):
-            document.complete_processing("# RPS", duration_ms=invalid)
+            document.complete_processing(SOURCE_DOCUMENT, duration_ms=invalid)
 
 
 def test_source_document_must_be_a_json_object():
@@ -371,17 +388,7 @@ def test_source_document_must_be_a_json_object():
 
     for invalid in [[], "bukan object", 42, {}]:
         with pytest.raises(RPSValidationError):
-            document.complete_processing("# RPS", source_document=invalid)
-
-
-def test_the_document_may_be_absent_for_converters_that_do_not_produce_one():
-    document = make_document()
-    document.start_processing()
-
-    document.complete_processing("# RPS")
-
-    assert document.source_document is None
-    assert document.processing_duration_ms is None
+            document.complete_processing(invalid)
 
 
 def test_fail_processing_records_the_code_and_a_readable_reason():
@@ -398,7 +405,7 @@ def test_fail_processing_records_the_code_and_a_readable_reason():
     # Kode dinormalkan ke bentuk kanonik design-api §18.
     assert document.processing_error_code == "RPS_PROCESSING_FAILED"
     assert document.processing_error == "Dokumen tidak dapat dibaca — berkas mungkin rusak."
-    assert document.source_markdown is None
+    assert document.source_document is None
 
 
 def test_fail_processing_without_details_still_marks_the_document_failed():
@@ -418,7 +425,7 @@ def test_a_successful_run_clears_an_earlier_failure():
     document.fail_processing(error_code="RPS_PROCESSING_FAILED", reason="gagal")
 
     document.start_processing()
-    document.complete_processing("# RPS", duration_ms=10)
+    document.complete_processing(SOURCE_DOCUMENT, duration_ms=10)
 
     assert document.processing_error_code is None
     assert document.processing_error is None
@@ -428,9 +435,7 @@ def test_repr_hides_the_source_document_payload():
     """Dokumen Docling berukuran besar; repr-nya dipakai pada log."""
     document = make_document()
     document.start_processing()
-    document.complete_processing(
-        "# RPS", source_document={"RAHASIA": "isi dokumen"}, duration_ms=5
-    )
+    document.complete_processing({"RAHASIA": "isi dokumen"}, duration_ms=5)
 
     assert "RAHASIA" not in repr(document)
     assert "source_document=set" in repr(document)

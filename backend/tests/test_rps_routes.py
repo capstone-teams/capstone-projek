@@ -56,7 +56,18 @@ RPS_URL = "/api/v1/rps"
 
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
 OTHER_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n%%EOF\n"
-MARKDOWN = "# RPS Basis Data\n\n| Minggu | Topik |\n| --- | --- |\n| 1 | Basis data |\n"
+SOURCE_DOCUMENT = {
+    "schema_name": "DoclingDocument",
+    "pages": {"1": {"page_no": 1}, "2": {"page_no": 2}},
+    "texts": [{"label": "section_header", "text": "CPMK", "prov": [{"page_no": 1}]}],
+    "tables": [
+        {
+            "label": "table",
+            "prov": [{"page_no": 2}],
+            "data": {"num_rows": 2, "num_cols": 2},
+        }
+    ],
+}
 
 # Versi skema yang **berbeda** dari yang berlaku: dipakai untuk menguji kunci
 # idempotency tanpa terikat pada nomor versi saat ini.
@@ -78,27 +89,25 @@ DETAIL_RESPONSE_FIELDS = {
     "schema_version",
     "created_at",
     "updated_at",
-    "has_source_markdown",
     "has_source_document",
     "processing_duration_ms",
     "processing_error_code",
     "processing_error_message",
-    "source_markdown",
 }
 
 
 class StubConverter(DocumentConverter):
     """Konverter palsu: hasil tetap, dapat disuruh gagal, mencatat pemanggilan.
 
-    ``fail`` dan ``markdown`` sengaja dapat diubah setelah dibuat, sehingga test
-    dapat mensimulasikan kegagalan lalu mengulang pemrosesan tanpa mengganti
-    dependency aplikasi.
+    ``fail`` dan ``document_json`` sengaja dapat diubah setelah dibuat, sehingga
+    test dapat mensimulasikan kegagalan atau hasil kosong lalu mengulang
+    pemrosesan tanpa mengganti dependency aplikasi.
     """
 
     name = "stub"
 
-    def __init__(self, *, markdown: str = MARKDOWN, fail: bool = False) -> None:
-        self.markdown = markdown
+    def __init__(self, *, fail: bool = False) -> None:
+        self.document_json = SOURCE_DOCUMENT
         self.fail = fail
         self.calls = 0
 
@@ -114,10 +123,8 @@ class StubConverter(DocumentConverter):
                 public_reason="Dokumen contoh tidak dapat dikonversi.",
             )
         return DocumentConversion(
-            markdown=self.markdown,
-            document_json={"schema_name": "DoclingDocument", "texts": [{"text": "Basis Data"}]},
-            document_yaml="schema_name: DoclingDocument\n",
-            tables=[ConvertedTable(index=0, markdown="| a |", cells=[["a"]])],
+            document_json=self.document_json,
+            tables=[ConvertedTable(index=0, page=2, cells=[["a"]])],
             converter_name=self.name,
             converter_version=self.version,
         )
@@ -287,12 +294,10 @@ async def test_uploaded_document_can_be_read_back(client, instructor_headers):
     assert body["id"] == uploaded["id"]
     assert body["file_hash"] == uploaded["file_hash"]
     assert body["status"] == "UPLOADED"
-    assert body["has_source_markdown"] is False
     assert body["has_source_document"] is False
     assert body["processing_duration_ms"] is None
     assert body["processing_error_code"] is None
     assert body["processing_error_message"] is None
-    assert body["source_markdown"] is None
     assert body["created_at"] and body["updated_at"]
 
 
@@ -437,7 +442,6 @@ async def test_process_schedules_the_conversion_and_answers_202(
 
     detail = await read_detail(client, instructor_headers, uploaded["id"])
     assert detail["status"] == "PROCESSING"
-    assert detail["has_source_markdown"] is False
 
 
 @pytest.mark.asyncio
@@ -450,8 +454,6 @@ async def test_a_scheduled_conversion_completes_and_can_be_polled(client, instru
 
     detail = await read_detail(client, instructor_headers, uploaded["id"])
     assert detail["status"] == "PROCESSED"
-    assert detail["source_markdown"] == MARKDOWN
-    assert detail["has_source_markdown"] is True
     # Dokumen hasil konversi tersimpan di database (issue #98), bukan hanya di disk.
     assert detail["has_source_document"] is True
     assert detail["processing_duration_ms"] >= 1
@@ -538,7 +540,6 @@ async def test_a_conversion_failure_is_explained_through_polling(
     assert detail["status"] == "FAILED"
     assert detail["processing_error_code"] == "RPS_PROCESSING_FAILED"
     assert detail["processing_error_message"]
-    assert detail["has_source_markdown"] is False
     assert detail["has_source_document"] is False
 
     # Alasan yang dikembalikan aman: detail internal hanya ada di log.
@@ -551,7 +552,11 @@ async def test_an_empty_conversion_result_is_reported_as_a_processing_failure(
 ):
     """Dokumen tanpa teks yang dapat diekstrak bukan "berhasil tanpa isi"."""
     uploaded = (await upload_rps(client, instructor_headers)).json()
-    converter.markdown = "   "
+    converter.document_json = {
+        "schema_name": "DoclingDocument",
+        "texts": [],
+        "tables": [],
+    }
 
     await schedule_processing(client, instructor_headers, uploaded["id"])
 
