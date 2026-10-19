@@ -18,10 +18,17 @@ Buka http://localhost:3000. Port tidak berganti otomatis; restart Vite setelah
 perubahan dependency atau environment. Mode default menggunakan dua mock di
 browser sehingga tidak memerlukan backend atau server Moodle.
 
-| Akun mock | Kata sandi | Nama |
-| --- | --- | --- |
-| dosen | dosen123 | Rina Kartika |
-| mahasiswa | mahasiswa123 | Andi Saputra |
+Kata sandi akun mock selalu `<username>123`. Akun yang sama tersedia di mock
+backend dan mock Moodle; kolom Username juga menerima email akun.
+
+| Akun mock | Kata sandi | Nama | Role backend |
+| --- | --- | --- | --- |
+| dosen.demo | dosen.demo123 | Dosen Demo (akun uji BE-06.3) | INSTRUCTOR |
+| 11231023 | 11231023123 | Mahasiswa Demo (akun uji BE-06.3) | STUDENT |
+| dosen | dosen123 | Rina Kartika | INSTRUCTOR |
+| mahasiswa | mahasiswa123 | Andi Saputra | STUDENT |
+
+Akun lain: dosen2, mahasiswa2, dan mahasiswa3.
 
 Fixture kursus mencakup Pemrograman Web (kelas A dan B) dan Basis Data. Workflow backend mock
 berjalan di memori: navigasi client mempertahankan perubahan, full reload
@@ -58,7 +65,7 @@ VITE_* tersedia di browser; jangan gunakan untuk secret deployment.
 
 | URL | Fungsi |
 | --- | --- |
-| /login | Login Moodle |
+| /login | Login akun backend lalu Moodle |
 | /forgot-password | Pemulihan kata sandi melalui Moodle |
 | / | Mengarah ke /my setelah login |
 | /my | Dasbor Moodle |
@@ -82,16 +89,44 @@ Navigasi tersedia melalui menu akun dan tab halaman. Rute seperti /dashboard,
 
 ## Autentikasi dan state
 
-AuthProvider meminta token Moodle melalui login/token.php dan menentukan peran
-dari hak akses kursus. Sesi disimpan pada `agentic-lms.moodle-session`. Untuk dosen,
-provider juga mencoba login backend dan menyimpan token pada `agentic-lms.token`.
-Kegagalan login backend AI ditampilkan sebagai error global; sesi Moodle tetap
-dapat digunakan. Keberhasilan login Moodle belum menjamin akses backend AI nyata.
+Autentikasi mengikuti kontrak backend pada
+[`docs/02. design/auth-api-integration.md`](../docs/02.%20design/auth-api-integration.md)
+(BE-06.1). Login mewajibkan akun backend dan akun Moodle dengan kredensial yang
+sama:
 
-Logout menghapus kedua sesi. Guard generasi sesi mengabaikan respons login atau
-pemulihan lama setelah sesi berganti. Halaman login menyediakan tombol
-tampil/sembunyi kata sandi dan pemberitahuan sesi berakhir. Tombol Google
-menampilkan pemberitahuan bahwa Google OAuth belum tersedia.
+1. `POST /api/v1/auth/login` dengan `{ username, password }`; `username` boleh
+   berisi email. Token disimpan pada `agentic-lms.token`.
+2. `GET /api/v1/auth/me` menentukan identitas dan peran: `INSTRUCTOR` menjadi
+   dosen dan `STUDENT` menjadi mahasiswa. Role `ADMIN` belum memiliki tampilan.
+3. Login Moodle (login/token.php) memakai `username` dari `/auth/me`, sehingga
+   login dengan email tetap berhasil. Token disimpan pada
+   `agentic-lms.moodle-session`; hak mengajar per kursus tetap dibaca dari Moodle.
+
+Kegagalan langkah mana pun membatalkan login dan tidak meninggalkan token.
+Error backend ditampilkan apa adanya dari `error.message` (mis. "Autentikasi
+gagal."), sedangkan kegagalan Moodle diberi judul "Login Moodle gagal". Selama
+request berjalan, tombol Masuk nonaktif dan input dikunci.
+
+Saat aplikasi dimuat ulang, sesi dipulihkan melalui `GET /auth/me` dan Moodle
+bila kedua token tersimpan; token yang hanya ada salah satunya dibuang. Token
+yang ditolak (401) mengakhiri sesi dan menampilkan "Sesi berakhir". Server yang
+tidak terjangkau (network/5xx) tidak menghapus token sehingga reload berikutnya
+dapat memulihkan sesi. 401 pada request terproteksi juga mengakhiri sesi; 401
+tanpa token (password salah) dan 403 tidak.
+
+Backend tidak menyediakan endpoint logout maupun refresh token: logout menghapus
+kedua token dan data pengguna dari state, dan token kedaluwarsa setelah
+`ACCESS_TOKEN_EXPIRE_MINUTES` (default 30 menit). Guard generasi sesi
+mengabaikan respons login atau pemulihan lama setelah sesi berganti. Halaman
+login menyediakan tombol tampil/sembunyi kata sandi; tombol Google menampilkan
+pemberitahuan bahwa Google OAuth belum tersedia.
+
+Pada backend nyata, akun uji dibuat dengan
+`uv run python -m scripts.seed_test_accounts` (lihat
+[backend/README.md](../backend/README.md)); kata sandinya tidak disimpan di
+repository. Bila `VITE_MOODLE_MOCK=false`, akun yang sama harus ada di Moodle.
+Backend belum menyediakan endpoint course/plan/konten, sehingga
+`VITE_USE_MOCK=false` membuat tab Generator AI gagal (404).
 
 Halaman /forgot-password menampilkan feedback pada mode mock dan mengirim form ke
 halaman pemulihan Moodle pada mode nyata; alur pemulihan nyata masih perlu diuji.
@@ -160,6 +195,8 @@ npm run verify:foundation
 
 Unit test mencakup API, Moodle, workflow, halaman, sesi, shared state, dan detail
 rencana. Suite browser runtime.spec.js menguji routing/login/workflow;
+auth-06-2.spec.js menguji login akun uji, error kredensial, pemulihan sesi saat
+reload, dan logout;
 foundation-71.spec.js menguji sesi, state, keyboard, empty/error, serta responsive;
 course-plan-74.spec.js menguji rencana pada 375/768/1024/1440 px dan pemilihan minggu.
 presentation.spec.js berjalan melalui test:design untuk style dan batas konten

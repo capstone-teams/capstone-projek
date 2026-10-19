@@ -5,15 +5,21 @@ import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/hooks/useAuth';
 import { ApiError, request } from '../src/services/apiClient';
 import { MOODLE_SESSION_KEY, TOKEN_STORAGE_KEY } from '../src/services/config';
-import { SESSION_NOTICE } from '../src/types/auth';
+import { AUTH_STATUS, SESSION_NOTICE } from '../src/types/auth';
 
 const service = vi.hoisted(() => ({
   requestToken: vi.fn(), resolveSession: vi.fn(), setMoodleToken: vi.fn(), onMoodleTokenInvalid: vi.fn(),
   login: vi.fn(), logout: vi.fn(), getCurrentUser: vi.fn(), hasToken: vi.fn(), toUiRole: vi.fn(),
 }));
+// apiClient asli dipakai (ApiError/request); onUnauthorized dibungkus spy agar registrasi handler dapat diperiksa.
+const apiClient = vi.hoisted(() => ({ onUnauthorized: vi.fn(), actual: null }));
 vi.mock('../src/services/moodle/moodleClient', () => service);
 vi.mock('../src/services/moodle/moodleApi', () => service);
 vi.mock('../src/services/authService', () => service);
+vi.mock('../src/services/apiClient', async (importOriginal) => {
+  apiClient.actual = await importOriginal();
+  return { ...apiClient.actual, onUnauthorized: apiClient.onUnauthorized };
+});
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const teacher = { user: { id: 3, username: 'dosen', fullname: 'Rina Kartika', role: 'dosen', teacherCourseIds: [2] }, site: { name: 'Moodle ITK' } };
@@ -49,6 +55,7 @@ beforeEach(() => {
     localStorage.setItem(TOKEN_STORAGE_KEY, `mock-token:${username}`);
     return { access_token: `mock-token:${username}`, token_type: 'bearer', user: {} };
   });
+  apiClient.onUnauthorized.mockImplementation((handler) => apiClient.actual.onUnauthorized(handler));
   service.toUiRole.mockImplementation((role) => ({ INSTRUCTOR: 'dosen', STUDENT: 'mahasiswa' })[role] ?? null);
   node = document.createElement('div');
   document.body.appendChild(node);
@@ -230,5 +237,39 @@ describe('FE-06.2 logout & expiry', () => {
     expect(state.user).toBeNull();
     expect(state.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
     expect(storedTokens()).toEqual([null, null]);
+  });
+
+  it('triggers expire, clears session, and notifies SESSION_NOTICE.EXPIRED when unauthorized (401) occurs', async () => {
+    storeSession();
+    service.getCurrentUser.mockResolvedValueOnce(instructorMe);
+    service.resolveSession.mockResolvedValueOnce(teacher);
+    await mount();
+    expect(state.user).toMatchObject(teacher.user);
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.sessionNotice).toBeNull();
+
+    const onExpire = apiClient.onUnauthorized.mock.calls.find(
+      (call) => typeof call[0] === 'function',
+    )?.[0];
+    expect(onExpire).toBeDefined();
+
+    await act(async () => {
+      onExpire();
+    });
+
+    expect(state.user).toBeNull();
+    expect(state.status).toBe(AUTH_STATUS.ANONYMOUS);
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
+    expect(storedTokens()).toEqual([null, null]);
+    expect(service.logout).toHaveBeenCalled();
+  });
+
+  it('unregisters onUnauthorized handler on unmount', async () => {
+    await mount();
+    expect(apiClient.onUnauthorized).toHaveBeenCalledWith(expect.any(Function));
+    await act(async () => root?.unmount());
+    root = null;
+    expect(apiClient.onUnauthorized).toHaveBeenLastCalledWith(null);
   });
 });
