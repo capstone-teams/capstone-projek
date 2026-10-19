@@ -41,7 +41,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.settings import get_settings
 from src.schemas.rps_structured import RPS_SCHEMA_VERSION
-from src.services.rps.converter import DocumentConversion, DocumentConverter
+from src.services.rps.converter import (
+    DocumentConversion,
+    DocumentConverter,
+    has_extractable_content,
+)
 from src.services.rps.domain import RPSDocument, require_owner
 from src.services.rps.errors import (
     DocumentConversionError,
@@ -69,9 +73,10 @@ __all__ = [
     "RPSUploadResult",
 ]
 
-# Nama artefak konversi yang ditulis di samping dokumen asli.
+# Nama artefak konversi yang ditulis di samping dokumen asli. Hasil konversi
+# disimpan sebagai JSON (DL-008); YAML tidak dibentuk di sini karena baru
+# diserialisasi BE-08.1 saat dibutuhkan sebagai input LLM (DL-006).
 DOCUMENT_JSON_ARTIFACT = "document.json"
-DOCUMENT_YAML_ARTIFACT = "document.yaml"
 TABLES_ARTIFACT = "tables.json"
 MANIFEST_ARTIFACT = "conversion.json"
 
@@ -264,7 +269,7 @@ class RPSService:
             conversion = await self._converter.convert(
                 content=content, file_name=document.file_name
             )
-            _require_usable_markdown(conversion)
+            _require_usable_document(conversion)
             duration_ms = _elapsed_ms(started_at)
             # Artefak ditulis sebelum status diubah menjadi PROCESSED: dokumen
             # yang tercatat selesai harus benar-benar punya hasilnya.
@@ -281,8 +286,7 @@ class RPSService:
             raise failure from exc
 
         document.complete_processing(
-            conversion.markdown,
-            source_document=conversion.document_json,
+            conversion.document_json,
             duration_ms=duration_ms,
         )
         persisted = await self._persist(document)
@@ -320,12 +324,16 @@ class RPSService:
         *,
         duration_ms: int,
     ) -> None:
-        """Tulis artefak konversi (JSON, YAML, tabel, manifest) di samping dokumen."""
+        """Tulis artefak konversi (JSON, tabel, manifest) di samping dokumen.
+
+        Tidak ada artefak Markdown maupun YAML: JSON Docling adalah satu-satunya
+        hasil konversi (DL-008), sedangkan YAML dibentuk BE-08.1 dari JSON saat
+        dibutuhkan (DL-006).
+        """
         await self._storage.save_artifacts(
             document_path=document.file_path,
             artifacts={
                 DOCUMENT_JSON_ARTIFACT: _to_json_bytes(conversion.document_json),
-                DOCUMENT_YAML_ARTIFACT: conversion.document_yaml.encode("utf-8"),
                 TABLES_ARTIFACT: _to_json_bytes(
                     [table.to_dict() for table in conversion.tables]
                 ),
@@ -336,7 +344,7 @@ class RPSService:
                         "converter": conversion.converter_name,
                         "converter_version": conversion.converter_version,
                         "table_count": conversion.table_count,
-                        "markdown_length": len(conversion.markdown),
+                        "page_count": _page_count(conversion.document_json),
                         "duration_ms": duration_ms,
                         "converted_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -386,18 +394,26 @@ def _elapsed_ms(started_at: float) -> int:
     return max(1, round((time.perf_counter() - started_at) * 1000))
 
 
-def _require_usable_markdown(conversion: DocumentConversion) -> None:
+def _page_count(document_json: dict[str, object]) -> int:
+    """Jumlah halaman yang dilaporkan Docling pada JSON hasil konversi."""
+    pages = document_json.get("pages")
+    if isinstance(pages, (dict, list)):
+        return len(pages)
+    return 0
+
+
+def _require_usable_document(conversion: DocumentConversion) -> None:
     """Tolak hasil konversi yang tidak dapat dipakai tahap berikutnya.
 
     Diperiksa di sini — bukan hanya di adapter — supaya seluruh konverter
-    terikat pada janji yang sama: ``source_markdown`` yang kosong berarti
-    konversi **gagal**, bukan dokumen yang berhasil tanpa isi. Tanpa
-    pemeriksaan ini, markdown kosong akan muncul sebagai error validasi (422)
-    yang menyesatkan, padahal masalahnya ada pada hasil konversi.
+    terikat pada janji yang sama: ``source_document`` yang tidak memuat teks
+    maupun tabel berarti konversi **gagal**, bukan dokumen yang berhasil tanpa
+    isi. Tanpa pemeriksaan ini, JSON kosong akan muncul sebagai error validasi
+    (422) yang menyesatkan, padahal masalahnya ada pada hasil konversi.
     """
-    if not conversion.markdown.strip():
+    if not has_extractable_content(conversion.document_json):
         raise DocumentConversionError(
-            "konversi tidak menghasilkan markdown; dokumen tidak memuat teks yang "
+            "konversi tidak menghasilkan teks/tabel; dokumen tidak memuat teks yang "
             "dapat diekstrak (aktifkan RPS_CONVERTER_OCR untuk dokumen pindai)",
             public_reason=(
                 "Dokumen RPS tidak memuat teks yang dapat diekstrak. Bila RPS berupa "

@@ -14,10 +14,12 @@ Dua keputusan bentuk yang penting:
    satu lokasi dan unggahan ulang bersifat idempoten. Kolom ``rps.file_path``
    menyimpan path **relatif** ini, sehingga root storage dapat dipindahkan tanpa
    mengubah database.
-2. **Artefak konversi terpisah.** Hasil Docling yang besar (JSON/YAML/daftar
+2. **Artefak konversi terpisah.** Hasil Docling yang besar (JSON dan daftar
    tabel) ditulis di direktori artefak di samping dokumennya, sedangkan
-   ``source_markdown`` disimpan pada kolom ``rps`` (data-model §8) supaya dapat
-   dibaca tanpa menyentuh filesystem.
+   ``source_document`` disimpan pada kolom ``rps`` (data-model §8) supaya dapat
+   dibaca tanpa menyentuh filesystem. Tidak ada artefak Markdown/YAML: JSON
+   Docling adalah satu-satunya format hasil konversi (DL-008), dan YAML baru
+   dibentuk BE-08.1 saat dibutuhkan (DL-006).
 
 Seluruh operasi filesystem dijalankan lewat ``asyncio.to_thread`` agar tidak
 memblokir event loop, dan setiap penulisan bersifat atomik (tulis ke berkas

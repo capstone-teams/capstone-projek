@@ -73,15 +73,11 @@ class RPS(BaseModel):
         index=True,
     )
 
-    source_markdown: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
     # Representasi penuh dokumen hasil konversi Docling (DoclingDocument sebagai
-    # JSON), termasuk teks, heading, tabel, dan nomor halaman. Disimpan di sini
-    # supaya tahap berikutnya (pemetaan field pada BE-08) tidak perlu
-    # menjalankan Docling ulang.
+    # JSON), termasuk teks, heading, tabel, dan nomor halaman — satu-satunya
+    # format hasil konversi (DL-008, BE-13). Disimpan di sini supaya tahap
+    # berikutnya (pemetaan field pada BE-08) tidak perlu menjalankan Docling
+    # ulang; YAML dibentuk dari kolom ini saat dibutuhkan (DL-006).
     source_document: Mapped[dict | None] = mapped_column(
         JSONB,
         nullable=True,

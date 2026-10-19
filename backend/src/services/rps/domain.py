@@ -9,8 +9,8 @@ Yang sengaja **tidak** ada di sini:
 
 - pemetaan ke tabel ``rps_analyses`` — itu hasil ekstraksi (BE-08), bukan
   dokumen unggahan;
-- isi hasil konversi (markdown, JSON, YAML, tabel) — ``source_markdown`` hanya
-  disimpan sebagai atribut, sedangkan artefak besar berada di storage;
+- isi hasil konversi (JSON, YAML, tabel) — ``source_document`` hanya disimpan
+  sebagai atribut; YAML baru dibentuk BE-08.1 saat dibutuhkan (DL-006);
 - apa pun dari HTTP layer (request/response/FastAPI).
 """
 
@@ -63,7 +63,6 @@ class RPSDocument:
     schema_version: str = RPS_SCHEMA_VERSION
     status: RPSStatus = RPSStatus.UPLOADED
     id: str | None = None
-    source_markdown: str | None = None
     source_document: dict[str, Any] | None = None
     processing_duration_ms: int | None = None
     processing_error_code: str | None = None
@@ -140,9 +139,15 @@ class RPSDocument:
         ``schema_version`` yang sama tidak diproses ulang. Perubahan versi skema
         membuat hasil lama tidak berlaku lagi, sehingga pemrosesan ulang justru
         diperlukan.
+
+        Hasil harus berupa ``source_document`` (JSON Docling). Baris lama yang
+        hanya menyimpan Markdown — format sebelum BE-13 — karenanya **tidak**
+        dianggap sudah diproses dan akan dikonversi ulang secara otomatis saat
+        ``POST /process`` dipanggil.
         """
         return (
             self.is_processed
+            and self.source_document is not None
             and self.file_hash == normalize_file_hash(file_hash)
             and self.schema_version == normalize_schema_version(schema_version)
         )
@@ -183,9 +188,8 @@ class RPSDocument:
 
     def complete_processing(
         self,
-        source_markdown: str,
+        source_document: dict[str, Any],
         *,
-        source_document: dict[str, Any] | None = None,
         duration_ms: int | None = None,
     ) -> None:
         """Tandai dokumen selesai diproses beserta hasil konversinya.
@@ -194,22 +198,24 @@ class RPSDocument:
         dokumen yang tidak sedang diproses berarti ada langkah lifecycle yang
         terlewat.
 
-        ``source_document`` adalah representasi penuh dokumen hasil konversi
-        (DoclingDocument sebagai JSON) dan ``duration_ms`` durasi konversinya;
-        keduanya dicatat supaya tahap berikutnya (BE-08) tidak perlu menjalankan
-        Docling ulang dan performanya dapat dievaluasi.
+        ``source_document`` wajib berisi representasi penuh dokumen hasil
+        konversi (DoclingDocument sebagai JSON) — satu-satunya format hasil yang
+        diakui (DL-008, BE-13). ``duration_ms`` mencatat durasi konversi supaya
+        tahap berikutnya (BE-08) tidak perlu menjalankan Docling ulang dan
+        performanya dapat dievaluasi.
         """
         if not self.is_processing:
             raise RPSStateError(
                 f"rps {self.id} tidak sedang diproses (status: {self.status.value})"
             )
-        if not isinstance(source_markdown, str) or not source_markdown.strip():
+
+        document = _normalize_source_document(source_document)
+        if document is None:
             raise RPSValidationError(
-                "source_markdown", "hasil konversi tidak boleh kosong"
+                "source_document", "wajib diisi dengan JSON hasil konversi"
             )
 
-        self.source_markdown = source_markdown
-        self.source_document = _normalize_source_document(source_document)
+        self.source_document = document
         self.processing_duration_ms = _normalize_duration(duration_ms)
         # Hasil yang berhasil menggantikan catatan kegagalan sebelumnya.
         self.processing_error_code = None
@@ -221,8 +227,8 @@ class RPSDocument:
 
         Dokumen tetap disimpan (file aslinya dipertahankan agar hasil dapat
         dilacak ke sumbernya — data-model §8) dan dapat diproses ulang setelah
-        penyebab kegagalan diperbaiki. ``source_markdown`` dan
-        ``source_document`` tidak diisi: hasil yang gagal bukan hasil.
+        penyebab kegagalan diperbaiki. ``source_document`` tidak diisi: hasil
+        yang gagal bukan hasil.
 
         ``error_code`` dan ``reason`` diisi dari error domain yang menyebabkannya
         (kode pada design-api §18 dan alasan publik yang aman ditampilkan), lalu
@@ -247,16 +253,14 @@ class RPSDocument:
         return reference - started > stale_after
 
     def __repr__(self) -> str:
-        # Isi markdown maupun dokumen sumber tidak ikut direpresentasikan:
-        # dokumen RPS dapat berisi ribuan baris dan repr-nya dipakai pada log.
-        markdown = "set" if self.source_markdown else "unset"
+        # Isi dokumen sumber tidak ikut direpresentasikan: dokumen RPS dapat
+        # berisi ribuan baris dan repr-nya dipakai pada log.
         document = "set" if self.source_document else "unset"
         return (
             f"RPSDocument(id={self.id!r}, owner_id={self.owner_id!r}, "
             f"file_name={self.file_name!r}, file_type={self.file_type!r}, "
             f"file_hash={self.file_hash!r}, schema_version={self.schema_version!r}, "
-            f"status={self.status.value!r}, source_markdown={markdown}, "
-            f"source_document={document}, "
+            f"status={self.status.value!r}, source_document={document}, "
             f"processing_duration_ms={self.processing_duration_ms!r}, "
             f"created_at={self.created_at!r}, updated_at={self.updated_at!r})"
         )

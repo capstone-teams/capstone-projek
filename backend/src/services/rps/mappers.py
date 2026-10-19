@@ -4,9 +4,10 @@ Pemetaan berada di layer service supaya domain tetap bebas SQLAlchemy, dan
 repository tetap menjadi satu-satunya tempat yang menyentuh entity persistence.
 Nama field sengaja sama persis di kedua sisi (``file_name``, ``file_type``,
 ``file_path``, ``file_hash``, ``schema_version``, ``status``,
-``source_markdown``, ``source_document``, ``processing_duration_ms``,
-``processing_error_code``, ``processing_error``, ``structured_data``), sehingga tidak ada terjemahan nama yang bisa menyimpang;
-satu-satunya nilai yang dibentuk persistence adalah ``id`` dan timestamp.
+``source_document``, ``processing_duration_ms``, ``processing_error_code``,
+``processing_error``, ``structured_data``), sehingga tidak ada terjemahan nama
+yang bisa menyimpang; satu-satunya nilai yang dibentuk persistence adalah ``id``
+dan timestamp.
 """
 
 from __future__ import annotations
@@ -33,7 +34,6 @@ def to_domain(entity: RPSEntity) -> RPSDocument:
         file_hash=entity.file_hash,
         schema_version=entity.schema_version,
         status=entity.status,
-        source_markdown=entity.source_markdown,
         source_document=entity.source_document,
         processing_duration_ms=entity.processing_duration_ms,
         processing_error_code=entity.processing_error_code,
@@ -59,7 +59,6 @@ def apply_to_entity(document: RPSDocument, entity: RPSEntity) -> RPSEntity:
     entity.file_hash = document.file_hash
     entity.schema_version = document.schema_version
     entity.status = document.status
-    entity.source_markdown = document.source_markdown
     entity.source_document = document.source_document
     entity.processing_duration_ms = document.processing_duration_ms
     entity.processing_error_code = document.processing_error_code

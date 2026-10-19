@@ -1,4 +1,4 @@
-"""Adapter Docling untuk konversi dokumen RPS (BE-05.2).
+"""Adapter Docling untuk konversi dokumen RPS (BE-05.2, dikoreksi BE-13).
 
 Docling (IBM) adalah *candidate solution* untuk document processing pada desain
 sistem, dan modul ini adalah satu-satunya tempat di aplikasi yang menyentuhnya.
@@ -16,6 +16,11 @@ Tiga hal yang dijaga di sini:
 3. **Kegagalan diterjemahkan.** Seluruh exception Docling dipetakan ke error
    domain. Pesan asli hanya masuk log server-side, karena dapat memuat path
    internal atau potongan isi dokumen.
+
+Sesuai DL-008, hasil konversi diekspor sebagai **JSON DoclingDocument** — teks,
+heading, tabel, dan nomor halaman tetap utuh. Modul ini tidak pernah memanggil
+``export_to_markdown`` dan tidak membentuk YAML: YAML baru diserialisasi oleh
+BE-08.1 dari ``source_document`` ketika dibutuhkan sebagai input LLM (DL-006).
 
 Konfigurasi (lihat ``src/config/settings.py`` dan ``backend/.env.example``):
 
@@ -46,6 +51,7 @@ from src.services.rps.converter import (
     ConvertedTable,
     DocumentConversion,
     DocumentConverter,
+    has_extractable_content,
 )
 from src.services.rps.errors import (
     DocumentConversionError,
@@ -112,7 +118,7 @@ class DoclingDocumentConverter(DocumentConverter):
             return "unknown"
 
     async def convert(self, *, content: bytes, file_name: str) -> DocumentConversion:
-        """Konversi isi dokumen RPS menjadi markdown, JSON, YAML, dan tabel.
+        """Konversi isi dokumen RPS menjadi JSON Docling dan struktur tabel.
 
         ``content`` adalah isi berkas (bukan path), sehingga service tidak perlu
         menyerahkan lokasi penyimpanan kepada library konversi.
@@ -125,16 +131,16 @@ class DoclingDocumentConverter(DocumentConverter):
 
         api = await self._ensure_api()
         document = await self._convert_document(api, content=content, file_name=file_name)
-
-        markdown = _export_markdown(document)
-        if not markdown.strip():
+        document_json = _export_json(document)
+        if not has_extractable_content(document_json):
             # Dokumen tanpa teks yang dapat diekstrak (mis. PDF hasil pindai
             # dengan OCR nonaktif) bukan "berhasil dikonversi": menyimpannya
-            # sebagai source_markdown kosong akan membuat tahap berikutnya
+            # sebagai source_document kosong akan membuat tahap berikutnya
             # bekerja dengan bahan yang tidak ada.
             raise DocumentConversionError(
-                "konversi menghasilkan markdown kosong; dokumen tidak memuat teks "
-                "yang dapat diekstrak (aktifkan RPS_CONVERTER_OCR untuk dokumen pindai)",
+                "konversi tidak menghasilkan teks/tabel yang dapat diekstrak; "
+                "dokumen tidak memuat teks (aktifkan RPS_CONVERTER_OCR untuk "
+                "dokumen pindai)",
                 public_reason=(
                     "Dokumen tidak memuat teks yang dapat diekstrak. Bila RPS berupa "
                     "hasil pindai, OCR perlu diaktifkan (RPS_CONVERTER_OCR)."
@@ -142,9 +148,7 @@ class DoclingDocumentConverter(DocumentConverter):
             )
 
         return DocumentConversion(
-            markdown=markdown,
-            document_json=_export_json(document),
-            document_yaml=_export_yaml(document),
+            document_json=document_json,
             tables=_export_tables(document),
             converter_name=self.name,
             converter_version=api.version,
@@ -304,19 +308,13 @@ def _summarize_docling_error(exc: BaseException) -> str:
     return type(exc).__name__
 
 
-def _export_markdown(document: Any) -> str:
-    """Markdown normalisasi; Docling merender tabel sebagai tabel pipe GFM."""
-    try:
-        return document.export_to_markdown()
-    except Exception as exc:
-        raise DocumentConversionError(
-            f"gagal mengekspor markdown dari dokumen: {type(exc).__name__}",
-            public_reason="Hasil konversi tidak dapat diserialisasi.",
-        ) from exc
-
-
 def _export_json(document: Any) -> dict[str, Any]:
-    """Representasi penuh dokumen (DoclingDocument) sebagai dict."""
+    """Representasi penuh dokumen (DoclingDocument) sebagai dict.
+
+    Inilah satu-satunya ekspor yang dipakai (DL-008). JSON Docling membawa
+    ``texts``, ``tables``, dan ``pages`` beserta provenance per item, sehingga
+    nomor halaman tetap tersedia bagi tahap ekstraksi.
+    """
     try:
         payload = document.export_to_dict()
     except Exception as exc:
@@ -328,74 +326,42 @@ def _export_json(document: Any) -> dict[str, Any]:
     return payload
 
 
-def _export_yaml(document: Any) -> str:
-    """Representasi YAML dari dokumen yang sama dengan :func:`_export_json`.
-
-    Docling menyediakan ``export_to_yaml``; bila versi yang terpasang tidak
-    memilikinya, YAML dibangun dari JSON agar artefak YAML tetap tersedia (BE-05
-    meminta JSON **dan** YAML).
-    """
-    exporter = getattr(document, "export_to_yaml", None)
-    if callable(exporter):
-        try:
-            return exporter()
-        except Exception as exc:
-            raise DocumentConversionError(
-                f"gagal mengekspor YAML dari dokumen: {type(exc).__name__}"
-            ) from exc
-
-    return _dump_yaml(_export_json(document))
-
-
-def _dump_yaml(payload: dict[str, Any]) -> str:
-    """Serialisasi dict ke YAML sebagai fallback bila Docling tidak menyediakannya."""
-    try:
-        import yaml
-    except ImportError as exc:
-        raise DocumentConverterUnavailableError(
-            "dokumen tidak dapat diproses: paket 'pyyaml' tidak tersedia untuk "
-            "menghasilkan representasi YAML"
-        ) from exc
-
-    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
-
-
 def _export_tables(document: Any) -> list[ConvertedTable]:
     """Ekstrak seluruh tabel beserta struktur baris/kolomnya.
 
-    Tabel adalah data akademik pada RPS (distribusi mingguan, bobot penilaian),
-    sehingga strukturnya dipisahkan dari markdown: baris/kolom dapat dibaca
-    langsung oleh tahap ekstraksi (BE-08) tanpa mem-parsing markdown kembali.
+    Tabel adalah data akademik pada RPS (distribusi mingguan, bobot penilaian).
+    Artefak turunan ini memudahkan tahap ekstraksi (BE-08) membaca baris/kolom
+    tanpa menelusuri struktur DoclingDocument; sumber kebenarannya tetap JSON
+    pada ``source_document``.
     """
     tables: list[ConvertedTable] = []
     for index, table in enumerate(getattr(document, "tables", []) or []):
         tables.append(
             ConvertedTable(
                 index=index,
-                markdown=_table_text(table, document, "export_to_markdown"),
                 page=_table_page(table),
                 caption=_table_caption(table, document),
-                html=_table_text(table, document, "export_to_html") or None,
+                html=_table_html(table, document),
                 cells=_table_cells(table, document),
             )
         )
     return tables
 
 
-def _table_text(table: Any, document: Any, exporter_name: str) -> str:
-    """Panggil exporter tabel (``export_to_markdown``/``export_to_html``).
+def _table_html(table: Any, document: Any) -> str | None:
+    """HTML tabel bila Docling menyediakannya; mempertahankan rowspan/colspan.
 
     Docling memerlukan ``doc=`` agar penggabungan sel dan referensi isi dapat
     diselesaikan; tanpa itu hasilnya kosong atau memunculkan peringatan
     deprecation.
     """
-    exporter = getattr(table, exporter_name, None)
+    exporter = getattr(table, "export_to_html", None)
     if not callable(exporter):
-        return ""
+        return None
     try:
-        return exporter(doc=document) or ""
+        return exporter(doc=document) or None
     except Exception:
-        return ""
+        return None
 
 
 def _table_cells(table: Any, document: Any) -> list[list[str]]:

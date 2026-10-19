@@ -78,12 +78,10 @@ def _to_detail(document: RPSDocument) -> RPSDetailResponse:
         schema_version=document.schema_version,
         created_at=document.created_at,
         updated_at=document.updated_at,
-        has_source_markdown=bool(document.source_markdown),
         has_source_document=bool(document.source_document),
         processing_duration_ms=document.processing_duration_ms,
         processing_error_code=document.processing_error_code,
         processing_error_message=document.processing_error,
-        source_markdown=document.source_markdown,
     )
 
 
@@ -156,7 +154,7 @@ async def process_rps(
     runner: RPSProcessingRunner = Depends(get_rps_processing_runner),
     payload: RPSProcessRequest | None = None,
 ) -> RPSProcessResponse:
-    """Jadwalkan konversi dokumen RPS menjadi ``source_markdown`` (Docling).
+    """Jadwalkan konversi dokumen RPS menjadi ``source_document`` (JSON Docling).
 
     ``202`` + ``status: PROCESSING`` berarti konversi diterima dan berjalan di
     background. ``200`` + ``reused: true`` berarti tidak ada yang dijadwalkan

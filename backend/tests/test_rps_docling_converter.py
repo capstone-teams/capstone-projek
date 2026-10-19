@@ -1,4 +1,4 @@
-"""Test adapter Docling (BE-05.2).
+"""Test adapter Docling (BE-05.2, dikoreksi BE-13).
 
 Docling memasang torch dan model ML, sehingga tidak semua perilakunya dapat
 diuji sebagai bagian dari suite default. Yang diuji di sini adalah **kontrak
@@ -7,12 +7,13 @@ adapter**, bukan kualitas model Docling:
 - Docling diimpor secara *lazy*: tanpa paketnya, aplikasi tetap berjalan dan
   kegagalan muncul sebagai error domain yang menyebutkan cara memasangnya —
   bukan ``ModuleNotFoundError`` mentah;
-- pemetaan hasil Docling (markdown, JSON, YAML, tabel) benar, termasuk fallback
-  YAML untuk versi Docling yang tidak menyediakan ``export_to_yaml``;
+- pemetaan hasil Docling memakai ekspor **JSON** (DL-008), tanpa pernah
+  memanggil ``export_to_markdown`` dan tanpa membentuk YAML;
+- struktur tabel beserta nomor halaman tetap tersedia pada hasil konversi;
 - pesan publik tidak membocorkan nama paket/path internal.
 
 Konversi sungguhan dijalankan sebagai test opt-in
-(:func:`test_real_pdf_is_converted_to_markdown`) memakai dokumen pada
+(:func:`test_the_sample_rps_is_converted_to_json`) memakai dokumen pada
 ``tests/fixtures/test.pdf`` — RPS 16 halaman dengan template program studi:
 
     RPS_DOCLING_LIVE_TEST=1 uv run pytest tests/test_rps_docling_converter.py -v -s
@@ -31,15 +32,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.services.rps.converter import has_extractable_content
 from src.services.rps.docling_converter import (
     DOCLING_INSTALL_HINT,
     DOCLING_PACKAGE,
     TABLE_MODES,
     DoclingDocumentConverter,
     _export_json,
-    _export_markdown,
     _export_tables,
-    _export_yaml,
 )
 from src.services.rps.errors import (
     DocumentConversionError,
@@ -78,10 +78,10 @@ class FakeTable:
         self.prov = [SimpleNamespace(page_no=2)]
 
     def export_to_markdown(self, doc=None) -> str:
-        assert doc is not None, "adapter wajib meneruskan doc= agar sel dapat diselesaikan"
-        return "| Minggu | Topik |\n| --- | --- |\n| 1 | Basis data |"
+        raise AssertionError("adapter tidak boleh mengekspor Markdown dari RPS")
 
     def export_to_html(self, doc=None) -> str:
+        assert doc is not None, "adapter wajib meneruskan doc= agar sel dapat diselesaikan"
         return "<table><tr><td>1</td></tr></table>"
 
     def export_to_dataframe(self, doc=None):
@@ -92,26 +92,49 @@ class FakeTable:
 
 
 class FakeDocument:
-    """Tiruan ``DoclingDocument``."""
+    """Tiruan ``DoclingDocument`` dengan teks, tabel, dan nomor halaman."""
 
-    def __init__(self, *, tables=None, markdown: str = "# RPS") -> None:
+    def __init__(self, *, tables=None) -> None:
         self.tables = tables if tables is not None else [FakeTable()]
-        self._markdown = markdown
 
     def export_to_markdown(self) -> str:
-        return self._markdown
-
-    def export_to_dict(self) -> dict:
-        return {"schema_name": "DoclingDocument", "texts": [{"text": "Basis Data"}]}
+        raise AssertionError("adapter tidak boleh mengekspor Markdown dari RPS")
 
     def export_to_yaml(self) -> str:
-        return "schema_name: DoclingDocument\n"
+        raise AssertionError("adapter tidak boleh membentuk YAML dari RPS")
+
+    def export_to_dict(self) -> dict:
+        return {
+            "schema_name": "DoclingDocument",
+            "pages": {
+                "1": {"page_no": 1, "size": {"width": 612, "height": 792}},
+                "2": {"page_no": 2, "size": {"width": 612, "height": 792}},
+            },
+            "texts": [
+                {
+                    "label": "section_header",
+                    "text": "CPMK",
+                    "prov": [{"page_no": 1}],
+                }
+            ],
+            "tables": [
+                {
+                    "label": "table",
+                    "prov": [{"page_no": 2}],
+                    "data": {"num_rows": 2, "num_cols": 2},
+                }
+            ],
+        }
 
 
-class LegacyDocument(FakeDocument):
-    """Tiruan DoclingDocument versi lama: tidak punya ``export_to_yaml``."""
+class JsonOnlyConverter(DoclingDocumentConverter):
+    """Adapter dengan API Docling palsu: cukup untuk menguji jalur ekspor."""
 
-    export_to_yaml = None
+    async def _ensure_api(self):
+        return SimpleNamespace(version="test-1")
+
+    async def _convert_document(self, api, *, content: bytes, file_name: str):
+        return FakeDocument()
 
 
 # --- Kontrak konverter -----------------------------------------------------
@@ -180,17 +203,16 @@ async def test_an_unavailable_converter_is_still_a_conversion_error(monkeypatch)
 # --- Pemetaan hasil Docling ------------------------------------------------
 
 
-def test_markdown_is_taken_from_the_converted_document():
-    assert _export_markdown(FakeDocument(markdown="## Dummy PDF file")) == "## Dummy PDF file"
+@pytest.mark.asyncio
+async def test_conversion_exports_json_and_never_markdown():
+    """DL-008/BE-13: satu-satunya ekspor dokumen adalah JSON Docling."""
+    result = await JsonOnlyConverter().convert(content=PDF_BYTES, file_name="rps.pdf")
 
-
-def test_a_failing_markdown_export_becomes_a_conversion_error():
-    class Broken(FakeDocument):
-        def export_to_markdown(self) -> str:
-            raise RuntimeError("gagal")
-
-    with pytest.raises(DocumentConversionError):
-        _export_markdown(Broken())
+    assert result.document_json["schema_name"] == "DoclingDocument"
+    assert result.document_json["pages"]["2"]["page_no"] == 2
+    assert result.document_json["tables"][0]["prov"][0]["page_no"] == 2
+    assert result.converter_name == "docling"
+    assert result.converter_version == "test-1"
 
 
 def test_json_export_must_be_an_object():
@@ -204,19 +226,15 @@ def test_json_export_must_be_an_object():
     assert _export_json(FakeDocument())["schema_name"] == "DoclingDocument"
 
 
-def test_yaml_prefers_the_docling_exporter():
-    assert _export_yaml(FakeDocument()) == "schema_name: DoclingDocument\n"
+def test_a_document_without_text_or_tables_is_not_a_usable_result():
+    """Dokumen pindai tanpa OCR tidak boleh dianggap berhasil dikonversi."""
+    assert has_extractable_content({"texts": [{"text": "CPMK"}]})
+    assert has_extractable_content({"tables": [{"prov": [{"page_no": 2}]}]})
+    assert not has_extractable_content({"pages": {"1": {}}, "texts": [], "tables": []})
+    assert not has_extractable_content({})
 
 
-def test_yaml_falls_back_to_dumping_the_json_when_docling_has_no_exporter():
-    """BE-05 meminta JSON **dan** YAML; versi Docling tanpa exporter tetap terlayani."""
-    yaml_text = _export_yaml(LegacyDocument())
-
-    assert "schema_name: DoclingDocument" in yaml_text
-    assert yaml_text.startswith("schema_name:")
-
-
-def test_tables_keep_their_structure_not_only_their_text():
+def test_tables_keep_their_structure_and_page_numbers():
     converter_tables = _export_tables(FakeDocument())
 
     assert len(converter_tables) == 1
@@ -224,7 +242,6 @@ def test_tables_keep_their_structure_not_only_their_text():
     assert table.index == 0
     assert table.page == 2
     assert table.caption == "Distribusi Mingguan"
-    assert table.markdown.startswith("| Minggu | Topik |")
     assert table.html.startswith("<table>")
     assert table.cells == [["Minggu", "Topik"], ["1", "Basis data"]]
     assert (table.num_rows, table.num_cols) == (2, 2)
@@ -241,7 +258,7 @@ def test_table_cells_tolerate_missing_values_and_uneven_rows():
 
 def test_one_broken_table_does_not_lose_the_rest_of_the_document():
     class BrokenTable(FakeTable):
-        def export_to_markdown(self, doc=None) -> str:
+        def export_to_html(self, doc=None) -> str:
             raise RuntimeError("tabel rusak")
 
         def export_to_dataframe(self, doc=None):
@@ -250,7 +267,7 @@ def test_one_broken_table_does_not_lose_the_rest_of_the_document():
     tables = _export_tables(FakeDocument(tables=[BrokenTable(), FakeTable(caption=None)]))
 
     assert len(tables) == 2
-    assert tables[0].markdown == ""
+    assert tables[0].html is None
     assert tables[0].cells == []
     assert tables[1].cells == [["Minggu", "Topik"], ["1", "Basis data"]]
     assert tables[1].caption is None
@@ -267,6 +284,7 @@ def test_table_dict_is_ready_to_be_serialized_as_an_artifact():
     assert payload["num_cols"] == 2
     assert payload["page"] == 2
     assert payload["cells"][1] == ["1", "Basis data"]
+    assert "markdown" not in payload
 
 
 # --- Konversi sungguhan (opt-in) -------------------------------------------
@@ -287,11 +305,13 @@ def test_the_sample_rps_fixture_is_present_and_readable():
     reason="opt-in live Docling test: set RPS_DOCLING_LIVE_TEST=1",
 )
 @pytest.mark.asyncio
-async def test_real_pdf_is_converted_to_markdown():
+async def test_the_sample_rps_is_converted_to_json():
     """Membuktikan pipeline Docling benar-benar bekerja pada dokumen RPS nyata.
 
     Memakai ``tests/fixtures/test.pdf`` (RPS 16 halaman dengan template program
-    studi), atau path lain bila ``RPS_DOCLING_TEST_PDF`` diisi.
+    studi), atau path lain bila ``RPS_DOCLING_TEST_PDF`` diisi. Yang diperiksa
+    adalah acceptance criteria BE-13: JSON menyimpan teks, tabel CPMK/rencana
+    mingguan, dan nomor halaman.
     """
     pdf_path = Path(os.environ.get("RPS_DOCLING_TEST_PDF") or FIXTURE_PDF)
     if not pdf_path.is_file():
@@ -305,14 +325,38 @@ async def test_real_pdf_is_converted_to_markdown():
 
     assert result.converter_name == "docling"
     assert result.converter_version != ""
-    assert result.markdown.strip()
-    assert result.document_json["schema_name"] == "DoclingDocument"
-    assert result.document_yaml.strip()
-    # RPS nyata memuat tabel akademik (distribusi mingguan, bobot penilaian);
-    # konversi yang kehilangan seluruh tabel berarti strukturnya tidak terbaca.
+    document = result.document_json
+    assert document["schema_name"] == "DoclingDocument"
+
+    texts = document.get("texts") or []
+    tables = document.get("tables") or []
+    assert texts, "RPS contoh harus menghasilkan teks"
+    assert tables, "RPS contoh harus menghasilkan tabel"
     assert result.table_count > 0
-    assert all(table.num_cols > 0 for table in result.tables if table.cells)
+
+    # Nomor halaman tersedia pada provenance tabel yang disimpan.
+    page_numbers = [
+        provenance.get("page_no")
+        for table in tables
+        for provenance in (table.get("prov") or [])
+    ]
+    assert page_numbers
+    assert all(isinstance(page, int) for page in page_numbers)
+
+    # Tabel akademik RPS (CPMK dan rencana mingguan) harus terbaca, baik sebagai
+    # teks dokumen maupun sebagai sel tabel.
+    table_cells = [
+        cell.get("text", "")
+        for table in tables
+        for cell in ((table.get("data") or {}).get("table_cells") or [])
+    ]
+    text = " ".join(
+        [item.get("text", "") for item in texts] + table_cells
+    ).upper()
+    assert "CPMK" in text
+    assert "MINGGU" in text or "RENCANA" in text
+
     print(
-        f"\ndocling {result.converter_version}: {len(result.markdown)} karakter markdown, "
-        f"{result.table_count} tabel"
+        f"\ndocling {result.converter_version}: {len(texts)} teks, "
+        f"{result.table_count} tabel, halaman: {sorted(set(page_numbers))}"
     )

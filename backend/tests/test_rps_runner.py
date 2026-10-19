@@ -38,7 +38,11 @@ from src.services.rps.storage import LocalDocumentStorage
 from src.services.user import UserRole, UserService
 
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
-MARKDOWN = "# RPS Basis Data\n"
+SOURCE_DOCUMENT = {
+    "schema_name": "DoclingDocument",
+    "pages": {"1": {"page_no": 1}},
+    "texts": [{"label": "section_header", "text": "CPMK", "prov": [{"page_no": 1}]}],
+}
 PASSWORD = "SecretPassword123"
 
 
@@ -60,10 +64,8 @@ class StubConverter(DocumentConverter):
                 "detail internal", public_reason="Dokumen tidak dapat dibaca."
             )
         return DocumentConversion(
-            markdown=MARKDOWN,
-            document_json={"schema_name": "DoclingDocument"},
-            document_yaml="schema_name: DoclingDocument\n",
-            tables=[ConvertedTable(index=0, markdown="| a |", cells=[["a"]])],
+            document_json=SOURCE_DOCUMENT,
+            tables=[ConvertedTable(index=0, page=1, cells=[["a"]])],
             converter_name=self.name,
             converter_version=self.version,
         )
@@ -184,8 +186,8 @@ async def test_the_runner_completes_the_conversion(runner_env, db_session, owner
     service = RPSService.from_session(db_session, storage=storage, converter=converter)
     document = await service.get_rps(rps_id=rps_id, owner_id=owner_id)
     assert document.status is RPSStatus.PROCESSED
-    assert document.source_markdown == MARKDOWN
-    assert document.source_document == {"schema_name": "DoclingDocument"}
+    assert document.source_document == SOURCE_DOCUMENT
+    assert document.source_document["texts"][0]["text"] == "CPMK"
     assert converter.calls == 1
 
 

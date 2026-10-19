@@ -42,7 +42,6 @@ from src.services.rps.errors import (
 )
 from src.services.rps.service import (
     DOCUMENT_JSON_ARTIFACT,
-    DOCUMENT_YAML_ARTIFACT,
     MANIFEST_ARTIFACT,
     TABLES_ARTIFACT,
     RPSService,
@@ -62,7 +61,18 @@ def database_now() -> datetime:
     """
     return datetime.now(timezone.utc)
 
-MARKDOWN = "# RPS Basis Data\n\n| Minggu | Topik |\n| --- | --- |\n| 1 | Basis data |\n"
+SOURCE_DOCUMENT = {
+    "schema_name": "DoclingDocument",
+    "pages": {"1": {"page_no": 1}, "2": {"page_no": 2}},
+    "texts": [{"label": "section_header", "text": "CPMK", "prov": [{"page_no": 1}]}],
+    "tables": [
+        {
+            "label": "table",
+            "prov": [{"page_no": 2}],
+            "data": {"num_rows": 2, "num_cols": 2},
+        }
+    ],
+}
 
 # Versi skema yang **berbeda** dari yang berlaku: dipakai untuk menguji kunci
 # idempotency tanpa terikat pada nomor versi saat ini.
@@ -129,8 +139,10 @@ class RecordingConverter(DocumentConverter):
 
     name = "recording"
 
-    def __init__(self, *, markdown: str = MARKDOWN, error: Exception | None = None) -> None:
-        self._markdown = markdown
+    def __init__(
+        self, *, document_json: dict | None = None, error: Exception | None = None
+    ) -> None:
+        self.document_json = SOURCE_DOCUMENT if document_json is None else document_json
         self._error = error
         self.calls: list[dict] = []
 
@@ -143,14 +155,11 @@ class RecordingConverter(DocumentConverter):
         if self._error is not None:
             raise self._error
         return DocumentConversion(
-            markdown=self._markdown,
-            document_json={"schema_name": "DoclingDocument", "texts": [{"text": "Basis Data"}]},
-            document_yaml="schema_name: DoclingDocument\ntexts:\n- text: Basis Data\n",
+            document_json=self.document_json,
             tables=[
                 ConvertedTable(
                     index=0,
-                    markdown="| Minggu | Topik |\n| --- | --- |\n| 1 | Basis data |",
-                    page=1,
+                    page=2,
                     caption="Distribusi Mingguan",
                     html="<table><tr><td>1</td></tr></table>",
                     cells=[["Minggu", "Topik"], ["1", "Basis data"]],
@@ -364,11 +373,11 @@ async def test_an_unknown_identifier_is_not_found(service):
         await service.get_rps(rps_id=shortuuid.uuid(), owner_id=INSTRUCTOR_ID)
 
 
-# --- BE-05.2: konversi menjadi source_markdown -----------------------------
+# --- BE-05.2/BE-13: konversi menjadi source_document -----------------------
 
 
 @pytest.mark.asyncio
-async def test_process_converts_the_document_and_stores_the_markdown(service, converter):
+async def test_process_converts_the_document_and_stores_the_json(service, converter):
     created = await upload(service)
 
     result = await service.process_rps(
@@ -377,12 +386,12 @@ async def test_process_converts_the_document_and_stores_the_markdown(service, co
 
     assert not result.reused
     assert result.document.status is RPSStatus.PROCESSED
-    assert result.document.source_markdown == MARKDOWN
+    assert result.document.source_document == SOURCE_DOCUMENT
     assert converter.calls == [{"content": PDF_BYTES, "file_name": "rps-basis-data.pdf"}]
 
 
 @pytest.mark.asyncio
-async def test_process_writes_json_yaml_and_table_artifacts(service, storage, tmp_path):
+async def test_process_writes_json_and_table_artifacts(service, storage, tmp_path):
     created = await upload(service)
 
     await service.process_rps(rps_id=created.document.id or "", owner_id=INSTRUCTOR_ID)
@@ -393,7 +402,7 @@ async def test_process_writes_json_yaml_and_table_artifacts(service, storage, tm
     artifact_dir = _artifact_dir(tmp_path, document.file_path)
 
     assert sorted(path.name for path in artifact_dir.iterdir()) == sorted(
-        [DOCUMENT_JSON_ARTIFACT, DOCUMENT_YAML_ARTIFACT, MANIFEST_ARTIFACT, TABLES_ARTIFACT]
+        [DOCUMENT_JSON_ARTIFACT, MANIFEST_ARTIFACT, TABLES_ARTIFACT]
     )
 
     tables = json.loads((artifact_dir / TABLES_ARTIFACT).read_text(encoding="utf-8"))
@@ -408,14 +417,11 @@ async def test_process_writes_json_yaml_and_table_artifacts(service, storage, tm
     )
     assert document_json["schema_name"] == "DoclingDocument"
 
-    yaml_text = (artifact_dir / DOCUMENT_YAML_ARTIFACT).read_text(encoding="utf-8")
-    assert yaml_text.startswith("schema_name: DoclingDocument")
-
     manifest = json.loads((artifact_dir / MANIFEST_ARTIFACT).read_text(encoding="utf-8"))
     assert manifest["converter"] == "recording"
     assert manifest["converter_version"] == "test-1"
     assert manifest["table_count"] == 1
-    assert manifest["markdown_length"] == len(MARKDOWN)
+    assert manifest["page_count"] == 2
     assert manifest["file_hash"] == document.file_hash
     assert manifest["schema_version"] == RPS_SCHEMA_VERSION
     assert manifest["converted_at"]
@@ -432,7 +438,7 @@ async def test_processing_twice_does_not_run_the_converter_again(service, conver
     assert not first.reused
     assert second.reused
     assert second.document.status is RPSStatus.PROCESSED
-    assert second.document.source_markdown == MARKDOWN
+    assert second.document.source_document == SOURCE_DOCUMENT
     assert len(converter.calls) == 1
 
 
@@ -470,7 +476,7 @@ async def test_a_failed_conversion_leaves_the_document_failed(service, repositor
 
     document = repository.rows[created.document.id or ""]
     assert document.status is RPSStatus.FAILED
-    assert document.source_markdown is None
+    assert document.source_document is None
     # Pesan publik tidak membocorkan detail penyebab; detailnya hanya di log.
     assert excinfo.value.public_message == "Pemrosesan RPS gagal."
     assert "dokumen rusak" in excinfo.value.log_message
@@ -489,14 +495,16 @@ async def test_a_failed_document_can_be_processed_again(service, repository):
     result = await service.process_rps(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
 
     assert result.document.status is RPSStatus.PROCESSED
-    assert result.document.source_markdown == MARKDOWN
+    assert result.document.source_document == SOURCE_DOCUMENT
 
 
 @pytest.mark.asyncio
 async def test_an_empty_conversion_result_is_a_failure(service, repository):
-    """Markdown kosong bukan hasil yang sah untuk tahap berikutnya."""
+    """JSON tanpa teks/tabel bukan hasil yang sah untuk tahap berikutnya."""
     created = await upload(service)
-    service._converter = RecordingConverter(markdown="   ")
+    service._converter = RecordingConverter(
+        document_json={"schema_name": "DoclingDocument", "texts": [], "tables": []}
+    )
 
     with pytest.raises(DocumentConversionError):
         await service.process_rps(
@@ -573,13 +581,30 @@ async def test_the_converted_document_is_persisted_for_the_next_stage(service, r
     )
 
     stored = repository.rows[created.document.id or ""]
-    assert result.document.source_document == {
-        "schema_name": "DoclingDocument",
-        "texts": [{"text": "Basis Data"}],
-    }
+    assert result.document.source_document == SOURCE_DOCUMENT
     assert stored.source_document == result.document.source_document
-    # Teks, heading, tabel, dan nomor halaman tetap ada pada JSON yang disimpan.
-    assert "texts" in stored.source_document
+    # Teks, tabel, dan nomor halaman tetap ada pada JSON yang disimpan.
+    assert stored.source_document["texts"][0]["text"] == "CPMK"
+    assert stored.source_document["tables"][0]["prov"][0]["page_no"] == 2
+    assert stored.source_document["pages"]["2"]["page_no"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_markdown_only_row_is_reprocessed(service, repository, converter):
+    """RPS uji format lama (hanya Markdown) diproses ulang menjadi JSON."""
+    created = await upload(service)
+    rps_id = created.document.id or ""
+    await service.process_rps(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    # Baris lama: sudah PROCESSED tetapi tidak punya JSON hasil konversi.
+    repository.rows[rps_id] = replace(repository.rows[rps_id], source_document=None)
+
+    result = await service.process_rps(rps_id=rps_id, owner_id=INSTRUCTOR_ID)
+
+    assert not result.reused
+    assert result.document.status is RPSStatus.PROCESSED
+    assert result.document.source_document == SOURCE_DOCUMENT
+    assert len(converter.calls) == 2
 
 
 @pytest.mark.asyncio
