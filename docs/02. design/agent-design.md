@@ -9,7 +9,7 @@
 | Status            | Proposed                                                                   |
 | Owner             | Capstone Team                                                              |
 | Related Documents | Project Charter, PRD, System Design, Data Model, Moodle Integration Design |
-| LLM Runtime       | Ollama — Proposed                                                          |
+| LLM Provider      | OpenAI API — Accepted (DL-007)                                             |
 | Model             | TBD                                                                        |
 | Architecture      | Single Orchestrator with Modular Capabilities — Proposed                   |
 
@@ -304,6 +304,24 @@ FAILED
 COMPLETED
 ```
 
+Pada implementasi, status workflow mengikuti `WorkflowStatus` pada proposal (DL-011). State rinci pada dokumen ini dipetakan sebagai berikut:
+
+| State rinci (dokumen ini)                 | WorkflowStatus (implementasi) |
+| ----------------------------------------- | ----------------------------- |
+| CREATED, PROCESSING_RPS                   | PROCESSING_RPS                |
+| ANALYZING_RPS                             | ANALYZING_RPS                 |
+| PLANNING                                  | PLANNING_COURSE               |
+| VALIDATING_PLAN, VALIDATING_CONTENT       | VALIDATING                    |
+| WAITING_PLAN_REVIEW, WAITING_CONTENT_REVIEW | WAITING_FOR_REVIEW          |
+| GENERATING_CONTENT                        | GENERATING_CONTENT            |
+| APPROVED, EXECUTING                       | EXECUTING_TO_MOODLE           |
+| VERIFYING                                 | VERIFYING                     |
+| RETRYING                                  | RETRYING                      |
+| FAILED                                    | FAILED                        |
+| COMPLETED                                 | COMPLETED                     |
+
+Tahap yang lebih rinci (misalnya review plan atau review konten) dibedakan melalui WorkflowEvent dan data tahap terkait. Entitas Agent Run dan Agent Event pada dokumen ini diimplementasikan sebagai Workflow dan WorkflowEvent.
+
 State transition harus dilakukan oleh Backend/Orchestrator.
 
 LLM tidak boleh secara bebas mengubah persisted workflow state.
@@ -325,7 +343,7 @@ Sistem:
 * membaca file;
 * mengekstrak content;
 * melakukan normalization;
-* menghasilkan Markdown/structured representation.
+* menghasilkan source document (JSON) dan RPS Structured Data (JSON) (DL-008).
 
 LLM belum melakukan generation utama.
 
@@ -1243,7 +1261,7 @@ Agent
  ↓
 LLM Provider Interface
  ↓
-Ollama Adapter
+OpenAI Adapter
  ↓
 Selected Model
 ```
@@ -1253,7 +1271,8 @@ Contoh:
 ```text
 ILLMProvider
       │
-      └── OllamaProvider
+      ├── OpenAIProvider
+      └── GeminiProvider (alternatif)
 ```
 
 Tujuannya agar model dapat diganti tanpa mengubah seluruh agent architecture.
@@ -1276,7 +1295,7 @@ Candidate awal dapat dievaluasi berdasarkan:
 | Tool calling          | High       |
 | Content quality       | Very High  |
 | Latency               | Medium     |
-| Hardware requirement  | High       |
+| Cost per run          | High       |
 
 Model dipilih berdasarkan hasil benchmark terhadap use case proyek, bukan semata-mata popularitas model.
 
@@ -1623,7 +1642,7 @@ MVP tidak wajib mendukung:
 | Decision                         | Status               |
 | -------------------------------- | -------------------- |
 | Final LLM model                  | TBD                  |
-| Exact Ollama model configuration | TBD                  |
+| Exact OpenAI model configuration | TBD                  |
 | Agent framework                  | TBD                  |
 | Structured output mechanism      | TBD                  |
 | Exact validation scoring         | TBD                  |
@@ -1682,7 +1701,7 @@ Agent architecture dianggap siap untuk implementation apabila:
 ┌───────────────┐      ┌─────────────────────┐
 │ LLM Provider  │      │ Validation Engine   │
 │               │      │                     │
-│ Ollama        │      │ RPS / Schema /      │
+│ OpenAI API    │      │ RPS / Schema /      │
 │ Model = TBD   │      │ Semantic / Readiness│
 └───────────────┘      └─────────────────────┘
         │
@@ -1703,7 +1722,7 @@ Agent architecture dianggap siap untuk implementation apabila:
                         │
                         ▼
 ┌─────────────────────────────────────────────────┐
-│                  Moodle LMS ITK                 │
+│             Moodle LMS (self-hosted)            │
 └─────────────────────────────────────────────────┘
 
                   ┌─────────────────┐
@@ -1738,3 +1757,12 @@ Detail berikut masih harus ditentukan melalui implementation/testing:
 * context optimization.
 
 Perubahan pada workflow utama harus dievaluasi terhadap PRD, System Design, dan Data Model.
+
+---
+
+# 56. Version History
+
+| Version | Date       | Description                                                              | Author          |
+| ------- | ---------- | ------------------------------------------------------------------------ | --------------- |
+| 0.1     | 2026-09-02 | Initial Agent Design                                                     | Project Team    |
+| 0.2     | 2026-10-19 | Provider OpenAI (DL-007), pemetaan state ke WorkflowStatus (DL-011)      | Project Manager |
