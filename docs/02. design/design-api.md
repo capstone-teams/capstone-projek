@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** API Specification
-**Version:** 0.1
+**Version:** 0.5
 **Status:** Draft
 **Related Documents:**
 
@@ -218,55 +218,133 @@ Processing merupakan asynchronous operation.
 GET /api/v1/rps/{rps_id}/analysis
 ```
 
+Mengembalikan hasil RPS Analysis yang tersimpan pada `rps.structured_data` sesuai Content Schema §6–§7 (DL-006, DL-009). Endpoint ini membaca data tersimpan dan tidak menjalankan document processing maupun analisis ulang.
+
 Response:
 
 ```json
 {
   "rps_id": "rps_001",
-  "course": {
-    "name": "string",
-    "code": "string",
-    "credits": 3
-  },
-  "learning_outcomes": [],
-  "topics": [],
+  "status": "analyzed",
+  "schema_version": "1.0",
+  "course": {},
+  "cpl": [],
+  "cpmk": [],
+  "sub_cpmk": [],
+  "study_materials": [],
   "weekly_plan": [],
-  "assessment": [],
-  "references": []
+  "assessments": [],
+  "references": {},
+  "media": {},
+  "extraction": {}
+}
+```
+
+Error:
+
+* `RESOURCE_NOT_FOUND` apabila RPS tidak ditemukan.
+* `INVALID_REQUEST` apabila RPS belum selesai dianalisis.
+
+## 6.5 Catatan Pemrosesan
+
+Endpoint `GET /api/v1/rps/{rps_id}/structured-data` digabungkan ke §6.4 (DL-009).
+
+Catatan: `POST /api/v1/rps/{rps_id}/process` memulai Workflow untuk RPS tersebut dan mengembalikan `workflow_id`. Docling hanya dijalankan apabila dokumen belum pernah diproses dengan `file_hash` dan `schema_version` yang sama.
+
+## 6.6 List RPS
+
+```http
+GET /api/v1/rps
+```
+
+Mengembalikan daftar RPS milik dosen yang login.
+
+```json
+{
+  "items": [
+    {
+      "id": "rps_001",
+      "filename": "rps.pdf",
+      "status": "analyzed",
+      "workflow_id": "wf_001",
+      "uploaded_at": "datetime"
+    }
+  ]
+}
+```
+
+Status dokumen RPS: `uploaded`, `processing`, `processed`, `analyzing`, `analyzed`, `failed`.
+
+## 6.7 Reanalyze RPS
+
+```http
+POST /api/v1/rps/{rps_id}/reanalyze
+```
+
+Menjalankan RPS Analysis ulang dari `source_document` tanpa menjalankan Docling kembali. Digunakan ketika analisis sebelumnya gagal atau dosen meminta analisis ulang.
+
+```json
+{
+  "rps_id": "rps_001",
+  "status": "analyzing",
+  "workflow_id": "wf_001"
 }
 ```
 
 ---
 
-# 7. Instructor Profile API
+# 7. Instructor Setup API
 
-## 7.1 Get Profile
+Instructor Setup mengikuti Proposal §3.3.2 dan §3.4.2: Instructor Profile, Additional Prompt, dan Activity Configuration dikelola per dosen dan diambil serta disimpan dalam satu alur.
 
-```http
-GET /api/v1/instructors/me/profile
-```
-
-## 7.2 Update Profile
+## 7.1 Get Instructor Setup
 
 ```http
-PUT /api/v1/instructors/me/profile
+GET /api/v1/instructors/me/setup
 ```
 
-Request:
+Response:
 
 ```json
 {
-  "teaching_style": "string",
-  "language_preference": "Bahasa Indonesia",
-  "content_preference": "string"
+  "instructor_profile": {
+    "teaching_style": "string",
+    "expertise": "string",
+    "delivery_preference": "string"
+  },
+  "additional_prompt": "string",
+  "activity_configuration": {
+    "learning_material": true,
+    "learning_resource": true,
+    "assignment": false,
+    "quiz": false
+  }
 }
 ```
 
-Schema final ditentukan berdasarkan requirement profile.
+## 7.2 Update Instructor Setup
+
+```http
+PUT /api/v1/instructors/me/setup
+```
+
+Request menggunakan struktur yang sama dengan response §7.1.
+
+Validasi:
+
+* `additional_prompt` tidak melebihi batas panjang yang dikonfigurasi;
+* minimal satu jenis konten pada `activity_configuration` bernilai `true`;
+* hanya role `DOSEN` yang dapat mengakses endpoint ini.
+
+Error validasi menggunakan `INVALID_REQUEST` dengan detail per field.
+
+Instructor Setup merupakan konteks pendukung dan tidak menggantikan informasi akademik dari RPS.
 
 ---
 
 # 8. Course API
+
+Catatan (DL-011): pada implementasi, satu proses pembuatan course direpresentasikan oleh Workflow (§15). Endpoint berbasis `/courses/{course_id}` pada §8–§14 diselaraskan menjadi `/workflows/{workflow_id}/...` saat tahap terkait diimplementasikan. Activity Configuration dikelola per dosen melalui Instructor Setup (§7).
 
 ## 8.1 Create Generation Project
 
@@ -657,6 +735,30 @@ POST /api/v1/courses/{course_id}/execution/{execution_id}/cancel
 
 Cancellation hanya dapat dilakukan pada state yang memungkinkan.
 
+## 13.4 Moodle Integration Endpoints (Internal)
+
+Endpoint berikut digunakan untuk memeriksa koneksi dan menguji operasi Moodle Integration Layer. Endpoint tidak menerima maupun mengembalikan credential Moodle.
+
+```http
+GET  /api/v1/integrations/moodle/status
+GET  /api/v1/integrations/moodle/courses
+GET  /api/v1/integrations/moodle/courses/{moodle_course_id}
+GET  /api/v1/integrations/moodle/courses/{moodle_course_id}/contents
+POST /api/v1/integrations/moodle/courses
+POST /api/v1/integrations/moodle/courses/{moodle_course_id}/sections
+```
+
+| Endpoint                | Kegunaan                                                         | Akses                    |
+| ----------------------- | ---------------------------------------------------------------- | ------------------------ |
+| `status`                | Status koneksi, versi Moodle, dan ketersediaan functions yang dibutuhkan | Dosen               |
+| `GET courses`           | Daftar course Moodle untuk dipilih sebagai course target (Proposal §3.4.7) | Dosen             |
+| `courses/{id}`          | Membaca informasi course                                         | Dosen                    |
+| `courses/{id}/contents` | Membaca section dan module course                                | Dosen                    |
+| `POST courses`          | Membuat course untuk pengujian integrasi                         | Development environment  |
+| `POST .../sections`     | Membuat atau memperbarui section untuk pengujian integrasi       | Development environment  |
+
+Endpoint write hanya aktif pada development environment melalui konfigurasi. Eksekusi ke Moodle pada alur produk tetap melalui Moodle Execution API (§13.1).
+
 ---
 
 # 14. Verification API
@@ -697,111 +799,109 @@ Response:
 
 ---
 
-# 15. Agent Run API
+# 15. Workflow API
 
-## 15.1 Get Agent Run
+Workflow merepresentasikan satu proses pembuatan course dari RPS hingga verifikasi, sesuai class diagram proposal (Workflow, WorkflowEvent) dan DL-011.
+
+## 15.1 List Workflows
 
 ```http
-GET /api/v1/agent-runs/{run_id}
+GET /api/v1/workflows
+```
+
+Mengembalikan daftar workflow milik dosen yang login.
+
+## 15.2 Get Workflow
+
+```http
+GET /api/v1/workflows/{workflow_id}
 ```
 
 Response:
 
 ```json
 {
-  "id": "run_001",
-  "status": "running",
-  "stage": "content_generation",
-  "started_at": "datetime"
+  "id": "wf_001",
+  "rps_id": "rps_001",
+  "status": "ANALYZING_RPS",
+  "moodle_course_id": 12,
+  "created_at": "datetime",
+  "updated_at": "datetime"
 }
 ```
 
----
-
-## 15.2 Get Agent Run History
+## 15.3 Get Workflow Events
 
 ```http
-GET /api/v1/courses/{course_id}/agent-runs
+GET /api/v1/workflows/{workflow_id}/events
 ```
 
 Response:
 
 ```json
 {
-  "runs": [
+  "items": [
     {
-      "id": "run_001",
-      "type": "rps_processing",
-      "status": "completed"
-    },
-    {
-      "id": "run_002",
-      "type": "course_planning",
-      "status": "completed"
+      "id": "evt_001",
+      "event_type": "PERUBAHAN_TAHAP",
+      "stage": "PROCESSING_RPS",
+      "message": "Pemrosesan dokumen RPS dimulai",
+      "timestamp": "datetime"
     }
   ]
 }
 ```
 
----
+`event_type`: `PERUBAHAN_TAHAP`, `AKTIVITAS_AGENT`, `OPERASI_MOODLE`, `RETRY_FIX`, `ERROR_FAILURE`.
 
-# 16. Monitoring API
-
-## 16.1 Get Current Workflow Status
+## 15.4 Set Moodle Course Target
 
 ```http
-GET /api/v1/courses/{course_id}/monitoring
+PUT /api/v1/workflows/{workflow_id}/moodle-target
 ```
 
-Response:
+Request:
 
 ```json
 {
-  "course_id": "course_project_001",
-  "status": "generating_content",
-  "stage": "week_5",
-  "progress": {
-    "completed": 4,
-    "total": 16
-  }
+  "moodle_course_id": 12
 }
 ```
+
+Menyimpan course target Moodle yang dipilih dosen dari `GET /api/v1/integrations/moodle/courses` (Proposal §3.4.7).
+
+---
+
+# 16. Monitoring
+
+Monitoring menggunakan Workflow API (§15) untuk initial state dan riwayat, serta WebSocket (§17) untuk pembaruan real-time. Monitoring tidak menampilkan reasoning internal model.
 
 ---
 
 # 17. WebSocket Monitoring
 
-HTTP API digunakan untuk initial state.
-
-Real-time event menggunakan WebSocket.
-
 ```text
-WS /api/v1/ws/courses/{course_id}
+WS /api/v1/ws/workflows/{workflow_id}
 ```
+
+Koneksi diautentikasi menggunakan token pengguna. Hanya dosen pemilik workflow yang dapat berlangganan.
 
 Event example:
 
 ```json
 {
-  "event": "CONTENT_GENERATION_STARTED",
-  "course_id": "course_project_001",
-  "week": 5,
+  "workflow_id": "wf_001",
+  "event_type": "PERUBAHAN_TAHAP",
+  "stage": "ANALYZING_RPS",
+  "status": "ANALYZING_RPS",
+  "message": "Analisis RPS dimulai",
   "timestamp": "datetime"
 }
 ```
 
-Event completion:
+Event tidak memuat credential, API key, maupun isi prompt.
 
-```json
-{
-  "event": "CONTENT_GENERATION_COMPLETED",
-  "course_id": "course_project_001",
-  "week": 5,
-  "timestamp": "datetime"
-}
-```
-
-Frontend harus melakukan initial state fetch melalui HTTP sebelum membuka atau menggunakan event stream agar tidak bergantung pada event yang terjadi sebelum connection dibuat.
+Frontend harus mengambil initial state melalui HTTP sebelum menggunakan event stream agar tidak bergantung pada event yang terjadi sebelum koneksi dibuat.
 
 ---
 
@@ -863,44 +963,44 @@ INTERNAL_ERROR
 
 Backend harus menjaga state transition.
 
-Contoh:
+Status workflow mengikuti `WorkflowStatus` pada proposal (DL-011):
 
 ```text
-CREATED
-   ↓
 PROCESSING_RPS
    ↓
 ANALYZING_RPS
    ↓
-PLANNING
+PLANNING_COURSE
    ↓
-WAITING_PLAN_REVIEW
+VALIDATING
+   ↓
+WAITING_FOR_REVIEW
    ↓
 GENERATING_CONTENT
    ↓
 VALIDATING
    ↓
-WAITING_CONTENT_REVIEW
+WAITING_FOR_REVIEW
    ↓
-APPROVED
-   ↓
-EXECUTING
+EXECUTING_TO_MOODLE
    ↓
 VERIFYING
    ↓
 COMPLETED
 ```
 
+Status `RETRYING` dan `FAILED` dapat terjadi pada setiap tahap.
+
 Tidak semua state dapat dipanggil secara bebas oleh client.
 
 Contoh:
 
 ```text
-WAITING_CONTENT_REVIEW
+WAITING_FOR_REVIEW
         ↓
      APPROVE
         ↓
-      APPROVED
+EXECUTING_TO_MOODLE (setelah dosen menjalankan eksekusi)
 ```
 
 Client tidak boleh langsung mengubah state menjadi `COMPLETED`.
@@ -930,21 +1030,26 @@ Implementasi final ditentukan pada backend design.
 
 # 22. Authorization Matrix
 
-| Operation                 | Instructor | Student |
-| ------------------------- | ---------: | ------: |
-| Upload RPS                |        Yes |      No |
-| Process RPS               |        Yes |      No |
-| View RPS Analysis         |        Yes |      No |
-| Manage Instructor Profile |        Yes |      No |
-| Generate Course Plan      |        Yes |      No |
-| Review Course Plan        |        Yes |      No |
-| Generate Content          |        Yes |      No |
-| Review Content            |        Yes |      No |
-| Approve Content           |        Yes |      No |
-| Execute to Moodle         |        Yes |      No |
-| Monitor Agent             |        Yes |      No |
-| View Verification         |        Yes |      No |
-| Access Result Course      |        Yes |     Yes |
+| Operation                    | Dosen | Mahasiswa |
+| ---------------------------- | ----: | --------: |
+| Upload RPS                   |   Yes |        No |
+| Process / Reanalyze RPS      |   Yes |        No |
+| View RPS Analysis            |   Yes |        No |
+| Manage Instructor Setup      |   Yes |        No |
+| Select Moodle Course Target  |   Yes |        No |
+| Generate Course Plan         |   Yes |        No |
+| Review Course Plan           |   Yes |        No |
+| Generate Content             |   Yes |        No |
+| Review Content               |   Yes |        No |
+| Approve Content              |   Yes |        No |
+| Execute to Moodle            |   Yes |        No |
+| Monitor Workflow             |   Yes |        No |
+| View Verification Result     |   Yes |        No |
+| Submit Student Verification  |    No |       Yes |
+| View Student Verification    |   Yes |        No |
+| Access Result Course         |   Yes |       Yes |
+
+Role mengikuti enumeration `Role` pada proposal: `DOSEN` dan `MAHASISWA` (DL-011).
 
 ---
 
@@ -1045,7 +1150,7 @@ Contoh konseptual:
 | Create Quiz                 | TBD             | TBD    |
 | Student Access Verification | TBD             | TBD    |
 
-Nama function Moodle tidak ditentukan dalam dokumen ini sebelum dilakukan API capability mapping terhadap environment Moodle ITK.
+Nama function Moodle tidak ditentukan dalam dokumen ini sebelum dilakukan API capability mapping terhadap instance Moodle tim (lihat DL-003).
 
 ---
 
@@ -1116,13 +1221,17 @@ Hal yang masih perlu ditentukan:
 | ------------ | -------------------------------------- |
 | Document     | API Specification                      |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.1                                    |
+| Version      | 0.5                                    |
 | Status       | Draft                                  |
 | Owner        | Project Team                           |
-| Last Updated | 2026-09-02                             |
+| Last Updated | 2026-10-19                             |
 
 ## Version History
 
 | Version | Date       | Description               | Author       |
 | ------- | ---------- | ------------------------- | ------------ |
 | 0.1     | 2026-09-02 | Initial API Specification | Project Team |
+| 0.2     | 2026-10-13 | Referensi target Moodle disesuaikan dengan DL-001 dan DL-003 | Project Manager |
+| 0.3     | 2026-10-13 | Penambahan endpoint RPS structured data (§6.5) dan Moodle integration internal (§13.4) | Project Manager |
+| 0.4     | 2026-10-14 | §6.4 menjadi endpoint hasil RPS Analysis; §6.5 digabungkan (DL-009) | Project Manager |
+| 0.5     | 2026-10-19 | Instructor Setup API, list/reanalyze RPS, Workflow API dan WebSocket, daftar course Moodle, authorization matrix (DL-011) | Project Manager |

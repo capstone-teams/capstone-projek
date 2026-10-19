@@ -9,8 +9,10 @@
 | Status            | Proposed                                                                |
 | Owner             | Capstone Team                                                           |
 | Related Documents | PRD, System Design, Data Model, Agent Design, Moodle Integration Design |
-| Representation    | Structured JSON + Markdown                                              |
+| Representation    | Structured JSON + Markdown; YAML untuk input LLM (DL-006)               |
 | Validation        | Schema Validation + Semantic Validation                                 |
+| Version           | 0.2                                                                     |
+| Last Updated      | 2026-10-13                                                              |
 
 ---
 
@@ -155,77 +157,165 @@ Schema JSON tidak boleh menggantikan relational identity.
 
 ---
 
-# 6. RPS Analysis Schema
+# 6. RPS Structured Data Schema
 
-RPS Analysis merupakan intermediate representation antara document processing dan planning.
+RPS Structured Data merupakan hasil RPS Analysis oleh LLM terhadap hasil ekstraksi Docling, dengan skema pada bagian ini sebagai output schema (DL-006, DL-009). Data yang valid disimpan pada `rps.structured_data` dan dipanggil ulang oleh backend untuk seluruh kebutuhan berikutnya.
 
-```json id="o0s4uw"
-{
-  "course": {
-    "name": "Basis Data",
-    "code": "IF123",
-    "credits": 3,
-    "semester": 3,
-    "description": "..."
-  },
-  "learning_outcomes": [
-    {
-      "id": "LO-1",
-      "description": "..."
-    }
-  ],
-  "objectives": [
-    {
-      "id": "OBJ-1",
-      "description": "..."
-    }
-  ],
-  "topics": [
-    {
-      "id": "TOP-1",
-      "name": "Database Fundamentals"
-    }
-  ],
-  "weeks": [],
-  "teaching_methods": [],
-  "assessments": [],
-  "references": []
-}
+```text
+RPS PDF/DOCX
+    ↓
+Docling (dijalankan sekali per file_hash)
+    ↓
+rps.source_document (JSON hasil Docling: teks, heading, tabel, halaman)
+    ↓
+Serialisasi YAML hasil ekstraksi
+    ↓
+RPS Analysis (OpenAI API + output schema §6.1) → validasi Pydantic → retry bila tidak valid
+    ↓
+rps.structured_data (JSON)
+    ├── GET /api/v1/rps/{rps_id}/analysis → Frontend
+    └── Serialisasi YAML → input LLM Course Planning
 ```
 
-Field yang tidak tersedia pada RPS boleh kosong atau null.
+Frontend tidak membaca JSON secara langsung. Seluruh akses melalui REST API backend.
 
-Agent tidak boleh mengisi informasi akademik yang tidak ditemukan hanya untuk membuat schema terlihat lengkap.
+Dokumen diproses ulang hanya apabila file berubah (`file_hash` berbeda) atau `schema_version` berubah.
 
----
+## 6.1 Field
 
-# 7. RPS Week Schema
+Field mengikuti komponen RPS yang umum digunakan pada template program studi (identitas, CPL, CPMK, Sub-CPMK, bahan kajian, rencana mingguan, penilaian, dan referensi). Field final dicocokkan dengan 3–5 RPS asli program studi sebelum M02 ditutup.
 
-```json id="q7w1q4"
+| Kelompok           | Field                                                                 | Prioritas | Input LLM |
+| ------------------ | --------------------------------------------------------------------- | --------- | --------- |
+| Identitas          | `study_program`, `name`, `code`, `credits`, `semester`, `description` | Wajib     | Ya (tanpa `code`) |
+| Identitas          | `course_cluster`, `prerequisites`, `prepared_at`                      | Opsional  | Tidak     |
+| Identitas          | `lecturers`, `authorization`                                          | Opsional  | Tidak     |
+| Capaian            | `cpl[]`: `code`, `description`                                        | Wajib     | Ya        |
+| Capaian            | `cpmk[]`: `code`, `description`, `cpl_refs`                           | Wajib     | Ya        |
+| Capaian            | `sub_cpmk[]`: `code`, `description`, `cpmk_refs`                      | Wajib     | Ya        |
+| Bahan kajian       | `study_materials[]`                                                   | Wajib     | Ya        |
+| Rencana mingguan   | `weekly_plan[]` (lihat §7)                                            | Wajib     | Ya        |
+| Penilaian          | `assessments[]`: `component`, `weight_percent`, `cpmk_refs`           | Wajib     | Ya        |
+| Referensi          | `references.main[]`, `references.supporting[]`                        | Wajib     | Ya        |
+| Media              | `media.software[]`, `media.hardware[]`                                | Opsional  | Tidak     |
+| Metadata ekstraksi | `extraction.sections`, `extraction.warnings`, `extraction.source_pages` | Wajib   | Tidak     |
+
+Aturan:
+
+1. Kode CPL, CPMK, dan Sub-CPMK disimpan persis seperti pada dokumen agar hasil planning dapat ditelusuri ke RPS.
+2. Field yang tidak ditemukan bernilai `null` atau array kosong, dan status bagiannya dicatat pada `extraction.sections` (`found`, `partial`, `not_found`).
+3. Sistem tidak boleh mengisi informasi akademik yang tidak ditemukan pada RPS.
+
+## 6.2 Contoh JSON
+
+```json
 {
-  "week": 1,
-  "topics": [
-    "Introduction to Database"
-  ],
-  "learning_outcomes": [
-    "LO-1"
-  ],
-  "objectives": [
-    "OBJ-1"
-  ],
-  "teaching_method": [
-    "Lecture"
-  ],
-  "assessment": {
-    "type": "assignment",
-    "description": "..."
+  "schema_version": "1.0",
+  "course": {
+    "study_program": "Informatika",
+    "name": "Basis Data",
+    "code": "IF2203",
+    "credits": 3,
+    "semester": 3,
+    "description": "Mata kuliah ini membahas ...",
+    "course_cluster": null,
+    "prerequisites": ["Algoritma dan Pemrograman"],
+    "prepared_at": null,
+    "lecturers": ["..."],
+    "authorization": null
+  },
+  "cpl": [{ "code": "CPL-03", "description": "..." }],
+  "cpmk": [{ "code": "CPMK-1", "description": "...", "cpl_refs": ["CPL-03"] }],
+  "sub_cpmk": [{ "code": "Sub-CPMK-1.1", "description": "...", "cpmk_refs": ["CPMK-1"] }],
+  "study_materials": ["Konsep basis data", "Model relasional"],
+  "weekly_plan": [],
+  "assessments": [{ "component": "UTS", "weight_percent": 30, "cpmk_refs": ["CPMK-1", "CPMK-2"] }],
+  "references": { "main": ["..."], "supporting": ["..."] },
+  "media": { "software": ["PostgreSQL"], "hardware": [] },
+  "extraction": {
+    "sections": { "course": "found", "cpl": "found", "weekly_plan": "partial", "media": "not_found" },
+    "warnings": ["Minggu 12 tidak memiliki bobot penilaian"],
+    "source_pages": { "cpmk": [1], "weekly_plan": [2, 3, 4] }
   }
 }
 ```
 
-Tidak semua field harus tersedia.
+## 6.3 Serialisasi YAML untuk LLM
 
-Jika RPS tidak menentukan assessment untuk minggu tertentu, sistem tidak boleh mengarang assessment.
+YAML dibentuk dari JSON yang sama dan hanya memuat field dengan kolom "Input LLM = Ya" pada §6.1. Metadata ekstraksi, identitas dosen, dan data administratif tidak dikirim ke LLM.
+
+```yaml
+course:
+  name: Basis Data
+  credits: 3
+  semester: 3
+  description: Mata kuliah ini membahas ...
+cpmk:
+  - code: CPMK-1
+    description: ...
+sub_cpmk:
+  - code: Sub-CPMK-1.1
+    cpmk: CPMK-1
+    description: ...
+weekly_plan:
+  - weeks: [1]
+    sub_cpmk: [Sub-CPMK-1.1]
+    materials: [Konsep dasar basis data]
+    indicators: [Mampu menjelaskan ...]
+    assessment: {form: Kuis, weight_percent: 5}
+    methods: [Ceramah, Diskusi]
+    learning_experience: Membaca bab 1 dan ...
+  - weeks: [8]
+    week_type: uts
+assessments:
+  - {component: UTS, weight_percent: 30, cpmk: [CPMK-1, CPMK-2]}
+references:
+  main: [...]
+```
+
+YAML yang dikirim pada setiap agent run disimpan sebagai jejak input run.
+
+## 6.4 Hubungan dengan RPS Analysis
+
+RPS Structured Data berisi informasi yang tertulis pada dokumen. RPS Analysis (`rps_analyses`) berisi interpretasi agent di atas data tersebut, misalnya pengelompokan topik atau pemetaan tingkat kognitif, dan selalu mereferensikan RPS Structured Data sebagai sumbernya.
+
+---
+
+# 7. RPS Weekly Plan Schema
+
+Setiap baris rencana mingguan pada RPS direpresentasikan sebagai satu item `weekly_plan`.
+
+```json
+{
+  "weeks": [1],
+  "week_type": "regular",
+  "sub_cpmk_refs": ["Sub-CPMK-1.1"],
+  "materials": ["Konsep dasar basis data"],
+  "indicators": ["Mampu menjelaskan ..."],
+  "assessment": { "criteria": "...", "form": "Kuis", "weight_percent": 5 },
+  "learning_method": { "mode": "luring", "methods": ["Ceramah", "Diskusi"] },
+  "learning_experience": "Membaca bab 1 dan ...",
+  "time_allocation": { "tm_minutes": 150, "bt_minutes": 180, "bm_minutes": 180 },
+  "reference_refs": []
+}
+```
+
+| Field                 | Keterangan                                                                 | Prioritas |
+| --------------------- | -------------------------------------------------------------------------- | --------- |
+| `weeks`               | Array nomor minggu, karena satu baris RPS dapat mencakup beberapa minggu   | Wajib     |
+| `week_type`           | `regular`, `uts`, atau `uas`                                               | Wajib     |
+| `sub_cpmk_refs`       | Kode Sub-CPMK yang dicapai pada minggu tersebut                            | Wajib     |
+| `materials`           | Materi pembelajaran                                                        | Wajib     |
+| `indicators`          | Indikator penilaian                                                        | Wajib     |
+| `assessment`          | Kriteria, bentuk, dan bobot penilaian                                      | Wajib     |
+| `learning_method`     | Bentuk (luring/daring) dan metode pembelajaran                             | Wajib     |
+| `learning_experience` | Pengalaman belajar atau penugasan mahasiswa                                | Wajib     |
+| `time_allocation`     | Estimasi waktu tatap muka, belajar terstruktur, dan belajar mandiri        | Opsional  |
+| `reference_refs`      | Referensi yang digunakan pada minggu tersebut                              | Opsional  |
+
+Minggu UTS dan UAS cukup memiliki `weeks` dan `week_type`.
+
+Jika RPS tidak menentukan penilaian untuk minggu tertentu, `assessment` bernilai `null` dan sistem tidak boleh mengarang penilaian.
 
 ---
 
@@ -687,7 +777,7 @@ Generated content dapat memiliki:
   "generation": {
     "agent_run_id": "...",
     "model": "model-name",
-    "runtime": "ollama",
+    "runtime": "openai",
     "generated_at": "timestamp"
   }
 }
@@ -1207,6 +1297,7 @@ Exact implementation remains an engineering decision.
 
 | Schema Object     | Database Entity      |
 | ----------------- | -------------------- |
+| RPS Structured Data | `rps.structured_data` |
 | RPS Analysis      | `rps_analyses`       |
 | Course Plan       | `course_plans`       |
 | Course Plan Week  | `course_plan_weeks`  |
@@ -1383,7 +1474,7 @@ MVP tidak perlu langsung mendukung schema untuk:
 | Final JSON Schema                 | TBD      |
 | Pydantic model structure          | TBD      |
 | Schema versioning implementation  | TBD      |
-| Exact RPS analysis fields         | TBD      |
+| Exact RPS structured data fields  | Proposed (DL-006) |
 | Exact learning material structure | Proposed |
 | Assignment schema                 | Proposed |
 | Quiz schema                       | Proposed |
@@ -1474,10 +1565,19 @@ Detail yang masih dapat berubah:
 
 * final JSON Schema;
 * exact Pydantic models;
-* final RPS analysis fields;
+* final RPS structured data fields (divalidasi terhadap RPS asli, DL-006);
 * quiz/assignment fields;
 * Moodle-specific mappings;
 * validation scoring;
 * schema versioning implementation.
 
 Perubahan schema yang memengaruhi API, database, agent prompt, atau Moodle integration harus dievaluasi terhadap dokumen terkait.
+
+---
+
+# 56. Version History
+
+| Version | Date       | Description                                                              | Author          |
+| ------- | ---------- | ------------------------------------------------------------------------ | --------------- |
+| 0.1     | 2026-09-02 | Initial Content Schema                                                   | Project Team    |
+| 0.2     | 2026-10-13 | §6–§7 diganti menjadi RPS Structured Data dan Weekly Plan Schema (DL-006) | Project Manager |

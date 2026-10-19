@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** System Design
-**Version:** 0.1
+**Version:** 0.4
 **Status:** Draft
 **Related Documents:**
 
@@ -179,8 +179,8 @@ Arsitektur sistem:
            │               └────────────────────┘
            ▼
 ┌──────────────────────┐
-│     LLM Runtime      │
-│       Ollama         │
+│     LLM Provider     │
+│      OpenAI API      │
 └──────────────────────┘
 
            Agent Tool Request
@@ -204,7 +204,7 @@ Arsitektur sistem:
 ┌───────────────────────────────────────────────┐
 │          Moodle Web Service API               │
 │                                               │
-│              Moodle LMS ITK                   │
+│            Moodle LMS (self-hosted)           │
 └───────────────────────────────────────────────┘
 ```
 
@@ -388,32 +388,17 @@ RPS Analysis
 
 Output processing minimal terdiri dari:
 
-### Raw/Normalized Content
+### Source Document (JSON)
 
-Representasi teks/Markdown yang mempertahankan informasi dokumen.
+Hasil konversi Docling dalam format JSON yang mempertahankan teks, heading, tabel, dan nomor halaman dokumen (DL-008).
 
 ### Structured RPS Data
 
 Data terstruktur yang merepresentasikan informasi akademik penting.
 
-Contoh konseptual:
+Structured RPS Data dihasilkan satu kali per dokumen, disimpan sebagai JSON, dan dipanggil ulang oleh backend untuk response REST API, input LLM dalam bentuk YAML, serta tahap analysis dan planning (DL-006).
 
-```json
-{
-  "course": {
-    "name": "...",
-    "code": "...",
-    "credits": 3
-  },
-  "learning_outcomes": [],
-  "topics": [],
-  "weekly_plan": [],
-  "assessment": [],
-  "references": []
-}
-```
-
-Schema final ditentukan pada tahap implementation/design detail.
+Field dan contoh lengkap didefinisikan pada Content Schema §6–§7.
 
 ---
 
@@ -676,7 +661,7 @@ Moodle Service Adapter
   ↓
 Moodle Web Service API
   ↓
-Moodle LMS ITK
+Moodle LMS (self-hosted)
 ```
 
 Agent tidak mengetahui detail authentication atau credential Moodle.
@@ -754,7 +739,7 @@ Jika diaktifkan:
 * memastikan student role/account dapat mengakses course;
 * mendukung verification dari perspektif student.
 
-Detail Moodle Web Service function belum dikunci dalam System Design ini dan akan ditentukan berdasarkan capability Moodle ITK.
+Detail Moodle Web Service function belum dikunci dalam System Design ini dan akan ditentukan berdasarkan verifikasi pada instance Moodle tim (DL-001, DL-003).
 
 ---
 
@@ -781,7 +766,7 @@ Credential tidak:
 * disimpan dalam agent context;
 * ditampilkan pada monitoring UI.
 
-Mekanisme authentication final mengikuti konfigurasi Moodle ITK.
+Mekanisme authentication final mengikuti konfigurasi instance Moodle tim dan versi yang ditetapkan pada DL-002.
 
 ---
 
@@ -1163,21 +1148,23 @@ Student tidak memiliki akses terhadap:
 
 ---
 
-# 35. LLM Runtime
+# 35. LLM Provider
 
-Local LLM dijalankan melalui Ollama sebagai proposed runtime.
+LLM diakses melalui OpenAI API sebagai provider utama (DL-007). Gemini tersedia sebagai provider alternatif pada provider abstraction yang sama.
 
 Arsitektur:
 
 ```text
 Agent
   ↓
-LLM Interface
+LLM Provider Interface
   ↓
-Ollama
+OpenAI Provider (Gemini Provider sebagai alternatif)
   ↓
-Selected LLM Model
+Selected Model
 ```
+
+API key disimpan pada konfigurasi backend dan tidak dikirim ke frontend, log, maupun konteks agent.
 
 Agent tidak boleh bergantung langsung pada API model tertentu.
 
@@ -1199,10 +1186,10 @@ Model akan dievaluasi berdasarkan:
 6. RPS adherence.
 7. Content quality.
 8. Latency.
-9. Resource requirements.
+9. Biaya per run.
 10. Reliability.
 
-Model final dipilih berdasarkan hasil evaluasi dan kemampuan hardware yang tersedia.
+Model final dipilih berdasarkan hasil evaluasi dan anggaran penggunaan API.
 
 ---
 
@@ -1274,7 +1261,7 @@ Pipeline harus dirancang agar document processor dapat diganti apabila evaluasi 
                     Moodle Web Service
                             │
                             ▼
-                      Moodle LMS ITK
+                 Moodle LMS (self-hosted)
                             │
                             ▼
                        Verification
@@ -1353,13 +1340,14 @@ Sensitive information tidak boleh dimasukkan ke log.
 | Frontend             | React + TypeScript          | Proposed  |
 | Backend              | FastAPI + Python            | Proposed  |
 | Database             | PostgreSQL                  | Proposed  |
-| LLM Runtime          | Ollama                      | Proposed  |
+| LLM Provider         | OpenAI API (DL-007)         | Accepted  |
 | LLM Model            | Selected through evaluation | TBD       |
 | Document Processing  | Docling                     | Candidate |
-| Representation       | Markdown + Structured JSON  | Proposed  |
+| Representation       | Markdown + Structured JSON; YAML untuk input LLM (DL-006) | Accepted |
 | Real-Time Monitoring | WebSocket / equivalent      | Proposed  |
 | Client               | Standard Web Application    | Confirmed |
-| Moodle               | Moodle LMS ITK              | Confirmed |
+| Moodle               | Moodle open-source self-hosted (DL-001) | Confirmed |
+| Moodle Version       | 5.3 LTS (DL-002)            | Proposed  |
 | Moodle Integration   | Moodle Web Service API      | Confirmed |
 
 ---
@@ -1392,9 +1380,9 @@ Output agent menggunakan structured representation.
 
 Backend menjadi source of truth untuk workflow state.
 
-### AD-007 — Local LLM Runtime
+### AD-007 — LLM Provider
 
-LLM dijalankan secara local melalui Ollama sebagai technology direction.
+LLM diakses melalui OpenAI API menggunakan provider abstraction (DL-007).
 
 ---
 
@@ -1422,9 +1410,9 @@ Hal-hal yang masih membutuhkan evaluasi atau keputusan:
 
 # 44. Design Constraints
 
-1. System harus dapat dijalankan dengan hardware yang tersedia.
-2. Local LLM memiliki keterbatasan resource.
-3. Moodle integration dibatasi oleh capability Web Service pada Moodle ITK.
+1. Penggunaan LLM dibatasi oleh biaya, rate limit, dan ketersediaan OpenAI API.
+2. Data yang dikirim ke LLM dibatasi pada subset field akademik (DL-006).
+3. Moodle integration dibatasi oleh external functions yang tersedia pada versi Moodle yang digunakan. Operasi yang tidak tersedia mengikuti mekanisme yang ditetapkan pada DL-003.
 4. Agent tidak boleh mendapatkan credential Moodle secara langsung.
 5. Human review harus tetap tersedia sebelum execution.
 6. Arsitektur harus tetap sederhana dan proporsional terhadap kebutuhan Capstone.
@@ -1500,13 +1488,16 @@ Detail tersebut ditentukan pada implementation design atau technical specificati
 | ------------ | -------------------------------------- |
 | Document     | System Design                          |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.1                                    |
+| Version      | 0.4                                    |
 | Status       | Draft                                  |
 | Owner        | Project Team                           |
-| Last Updated | 2026-09-02                             |
+| Last Updated | 2026-10-13                             |
 
 ## Version History
 
 | Version | Date       | Description           | Author       |
 | ------- | ---------- | --------------------- | ------------ |
 | 0.1     | 2026-09-02 | Initial System Design | Project Team |
+| 0.2     | 2026-10-13 | Target Moodle diubah ke self-hosted (DL-001); referensi DL-002 dan DL-003 | Project Manager |
+| 0.3     | 2026-10-13 | Representasi RPS mengikuti DL-006 | Project Manager |
+| 0.4     | 2026-10-13 | LLM provider diubah ke OpenAI API (DL-007) | Project Manager |
