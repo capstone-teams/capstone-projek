@@ -2,7 +2,7 @@
  * Mock Backend API yang berjalan di browser.
  *
  * Meniru kontrak di docs/02. design/design-api.md: path, payload, kode error,
- * operasi async (202 + agent run + event WebSocket), dan transisi state workflow (§20).
+ * operasi async (202 + agent run + event WebSocket)
  * Semua data hanya di memori dan hilang saat halaman di-reload.
  */
 import {
@@ -219,14 +219,17 @@ const handlers = {
   // Mengikuti backend: schema menolak field kosong/terlalu panjang (422); identifier di-strip lalu
   // dicocokkan sebagai email atau username; pesan 401 identik untuk semua penyebab.
   login(_p, { body }) {
-    const username = typeof body?.username === 'string' ? body.username : '';
-    const password = typeof body?.password === 'string' ? body.password : '';
-    const invalid = [
-      ...(username.length >= 1 && username.length <= 255 ? [] : [{ field: 'username', message: 'Field required' }]),
-      ...(password.length >= 1 && password.length <= 72 ? [] : [{ field: 'password', message: 'Field required' }]),
-    ];
+    // Pesan details mengikuti Pydantic (dicek terhadap backend nyata).
+    const checkLength = (field, value, max) => {
+      if (typeof value !== 'string') return [{ field, message: 'Field required' }];
+      if (value.length < 1) return [{ field, message: 'String should have at least 1 character' }];
+      if (value.length > max) return [{ field, message: `String should have at most ${max} characters` }];
+      return [];
+    };
+    const invalid = [...checkLength('username', body?.username, 255), ...checkLength('password', body?.password, 72)];
     if (invalid.length) return fail(422, 'VALIDATION_FAILED', 'Data request tidak valid.', invalid);
-    const identifier = username.trim();
+    const { password } = body;
+    const identifier = body.username.trim();
     const user =
       MOCK_USERS.find((u) => u.email === identifier.toLowerCase()) ??
       MOCK_USERS.find((u) => u.username === identifier) ??
