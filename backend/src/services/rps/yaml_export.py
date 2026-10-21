@@ -82,6 +82,18 @@ IDENTITY_PATTERNS = (
 )
 IDENTITY_PLACEHOLDER = "[identitas dihapus]"
 
+# Sel tabel yang hanya memuat nomor halaman, mis. ": 4/16" atau "4 / 16".
+_PAGE_NUMBER_PATTERN = re.compile(r"^:?\s*\d+\s*/\s*\d+$")
+
+# Baris kisi administratif template RPS (nomor dokumen, tanggal terbit, revisi,
+# halaman). Docling kadang mendeteksi blok ini sebagai tabel; barisnya bukan isi
+# akademik sehingga dibuang, sedangkan header tabel akademik yang berulang
+# ("Minggu ke-", "Sub-CPMK", "Bahan Kajian") tetap dipertahankan.
+_ADMIN_LABEL_PATTERN = re.compile(
+    r"^(?:no\.?\s*(?:dok|revisi)|tgl\.?\s*terbit|tanggal|hal\.?|tahun\s+ajaran)\b.*$",
+    re.IGNORECASE,
+)
+
 #: Field RPS Structured Data yang menjadi input LLM (content-schema §6.1/§6.3).
 #: ``extraction`` dan ``schema_version`` sengaja tidak termasuk: keduanya
 #: metadata proses, bukan informasi akademik.
@@ -135,7 +147,7 @@ def document_to_yaml(source_document: dict[str, Any]) -> str:
     for position, table in enumerate(_as_list(source_document.get("tables"))):
         if _is_page_chrome(table):
             continue
-        rows = _table_rows(table, repeated)
+        rows = _table_rows(table)
         if not rows:
             continue
         block: dict[str, Any] = {}
@@ -219,15 +231,9 @@ def _repeated_chrome_texts(source_document: dict[str, Any]) -> set[str]:
         if _is_page_chrome(item):
             continue
         _count_chrome_text(pages_by_text, item.get("text"), _first_page(item))
-    # Header template juga kerap terdeteksi Docling sebagai tabel, sehingga sel
-    # tabel harus ikut dihitung — bukan hanya paragraf.
-    for table in _as_list(source_document.get("tables")):
-        if _is_page_chrome(table):
-            continue
-        data = table.get("data")
-        cells = _as_list(data.get("table_cells")) if isinstance(data, dict) else []
-        for cell in cells:
-            _count_chrome_text(pages_by_text, cell.get("text"), _first_page(table))
+    # Sel tabel sengaja **tidak** ikut dihitung: header tabel rencana mingguan
+    # memang diulang di setiap halaman dan justru dibutuhkan LLM. Artefak yang
+    # perlu dibuang dari tabel hanya nomor halaman (lihat :func:`_is_page_number`).
 
     return {
         text for text, pages in pages_by_text.items() if len(pages) >= CHROME_MIN_PAGES
@@ -253,6 +259,11 @@ def _redact_identity(text: str) -> str:
     for pattern in IDENTITY_PATTERNS:
         text = pattern.sub(IDENTITY_PLACEHOLDER, text)
     return " ".join(text.split())
+
+
+def _is_page_number(text: str) -> bool:
+    """Sel tabel berisi nomor halaman (``": 4/16"``) — bukan isi akademik."""
+    return bool(_PAGE_NUMBER_PATTERN.match(text))
 
 
 def _clean_text(value: Any) -> str:
@@ -300,7 +311,7 @@ def _table_caption(table: dict[str, Any], captions: dict[str, str]) -> str:
     return " ".join(parts)
 
 
-def _table_rows(table: dict[str, Any], repeated: set[str] | None = None) -> list[list[str]]:
+def _table_rows(table: dict[str, Any]) -> list[list[str]]:
     """Susun grid teks tabel dari ``data.table_cells``.
 
     Sel diletakkan menurut ``start_row_offset_idx``/``start_col_offset_idx``.
@@ -321,23 +332,32 @@ def _table_rows(table: dict[str, Any], repeated: set[str] | None = None) -> list
         col_count = max(col_count, _index(cell.get("start_col_offset_idx")) + 1)
 
     grid = [["" for _ in range(col_count)] for _ in range(row_count)]
-    chrome = repeated or set()
     for cell in cells:
         text = _redact_identity(_clean_text(cell.get("text")))
-        if not text or text in chrome:
+        if not text or _is_page_number(text):
             continue
         row = min(_index(cell.get("start_row_offset_idx")), row_count - 1)
         column = min(_index(cell.get("start_col_offset_idx")), col_count - 1)
         grid[row][column] = text
 
-    # Baris/kolom yang seluruhnya kosong tidak membawa informasi.
-    rows = [row for row in ([" ".join(cell.split()) for cell in line] for line in grid) if any(row)]
+    # Baris kisi administratif template dibuang; baris/kolom yang seluruhnya
+    # kosong juga tidak membawa informasi.
+    rows = [
+        row
+        for row in ([" ".join(cell.split()) for cell in line] for line in grid)
+        if any(row) and not _is_admin_row(row)
+    ]
     trimmed: list[list[str]] = []
     for row in rows:
         while row and not row[-1]:
             row.pop()
         trimmed.append(row)
     return trimmed
+
+
+def _is_admin_row(row: list[str]) -> bool:
+    """Baris template administratif (bukan isi akademik)."""
+    return any(_ADMIN_LABEL_PATTERN.match(cell) for cell in row if cell)
 
 
 def _index(value: Any) -> int:
