@@ -1702,10 +1702,17 @@ Aturan normalisasi:
 | Aturan | Alasan |
 | --- | --- |
 | Blok `content_layer: furniture` dan label `page_header`/`page_footer` dibuang | Kepala/kaki halaman memuat identitas dosen dan nama program studi |
-| Teks pendek (≤ 60 karakter) yang muncul di ≥ 3 halaman dibuang | Header/footer template (nomor dokumen, tanggal terbit, nomor revisi) — juga bila terdeteksi Docling sebagai tabel |
+| Teks pendek (≤ 60 karakter) yang muncul di ≥ 3 halaman dibuang | Chrome template (nomor dokumen, tanggal terbit, nomor revisi) yang tidak diberi label oleh Docling |
+| Baris tabel berkunci administratif (`No. Dok.`, `Tgl. Terbit`, `No. Revisi`, `Hal`, `Tanggal`, `Tahun Ajaran`) dibuang | Kisi template kadang terdeteksi Docling sebagai tabel 2 kolom |
+| Sel tabel berupa nomor halaman (`: 4/16`) dibuang | Bukan isi akademik |
 | Nama dosen dan NIDN/NIP/NIK diganti `[identitas dihapus]` | Identitas sering menyatu dalam sel tabel hasil deteksi Docling; teks akademik di sekitarnya tetap utuh |
 | Sel tabel disusun menurut `start_row`/`start_col` | Isi sel gabungan (`row_span`) tidak digandakan |
 | Baris/kolom kosong dan nilai `null`/string kosong dibuang | Token tidak terpakai untuk lubang data |
+
+Yang **tidak** dibuang meski berulang di banyak halaman: header tabel akademik
+(`Minggu ke-`, `Sub-CPMK`, `Bahan Kajian`, `Bentuk/Metode Pembelajaran`,
+`Penilaian`, `Durasi`). Header itu diulang pada setiap halaman tabel rencana
+mingguan dan justru dibutuhkan LLM agar kolomnya dapat dibaca.
 
 Penggantian identitas berbasis kata kunci template RPS ("Dosen Pengampu",
 "Nama Dosen", "Tanda Tangan", "Disusun oleh", "Diverifikasi oleh", "NIDN",
@@ -1742,6 +1749,11 @@ weeks:
 ## 56.3 Ukuran
 
 Panjang YAML dicatat pemanggil sebagai perkiraan penggunaan token (BE-08.1):
-satu dokumen RPS 16 halaman pada `tests/fixtures` menghasilkan sekitar 14 ribu
-karakter YAML hasil ekstraksi (≈ 3,5 ribu token) — turun dari ± 26 ribu karakter
-jika seluruh teks Docling diserialisasi apa adanya.
+RPS 16 halaman pada `tests/fixtures/test.pdf` menghasilkan sekitar 19 ribu
+karakter YAML hasil ekstraksi (≈ 5 ribu token) — turun dari ± 26 ribu karakter
+bila seluruh teks Docling diserialisasi apa adanya, karena chrome halaman dan
+kisi administratif tidak ikut.
+
+Angka itu berasal dari konversi Docling sungguhan, bukan fixture sintetis:
+`RPS_DOCLING_LIVE_TEST=1 uv run pytest tests/test_rps_yaml_export.py -k real`.
+Nilai dapat berubah bila model Docling atau `RPS_TABLE_MODES` berubah.
