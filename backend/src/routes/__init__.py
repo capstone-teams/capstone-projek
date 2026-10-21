@@ -17,6 +17,7 @@ from fastapi import APIRouter
 
 from src.routes.admin import router as admin_router
 from src.routes.auth import router as auth_router
+from src.routes.contract import router as contract_router
 from src.routes.health import router as health_router
 from src.routes.rps import router as rps_router
 
@@ -27,12 +28,16 @@ api_router = APIRouter(prefix=API_V1_PREFIX)
 api_router.include_router(auth_router)
 api_router.include_router(admin_router)
 api_router.include_router(rps_router)
+# Kontrak endpoint yang belum diimplementasikan (BE-06.4). Dibuang per fitur
+# begitu implementasi aslinya mendarat; lihat :mod:`src.routes.contract`.
+api_router.include_router(contract_router)
 
 __all__ = [
     "API_V1_PREFIX",
     "admin_router",
     "api_router",
     "auth_router",
+    "contract_router",
     "health_router",
     "rps_router",
 ]
