@@ -6,6 +6,7 @@ SAMPLE = {
     "instructor_context_yaml": "nama: Dr. Budi\nkeahlian: Basis Data\ngaya_penyampaian: santai dan banyak contoh",
     "additional_prompt": "Gunakan contoh sehari-hari.",
     "output_schema": '{\n  "status": "success | partial | error"\n}',
+    "task_instruction": "Hasilkan konten pembelajaran untuk minggu 1.",
 }
 
 out = render_prompt("default", "v1", SAMPLE)

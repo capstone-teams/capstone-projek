@@ -78,9 +78,14 @@ ${additional_prompt}
 </additional_prompt>
 </context>
 
+<task_instruction>
+${task_instruction}
+</task_instruction>
+
 <output_schema>
 ${output_schema}
 </output_schema>
+
 
 
 

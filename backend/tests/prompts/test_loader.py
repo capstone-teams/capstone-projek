@@ -7,12 +7,14 @@ SAMPLE = {
     "instructor_context_yaml": "nama: Dr. Budi\nkeahlian: Basis Data",
     "additional_prompt": "Gunakan contoh sehari-hari.",
     "output_schema": '{"status": "success | partial | error"}',
+    "task_instruction": "Hasilkan konten minggu 1.",
 }
 
 REQUIRED = [
     "rps_yaml",
     "instructor_context_yaml",
     "output_schema",
+    "task_instruction",
 ]
 
 TEMPLATE_TEXT = """<system_instruction>
@@ -32,6 +34,10 @@ ${instructor_context_yaml}
 ${additional_prompt}
 </additional_prompt>
 </context>
+
+<task_instruction>
+${task_instruction}
+</task_instruction>
 
 <output_schema>
 ${output_schema}
@@ -66,6 +72,7 @@ def test_render_success(isolated):
     assert "IF101" in out
     assert "Dr. Budi" in out
     assert "Gunakan contoh sehari-hari." in out
+    assert "Hasilkan konten minggu 1." in out
     assert '"status": "success | partial | error"' in out
 
 
@@ -76,7 +83,7 @@ def test_no_unrendered_placeholder(isolated):
 
 def test_section_order(isolated):
     out = render_prompt("tes", "v1", SAMPLE)
-    tags = ["<system_instruction>", "<context>", "<output_schema>"]
+    tags = ["<system_instruction>", "<context>", "<task_instruction>", "<output_schema>"]
     idx = [out.index(t) for t in tags]
     assert idx == sorted(idx)
 
@@ -162,6 +169,7 @@ def test_real_default_v1_has_all_sections():
     for tag in [
         "<system_instruction>", "</system_instruction>",
         "<context>", "</context>",
+        "<task_instruction>", "</task_instruction>",
         "<output_schema>", "</output_schema>",
     ]:
         assert tag in out

@@ -82,13 +82,15 @@ Gunakan contoh sehari-hari.
 </additional_prompt>
 </context>
 
+<task_instruction>
+Hasilkan konten pembelajaran untuk minggu 1.
+</task_instruction>
+
 <output_schema>
 {
   "status": "success | partial | error"
 }
 </output_schema>
-
-</context>
 
 
 
