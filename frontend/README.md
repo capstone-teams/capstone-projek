@@ -163,7 +163,7 @@ Mock mengambil CPMK/metode dari RPS.
     AuthSubmitButton, GoogleLoginButton); import lewat `components/auth`.
   - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml).
   - ai/: komponen generator AI (WorkflowStepper, EventLog, InstructionModal,
-    ActivityConfigFields, RpsUploadForm, TeachingProfileForm,
+    ActivityConfigFields, RpsUploadForm, InstructorSetupForm, TeachingProfileForm,
     TeachingPreferencesCard); ai/course/ berisi potongan halaman
     pages/ai/course (AiProjectStart, CoursePlanDetails, ActivityConfigForm,
     ContentGeneratePanel, WeekContentDetail, MoodleExecutionCard,

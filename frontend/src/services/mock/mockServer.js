@@ -294,12 +294,27 @@ const handlers = {
   getProfile: () => ok(db.profile),
 
   updateProfile(_p, { body }) {
-    const fields = ['teaching_style', 'language_preference', 'content_preference'];
-    const invalid = fields.filter((f) => body?.[f] != null && typeof body[f] !== 'string');
+    const textFields = ['teaching_style', 'expertise', 'delivery_preference', 'language_preference', 'content_preference', 'additional_prompt'];
+    const invalid = textFields.filter((f) => body?.[f] != null && typeof body[f] !== 'string');
     if (invalid.length) return fail(422, 'INVALID_REQUEST', 'Field profil harus berupa teks.', invalid);
-    fields.forEach((f) => {
+    if (body?.additional_prompt && Array.from(body.additional_prompt).length > 1000) {
+      return fail(422, 'INVALID_REQUEST', 'Prompt tambahan tidak boleh melebihi 1000 karakter.', ['additional_prompt']);
+    }
+    textFields.forEach((f) => {
       if (body?.[f] != null) db.profile[f] = body[f].trim();
     });
+    if (body?.delivery_preference != null && body?.content_preference == null) {
+      db.profile.content_preference = body.delivery_preference.trim();
+    } else if (body?.content_preference != null && body?.delivery_preference == null) {
+      db.profile.delivery_preference = body.content_preference.trim();
+    }
+    if (body?.activity_configuration && typeof body.activity_configuration === 'object') {
+      const mergedConfig = { ...db.profile.activity_configuration, ...body.activity_configuration };
+      if (!Object.values(mergedConfig).some(Boolean)) {
+        return fail(422, 'INVALID_REQUEST', 'Minimal satu jenis aktivitas pembelajaran harus diaktifkan.', ['activity_configuration']);
+      }
+      db.profile.activity_configuration = mergedConfig;
+    }
     db.profile.updated_at = now();
     return ok(db.profile);
   },
@@ -733,8 +748,17 @@ export function resetMockDb() {
     verifications: {},
     profile: {
       teaching_style: 'Interaktif dengan studi kasus dan praktikum',
+      expertise: 'Rekayasa Perangkat Lunak',
+      delivery_preference: 'Materi ringkas, banyak contoh kode',
       language_preference: 'Bahasa Indonesia',
       content_preference: 'Materi ringkas, banyak contoh kode',
+      additional_prompt: '',
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: false,
+        quiz: false,
+      },
       updated_at: now(),
     },
   };
