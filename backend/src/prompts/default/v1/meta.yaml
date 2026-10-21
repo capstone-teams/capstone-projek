@@ -1,0 +1,8 @@
+name: default
+version: v1
+required_variables:
+  - rps_yaml
+  - instructor_context_yaml #instruktur profile dalam yaml juga kah diaksesnya nanti
+  - output_schema
+optional_variables:
+  additional_prompt
