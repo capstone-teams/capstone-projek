@@ -10,6 +10,9 @@ Dua janji yang diuji:
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import yaml
 import pytest
 
@@ -126,6 +129,27 @@ SOURCE_DOCUMENT = {
                 ],
             },
         },
+        # Kisi administratif template (nomor dokumen, tanggal terbit, revisi).
+        {
+            "self_ref": "#/tables/2",
+            "label": "table",
+            "content_layer": "body",
+            "prov": [{"page_no": 3}],
+            "data": {
+                "num_rows": 4,
+                "num_cols": 2,
+                "table_cells": [
+                    {"text": "No. Dok.", "start_row_offset_idx": 0, "start_col_offset_idx": 0},
+                    {"text": ": 01", "start_row_offset_idx": 0, "start_col_offset_idx": 1},
+                    {"text": "Tgl. Terbit", "start_row_offset_idx": 1, "start_col_offset_idx": 0},
+                    {"text": ": 05/08/2017", "start_row_offset_idx": 1, "start_col_offset_idx": 1},
+                    {"text": "No. Revisi", "start_row_offset_idx": 2, "start_col_offset_idx": 0},
+                    {"text": ": 01", "start_row_offset_idx": 2, "start_col_offset_idx": 1},
+                    {"text": "Hal", "start_row_offset_idx": 3, "start_col_offset_idx": 0},
+                    {"text": ": 3/3", "start_row_offset_idx": 3, "start_col_offset_idx": 1},
+                ],
+            },
+        },
         {
             "self_ref": "#/tables/1",
             "label": "table",
@@ -204,12 +228,17 @@ def test_headings_and_paragraphs_are_kept_apart():
 
 def test_the_cpmk_and_weekly_plan_tables_are_complete():
     """Tabel CPMK dan rencana mingguan harus utuh, termasuk captionnya."""
-    tables = [block["table"] for block in load(document_to_yaml(SOURCE_DOCUMENT))["blocks"] if "table" in block]
+    tables = [
+        block["table"]
+        for block in load(document_to_yaml(SOURCE_DOCUMENT))["blocks"]
+        if "table" in block
+    ]
 
     assert tables[0]["caption"] == "Tabel 1. Distribusi Mingguan"
     assert tables[0]["rows"][0] == ["Kode", "Rumusan CPMK"]
     assert tables[0]["rows"][1][0] == "CPMK-1"
     assert "merumuskan capaian pembelajaran." in tables[0]["rows"][1][1]
+    # Header tabel akademik yang berulang di tiap halaman tetap dipertahankan.
     assert tables[1]["rows"][0] == ["Minggu", "Topik", "Metode"]
     assert ["1", "Pengenalan Basis Data", "Kuliah"] in tables[1]["rows"]
     assert ["2", "Model Relasional", "Latihan"] in tables[1]["rows"]
@@ -243,6 +272,51 @@ def test_the_lecturer_identifier_and_name_are_redacted_everywhere():
     assert "NIDN" not in yaml_text
     # Penanda pengganti, bukan penghapusan baris: teks akademik tetap ada.
     assert yaml_text.count("[identitas dihapus]") >= 2
+
+
+def test_the_administrative_template_grid_is_dropped_from_tables():
+    """Kisi nomor dokumen/tanggal terbit/No. Revisi/Hal bukan isi RPS."""
+    yaml_text = document_to_yaml(SOURCE_DOCUMENT)
+
+    for label in ("No. Dok.", "Tgl. Terbit", "No. Revisi", ": 05/08/2017", ": 3/3"):
+        assert label not in yaml_text
+    # Header akademik yang diulang pada banyak halaman tidak ikut terbuang.
+    assert "Minggu" in yaml_text
+
+
+def test_page_number_cells_are_dropped_from_tables():
+    """Sel nomor halaman (": 4/16") bukan isi tabel."""
+    document = {
+        "pages": {"1": {"page_no": 1}},
+        "texts": [],
+        "tables": [
+            {
+                "label": "table",
+                "prov": [{"page_no": 1}],
+                "data": {
+                    "num_rows": 2,
+                    "num_cols": 2,
+                    "table_cells": [
+                        {"text": ": 4/16", "start_row_offset_idx": 0, "start_col_offset_idx": 0},
+                        {
+                            "text": "Materi Pembelajaran",
+                            "start_row_offset_idx": 1,
+                            "start_col_offset_idx": 0,
+                        },
+                        {
+                            "text": "Himpunan",
+                            "start_row_offset_idx": 1,
+                            "start_col_offset_idx": 1,
+                        },
+                    ],
+                },
+            }
+        ],
+    }
+
+    rows = load(document_to_yaml(document))["blocks"][0]["table"]["rows"]
+
+    assert rows == [["Materi Pembelajaran", "Himpunan"]]
 
 
 def test_a_document_without_content_produces_no_blocks():
@@ -296,3 +370,55 @@ def test_the_analysis_must_contain_something_academic():
 def test_the_analysis_must_be_an_object(invalid):
     with pytest.raises(RPSValidationError):
         structured_data_to_yaml(invalid)
+
+
+# --- Konversi sungguhan (opt-in) -------------------------------------------
+
+FIXTURE_PDF = Path(__file__).parent / "fixtures" / "test.pdf"
+
+
+@pytest.mark.skipif(
+    os.getenv("RPS_DOCLING_LIVE_TEST") != "1",
+    reason="opt-in live Docling test: set RPS_DOCLING_LIVE_TEST=1",
+)
+@pytest.mark.asyncio
+async def test_the_real_rps_fixture_produces_llm_ready_yaml():
+    """Pipeline utuh pada RPS contoh: PDF → Docling (BE-13) → YAML (BE-08.1).
+
+    Serializer sendiri tidak memanggil Docling — inputnya ``source_document``
+    yang sudah dikonversi. Test ini menjaga asumsi itu pada dokumen sungguhan:
+    RPS 16 halaman dengan kisi administratif, header halaman berisi identitas
+    dosen, dan tabel rencana mingguan yang header-nya diulang tiap halaman.
+    """
+    from src.services.rps.docling_converter import DoclingDocumentConverter
+
+    pdf_path = Path(os.environ.get("RPS_DOCLING_TEST_PDF") or FIXTURE_PDF)
+    if not pdf_path.is_file():
+        pytest.skip(f"berkas PDF tidak ditemukan: {pdf_path}")
+
+    conversion = await DoclingDocumentConverter().convert(
+        content=pdf_path.read_bytes(), file_name=pdf_path.name
+    )
+    yaml_text = document_to_yaml(conversion.document_json)
+    payload = load(yaml_text)
+
+    assert payload["page_count"] == 16
+    assert payload["blocks"]
+
+    # Tabel rencana mingguan ikut beserta header akademiknya.
+    rows = [
+        row
+        for block in payload["blocks"]
+        if "table" in block
+        for row in block["table"]["rows"]
+    ]
+    flat = "\n".join(cell for row in rows for cell in row)
+    assert "Sub-CPMK" in flat
+    assert "Bahan Kajian" in flat
+
+    # Tidak ada identitas dosen, kisi administratif, maupun nomor halaman.
+    for absent in ("Paninggalih", "Dosen Pengampu", "Tgl. Terbit", "No. Dok.", ": 4/16"):
+        assert absent not in yaml_text
+
+    # YAML jauh lebih ringkas daripada JSON Docling apa adanya.
+    assert len(yaml_text) < 40_000
