@@ -151,6 +151,20 @@ Field identity mengikuti atribut user Moodle (`username`, `firstname`,
 `lastname`, `email`). Nilai `role` adalah enum kanonik backend: `INSTRUCTOR`,
 `STUDENT`, atau `ADMIN`.
 
+Enum inilah yang **valid** dan yang tampil pada response login, `GET /auth/me`,
+serta OpenAPI (BE-06.4). Proposal memakai istilah Indonesia pada class diagram;
+padanannya satu-satu dan **tidak** menambah nilai baru:
+
+| Proposal (class diagram) | Nilai kanonik API | Arti                      |
+| ------------------------ | ----------------- | ------------------------- |
+| `DOSEN`                  | `INSTRUCTOR`      | Dosen pengampu RPS         |
+| `MAHASISWA`              | `STUDENT`         | Mahasiswa peserta mata kuliah |
+| —                        | `ADMIN`           | Operasi administrasi       |
+
+Frontend dan backend sama-sama memakai nilai kanonik tersebut; role tidak
+pernah menjadi klaim token, sehingga perubahan role berlaku pada request
+berikutnya tanpa menerbitkan token baru.
+
 > Panduan integrasi lengkap — contoh request/response, format dan masa berlaku
 > token, perilaku token kedaluwarsa, matriks role, serta daftar kode error —
 > tersedia di
@@ -290,47 +304,172 @@ Response:
 
 ```json
 {
-  "rps_id": "rps_001",
-  "course": {
-    "name": "string",
-    "code": "string",
-    "credits": 3
-  },
-  "learning_outcomes": [],
-  "topics": [],
-  "weekly_plan": [],
-  "assessment": [],
-  "references": []
+  "rps_id": "kP3nQ7vRtYx2bM8sLdWfZa",
+  "analyzed_at": "2026-10-21T08:01:10Z",
+  "data": {
+    "schema_version": "2.0",
+    "course": {
+      "name": "Basis Data",
+      "code": "IF123",
+      "credits": 3
+    },
+    "cpmk": [],
+    "sub_cpmk": [],
+    "weeks": [],
+    "assessments": [],
+    "references": []
+  }
 }
 ```
 
----
+`data` adalah **RPS Structured Data** utuh (content-schema §6.2 — identitas mata
+kuliah, CPL, CPMK, Sub-CPMK, rencana mingguan, penilaian, referensi), bukan
+ringkasan terpisah. Schema yang sama dipakai sebagai bentuk kolom
+`rps.structured_data` (BE-08.2), sehingga client dan database tidak dapat
+menyimpang.
 
-# 7. Instructor Profile API
+Kode status: `200` bila RPS sudah dianalisis, `422 INVALID_REQUEST` bila
+dokumen belum dianalisis, `404 RESOURCE_NOT_FOUND` bila RPS tidak ada, dan `403
+AUTHORIZATION_DENIED` untuk RPS milik dosen lain atau akun mahasiswa.
 
-## 7.1 Get Profile
+## 6.5 Get RPS List
 
 ```http
-GET /api/v1/instructors/me/profile
+GET /api/v1/rps
 ```
 
-## 7.2 Update Profile
-
-```http
-PUT /api/v1/instructors/me/profile
-```
-
-Request:
+Response:
 
 ```json
 {
-  "teaching_style": "string",
-  "language_preference": "Bahasa Indonesia",
-  "content_preference": "string"
+  "items": [
+    {
+      "id": "kP3nQ7vRtYx2bM8sLdWfZa",
+      "filename": "rps-basis-data.pdf",
+      "status": "PROCESSED",
+      "schema_version": "2.0",
+      "workflow_id": null,
+      "has_source_document": true,
+      "created_at": "2026-10-21T08:00:00Z",
+      "updated_at": "2026-10-21T08:00:42Z"
+    }
+  ]
 }
 ```
 
-Schema final ditentukan berdasarkan requirement profile.
+Hanya RPS milik dosen yang login. `workflow_id` terisi setelah workflow
+analisis dibuat (BE-11.2). Nilai `status` adalah enum kanonik backend: `UPLOADED`,
+`PROCESSING`, `PROCESSED`, `FAILED` — dan `ANALYZING`, `ANALYZED` setelah BE-08.2
+menambahkan tahap analisis. Nilai ditulis **huruf besar**, sama seperti response
+endpoint RPS lainnya (§6.1–§6.3).
+
+## 6.6 Reanalyze RPS
+
+```http
+POST /api/v1/rps/{rps_id}/reanalyze
+```
+
+Request tanpa body. Response `202 Accepted`:
+
+```json
+{
+  "rps_id": "kP3nQ7vRtYx2bM8sLdWfZa",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+  "status": "ANALYZING"
+}
+```
+
+Analisis ulang berjalan dari `source_document` yang tersimpan — Docling tidak
+dijalankan lagi — dan hanya boleh diminta dosen pemilik RPS. RPS yang sudah
+berstatus `ANALYZED` tidak dianalisis ulang secara implisit; satu-satunya jalan
+adalah endpoint ini. Client memantau hasilnya melalui §16/§17 lalu membaca
+§6.4.
+
+> **Status implementasi (BE-06.4).** §6.4–§6.6 sudah terbit pada OpenAPI
+> beserta contoh response, tetapi belum diimplementasikan: rute stub menjawab
+> `501 NOT_IMPLEMENTED`. Implementasinya milik BE-08.2/BE-08.3, dan stub-nya
+> dibuang saat itu.
+
+---
+
+# 7. Instructor Setup API
+
+Satu endpoint untuk seluruh setup dosen: preferensi mengajar, prompt tambahan,
+dan konfigurasi aktivitas yang boleh dihasilkan agent. Dipakai agent pada semua
+kursus milik dosen tersebut.
+
+> Nama path kanonik adalah `/instructors/me/setup` (BE-10.2). Endpoint
+> `/instructors/me/profile` pada versi dokumen sebelumnya **tidak** diterbitkan
+> dan tidak pernah diimplementasikan; mock frontend yang masih memakainya
+> diganti saat FE-07.2.
+
+## 7.1 Get Setup
+
+```http
+GET /api/v1/instructors/me/setup
+```
+
+Response:
+
+```json
+{
+  "instructor_profile": {
+    "teaching_style": "Interaktif dengan studi kasus",
+    "expertise": "Rekayasa Perangkat Lunak",
+    "delivery_preference": "Materi ringkas, banyak contoh kode",
+    "language_preference": "Bahasa Indonesia"
+  },
+  "additional_prompt": "Sertakan contoh SQL pada setiap materi.",
+  "activity_configuration": {
+    "learning_material": true,
+    "learning_resource": true,
+    "assignment": false,
+    "quiz": false
+  },
+  "updated_at": "2026-10-21T08:02:00Z"
+}
+```
+
+## 7.2 Update Setup
+
+```http
+PUT /api/v1/instructors/me/setup
+```
+
+Request — seluruh field opsional; hanya nilai yang dikirim yang diubah:
+
+```json
+{
+  "instructor_profile": {
+    "teaching_style": "string",
+    "expertise": "string",
+    "delivery_preference": "string",
+    "language_preference": "Bahasa Indonesia"
+  },
+  "additional_prompt": "string",
+  "activity_configuration": {
+    "learning_material": true,
+    "learning_resource": false,
+    "assignment": false,
+    "quiz": false
+  }
+}
+```
+
+Response sama dengan §7.1. Validasi (BE-10.2):
+
+| Aturan                                    | Error                                     |
+| ----------------------------------------- | ----------------------------------------- |
+| `additional_prompt` melebihi batas panjang | `422 INVALID_REQUEST`, detail per field   |
+| Tidak ada jenis aktivitas aktif (`true`)   | `422 INVALID_REQUEST`, detail per field   |
+| Tipe data field salah                      | `422 INVALID_REQUEST`, detail per field   |
+| Role bukan dosen                           | `403 AUTHORIZATION_DENIED`                |
+
+Batas panjang `additional_prompt` dikonfigurasi melalui environment, sehingga
+angkanya tidak di-hardcode pada kontrak ini.
+
+> **Status implementasi (BE-06.4).** Terbit pada OpenAPI sebagai kontrak;
+> rutenya stub `501 NOT_IMPLEMENTED` sampai BE-10.2 mendarat.
 
 ---
 
@@ -813,13 +952,74 @@ Response:
 
 ---
 
-# 16. Monitoring API
+# 16. Workflow Monitoring API
 
-## 16.1 Get Current Workflow Status
+Workflow adalah satu rangkaian pekerjaan agent (analisis RPS, penyusunan
+rencana, generasi konten, eksekusi Moodle). Semua endpoint di bawah hanya
+menampilkan workflow milik dosen yang login.
+
+## 16.1 Get Workflow List
 
 ```http
-GET /api/v1/courses/{course_id}/monitoring
+GET /api/v1/workflows
 ```
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "q7RtYx2bM8sLdWfZaKp3nQ",
+      "status": "RUNNING",
+      "stage": "rps_analysis",
+      "progress": {
+        "completed": 1,
+        "total": 4
+      },
+      "rps_id": "kP3nQ7vRtYx2bM8sLdWfZa",
+      "created_at": "2026-10-21T08:03:00Z",
+      "updated_at": "2026-10-21T08:03:20Z"
+    }
+  ]
+}
+```
+
+Nilai `status` adalah enum: `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`
+(huruf besar; BE-11.3).
+
+## 16.2 Get Workflow Status
+
+```http
+GET /api/v1/workflows/{workflow_id}
+```
+
+Response sama dengan satu item §16.1 ditambah course target Moodle:
+
+```json
+{
+  "id": "q7RtYx2bM8sLdWfZaKp3nQ",
+  "status": "RUNNING",
+  "stage": "rps_analysis",
+  "progress": {
+    "completed": 1,
+    "total": 4
+  },
+  "rps_id": "kP3nQ7vRtYx2bM8sLdWfZa",
+  "moodle_course_id": null,
+  "created_at": "2026-10-21T08:03:00Z",
+  "updated_at": "2026-10-21T08:03:20Z"
+}
+```
+
+## 16.3 Get Workflow Event History
+
+```http
+GET /api/v1/workflows/{workflow_id}/events
+```
+
+Response memuat event dengan bentuk yang sama seperti frame WebSocket §17, urut
+dari yang paling lama.
 
 Response:
 
@@ -839,35 +1039,41 @@ Response:
 
 # 17. WebSocket Monitoring
 
-HTTP API digunakan untuk initial state.
-
-Real-time event menggunakan WebSocket.
+HTTP API (§16) digunakan untuk initial state; event real-time dikirim melalui
+WebSocket berdasarkan `workflow_id`, bukan `course_id`.
 
 ```text
-WS /api/v1/ws/courses/{course_id}
+WS /api/v1/ws/workflows/{workflow_id}
 ```
 
-Event example:
+Autentikasi memakai access token yang sama dengan HTTP (dikirim pada query
+parameter `token` saat handshake, karena browser tidak dapat menyetel header
+`Authorization` pada WebSocket). Workflow milik dosen lain ditolak saat
+handshake.
+
+Satu frame event:
 
 ```json
 {
-  "event": "CONTENT_GENERATION_STARTED",
-  "course_id": "course_project_001",
-  "week": 5,
-  "timestamp": "datetime"
+  "event": "WORKFLOW_STAGE_COMPLETED",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+  "stage": "rps_analysis",
+  "progress": {
+    "completed": 2,
+    "total": 4
+  },
+  "message": "Analisis RPS selesai.",
+  "timestamp": "2026-10-21T08:03:30Z"
 }
 ```
 
-Event completion:
+`event` memakai pola `WORKFLOW_*` (`WORKFLOW_STARTED`, `WORKFLOW_STAGE_STARTED`,
+`WORKFLOW_STAGE_COMPLETED`, `WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`). Bentuk
+frame ini sama dengan item pada `GET /api/v1/workflows/{workflow_id}/events`
+(§16.3) dan terbit pada OpenAPI sebagai schema `WorkflowEvent` — sehingga client
+cukup memakai satu parser.
 
-```json
-{
-  "event": "CONTENT_GENERATION_COMPLETED",
-  "course_id": "course_project_001",
-  "week": 5,
-  "timestamp": "datetime"
-}
-```
+Event **tidak** memuat credential, API key, maupun isi prompt.
 
 Frontend harus melakukan initial state fetch melalui HTTP sebelum membuka atau menggunakan event stream agar tidak bergantung pada event yang terjadi sebelum connection dibuat.
 
@@ -1194,3 +1400,4 @@ Hal yang masih perlu ditentukan:
 | Version | Date       | Description               | Author       |
 | ------- | ---------- | ------------------------- | ------------ |
 | 0.1     | 2026-09-02 | Initial API Specification | Project Team |
+| 0.2     | 2026-10-21 | Kontrak Sprint 2 pada OpenAPI: enum role kanonik, RPS list/analysis/reanalyze, instructor setup, workflow & event WS (BE-06.4) | Project Team |
