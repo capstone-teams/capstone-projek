@@ -32,7 +32,9 @@ describe('auth', () => {
   it('mengembalikan user setelah login dengan bentuk GET /auth/me backend', async () => {
     const me = await auth.getCurrentUser();
     expect(me).toEqual({ id: 'user_001', username: 'dosen', firstname: 'Rina', lastname: 'Kartika', email: 'dosen@lecturer.itk.ac.id', role: 'INSTRUCTOR' });
-    expect(auth.toUiRole(me.role)).toBe('dosen');
+    expect(auth.toUiRole(me.role)).toBe('DOSEN');
+    expect(auth.toUiRole('STUDENT')).toBe('MAHASISWA');
+    expect(auth.toUiRole('UNKNOWN')).toBeNull();
   });
 
   it('menolak password salah dengan format error standar', async () => {

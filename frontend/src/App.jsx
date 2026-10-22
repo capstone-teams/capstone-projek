@@ -1,4 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './hooks/useAuth';
+import { ROLE, homePathFor } from './types/auth';
 import MoodleLayout from './components/layout/MoodleLayout';
 import RequireAuth from './components/layout/RequireAuth';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
@@ -22,6 +24,12 @@ import CourseContentPage from './pages/ai/course/CourseContentPage';
 import CourseReviewPage from './pages/ai/course/CourseReviewPage';
 import CoursePublishPage from './pages/ai/course/CoursePublishPage';
 
+/** "/" membuka halaman awal sesuai role: dosen ke dashboard, mahasiswa ke halaman course. */
+function HomeRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={homePathFor(user?.role)} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -30,8 +38,11 @@ export default function App() {
 
       <Route element={<RequireAuth />}>
         <Route element={<MoodleLayout />}>
-          <Route index element={<Navigate to="/my" replace />} />
-          <Route path="my" element={<DashboardPage />} />
+          <Route index element={<HomeRedirect />} />
+          {/* Halaman dosen Sprint 1: dashboard (FE-11.1). Instructor Setup ada di Profil (khusus DOSEN). */}
+          <Route element={<RequireAuth roles={[ROLE.DOSEN]} />}>
+            <Route path="my" element={<DashboardPage />} />
+          </Route>
           <Route path="my/courses" element={<MyCoursesPage />} />
           <Route path="user/profile" element={<ProfilePage />} />
 
@@ -40,7 +51,8 @@ export default function App() {
             <Route path="participants" element={<ParticipantsPage />} />
             <Route path="grades" element={<GradesPage />} />
             <Route path="mod/:cmid" element={<ActivityPage />} />
-            <Route element={<RequireAuth roles={['dosen']} />}>
+            {/* RPS, Course Target, dan Monitoring berada di tab Generator AI (khusus DOSEN). */}
+            <Route element={<RequireAuth roles={[ROLE.DOSEN]} />}>
               <Route path="ai" element={<AiCourseLayout />}>
                 <Route index element={<CourseOverviewPage />} />
                 <Route path="rps" element={<CourseRpsPage />} />

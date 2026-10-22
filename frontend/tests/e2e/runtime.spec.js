@@ -81,16 +81,19 @@ for (const [route, content] of teacherPages) {
   });
 }
 
-test('student sees Moodle data and is denied AI pages', async ({ page }) => {
+test('student sees Moodle data and is denied lecturer pages', async ({ page }) => {
   await seedSession(page, 'mahasiswa');
   await page.goto('/my');
-  await expect(page.getByText('Ringkasan belajar', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Akses ditolak' })).toBeVisible();
+  await page.goto('/my/courses');
+  await expect(page.getByRole('heading', { name: 'Kursus saya', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Menu pengguna' }).click();
   await expect(page.getByRole('menuitem', { name: 'Generator AI' })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Dasbor' })).toHaveCount(0);
   await page.goto('/course/2');
   await expect(page.getByRole('link', { name: 'Generator AI' })).toHaveCount(0);
   await page.goto('/course/2/ai');
-  await expect(page.getByRole('heading', { name: 'Khusus dosen' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Akses ditolak' })).toBeVisible();
 });
 
 test('logout removes both Moodle and backend sessions and guards browser history', async ({ page }) => {

@@ -1,12 +1,11 @@
 import { api, getToken, setToken } from './apiClient';
+import { ROLE_FROM_BACKEND } from '../types/auth';
 
 // design-api.md §5; kontrak lengkap di docs/02. design/auth-api-integration.md (BE-06.1).
 
-// Role kanonik backend (huruf besar) → role yang dipakai UI.
-const UI_ROLES = { INSTRUCTOR: 'dosen', STUDENT: 'mahasiswa', ADMIN: 'admin' };
-
+/** Role kanonik backend (INSTRUCTOR/STUDENT/ADMIN) → ROLE aplikasi (DOSEN/MAHASISWA/ADMIN). */
 export function toUiRole(role) {
-  return UI_ROLES[role] ?? null;
+  return ROLE_FROM_BACKEND[role] ?? null;
 }
 
 export async function login(username, password, { isCurrent = () => true } = {}) {

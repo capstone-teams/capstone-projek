@@ -31,6 +31,18 @@ export function onUnauthorized(handler) {
   unauthorizedHandler = handler;
 }
 
+// Dipanggil saat backend menolak role user (403 AUTHORIZATION_DENIED) agar layout menampilkan halaman 403.
+let forbiddenHandler = null;
+export function onForbidden(handler) {
+  forbiddenHandler = handler;
+}
+
+function fail(status, payload) {
+  const error = toApiError(status, payload);
+  if (error.code === 'AUTHORIZATION_DENIED' && forbiddenHandler) forbiddenHandler(error);
+  return error;
+}
+
 const REQUEST_LOC_PREFIXES = new Set(['body', 'query', 'path', 'header', 'cookie']);
 
 function formatValidationItem(item) {
@@ -140,7 +152,7 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
   if (USE_MOCK) {
     const res = await handleMockRequest({ method, path, query, body, token });
     if (res.status === 401 && token && !isAuthLogin && unauthorizedHandler) unauthorizedHandler();
-    if (res.status >= 400) throw toApiError(res.status, res.data);
+    if (res.status >= 400) throw fail(res.status, res.data);
     return res.data;
   }
 
@@ -175,7 +187,7 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
   }
 
   if (response.status === 401 && token && !isAuthLogin && unauthorizedHandler) unauthorizedHandler();
-  if (!response.ok) throw toApiError(response.status, data);
+  if (!response.ok) throw fail(response.status, data);
   return data;
 }
 

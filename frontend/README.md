@@ -67,9 +67,9 @@ VITE_* tersedia di browser; jangan gunakan untuk secret deployment.
 | --- | --- |
 | /login | Login akun backend lalu Moodle |
 | /forgot-password | Pemulihan kata sandi melalui Moodle |
-| / | Mengarah ke /my setelah login |
-| /my | Dasbor Moodle |
-| /my/courses | Kursus yang diikuti/diajar |
+| / | Halaman awal sesuai role: DOSEN ke /my, MAHASISWA ke /my/courses |
+| /my | Dashboard dosen (khusus DOSEN; role lain melihat halaman 403) |
+| /my/courses | Kursus yang diikuti/diajar; halaman awal mahasiswa |
 | /user/profile | Profil pengguna Moodle; dosen juga mengatur preferensi mengajar AI |
 | /course/:courseId | Isi kursus Moodle |
 | /course/:courseId/participants | Peserta |
@@ -96,8 +96,10 @@ sama:
 
 1. `POST /api/v1/auth/login` dengan `{ username, password }`; `username` boleh
    berisi email. Token disimpan pada `agentic-lms.token`.
-2. `GET /api/v1/auth/me` menentukan identitas dan peran: `INSTRUCTOR` menjadi
-   dosen dan `STUDENT` menjadi mahasiswa. Role `ADMIN` belum memiliki tampilan.
+2. `GET /api/v1/auth/me` menentukan identitas dan role. Backend mengirim enum
+   kanonik `INSTRUCTOR`/`STUDENT`/`ADMIN`; aplikasi memakai istilah proposal
+   `ROLE.DOSEN`/`ROLE.MAHASISWA` (`src/types/auth.js`) dengan padanan satu-satu
+   sesuai BE-06.4. Role `ADMIN` belum memiliki tampilan khusus.
 3. Login Moodle (login/token.php) memakai `username` dari `/auth/me`, sehingga
    login dengan email tetap berhasil. Token disimpan pada
    `agentic-lms.moodle-session`; hak mengajar per kursus tetap dibaca dari Moodle.
@@ -113,6 +115,17 @@ yang ditolak (401) mengakhiri sesi dan menampilkan "Sesi berakhir". Server yang
 tidak terjangkau (network/5xx) tidak menghapus token sehingga reload berikutnya
 dapat memulihkan sesi. 401 pada request terproteksi juga mengakhiri sesi; 401
 tanpa token (password salah) dan 403 tidak.
+
+Role hanya berasal dari backend; data Moodle tidak lagi menentukan role dan hanya
+dipakai untuk hak per kursus (`teacherCourseIds`, misalnya tab Generator AI dan
+Mode edit). Setelah login, DOSEN dibuka di dashboard (`/my`) dan MAHASISWA di
+halaman course (`/my/courses`), lihat `homePathFor()`. Menu Dasbor hanya tampil
+untuk DOSEN. Halaman dosen Sprint 1 (Dashboard, Instructor Setup di Profil, serta
+RPS, Course Target, dan Monitoring di tab Generator AI) dijaga `RequireAuth`
+dengan `ROLE.DOSEN`; akses lewat URL langsung oleh role lain menampilkan halaman
+403 "Akses ditolak". Response `403 AUTHORIZATION_DENIED` dari backend juga
+menampilkan halaman 403 (`onForbidden` di apiClient, ditangani `MoodleLayout`)
+sampai pengguna berpindah halaman.
 
 Backend tidak menyediakan endpoint logout maupun refresh token: logout menghapus
 kedua token dan data pengguna dari state, dan token kedaluwarsa setelah
@@ -242,7 +255,8 @@ npm run verify:foundation
 Unit test mencakup API, Moodle, workflow, halaman, sesi, shared state, dan detail
 rencana. Suite browser runtime.spec.js menguji routing/login/workflow;
 auth-06-2.spec.js menguji login akun uji, error kredensial, pemulihan sesi saat
-reload, dan logout; course-edit-mode.spec.js menguji Mode edit pada 375/1440 px;
+reload, dan logout; role-guard-06-3.spec.js menguji halaman awal per role, menu,
+dan halaman 403; course-edit-mode.spec.js menguji Mode edit pada 375/1440 px;
 foundation-71.spec.js menguji sesi, state, keyboard, empty/error, serta responsive;
 course-plan-74.spec.js menguji rencana pada 375/768/1024/1440 px dan pemilihan minggu.
 presentation.spec.js berjalan melalui test:design untuk style dan batas konten

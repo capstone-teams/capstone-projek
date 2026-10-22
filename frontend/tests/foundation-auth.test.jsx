@@ -5,7 +5,7 @@ import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/hooks/useAuth';
 import { ApiError, request } from '../src/services/apiClient';
 import { MOODLE_SESSION_KEY, TOKEN_STORAGE_KEY } from '../src/services/config';
-import { AUTH_STATUS, SESSION_NOTICE } from '../src/types/auth';
+import { AUTH_STATUS, ROLE_FROM_BACKEND, SESSION_NOTICE } from '../src/types/auth';
 
 const service = vi.hoisted(() => ({
   requestToken: vi.fn(), resolveSession: vi.fn(), setMoodleToken: vi.fn(), onMoodleTokenInvalid: vi.fn(),
@@ -22,8 +22,8 @@ vi.mock('../src/services/apiClient', async (importOriginal) => {
 });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const teacher = { user: { id: 3, username: 'dosen', fullname: 'Rina Kartika', role: 'dosen', teacherCourseIds: [2] }, site: { name: 'Moodle ITK' } };
-const student = { user: { id: 5, username: 'mahasiswa', fullname: 'Andi Saputra', role: 'mahasiswa', teacherCourseIds: [] }, site: teacher.site };
+const teacher = { user: { id: 3, username: 'dosen', fullname: 'Rina Kartika', teacherCourseIds: [2] }, site: { name: 'Moodle ITK' } };
+const student = { user: { id: 5, username: 'mahasiswa', fullname: 'Andi Saputra', teacherCourseIds: [] }, site: teacher.site };
 const instructorMe = { id: 'user_001', username: 'dosen', firstname: 'Rina', lastname: 'Kartika', email: 'dosen@lecturer.itk.ac.id', role: 'INSTRUCTOR' };
 const studentMe = { id: 'user_002', username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id', role: 'STUDENT' };
 const authFailed = () => new ApiError(401, 'AUTHENTICATION_FAILED', 'Autentikasi gagal.');
@@ -56,7 +56,7 @@ beforeEach(() => {
     return { access_token: `mock-token:${username}`, token_type: 'bearer', user: {} };
   });
   apiClient.onUnauthorized.mockImplementation((handler) => apiClient.actual.onUnauthorized(handler));
-  service.toUiRole.mockImplementation((role) => ({ INSTRUCTOR: 'dosen', STUDENT: 'mahasiswa' })[role] ?? null);
+  service.toUiRole.mockImplementation((role) => ROLE_FROM_BACKEND[role] ?? null);
   node = document.createElement('div');
   document.body.appendChild(node);
 });
@@ -76,7 +76,7 @@ describe('FE-06.2 login', () => {
     expect(service.login).toHaveBeenCalledWith('dosen@lecturer.itk.ac.id', 'dosen123', expect.any(Object));
     expect(service.requestToken).toHaveBeenCalledWith('dosen', 'dosen123');
     expect(service.login.mock.invocationCallOrder[0]).toBeLessThan(service.requestToken.mock.invocationCallOrder[0]);
-    expect(state.user).toMatchObject({ id: 3, fullname: 'Rina Kartika', role: 'dosen', backendId: 'user_001', teacherCourseIds: [2] });
+    expect(state.user).toMatchObject({ id: 3, fullname: 'Rina Kartika', role: 'DOSEN', backendId: 'user_001', teacherCourseIds: [2] });
     expect(storedTokens()).toEqual(['mock-token:dosen@lecturer.itk.ac.id', JSON.stringify({ token: 'mock-3-new' })]);
   });
 
@@ -86,7 +86,7 @@ describe('FE-06.2 login', () => {
     service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     await act(async () => state.login('mahasiswa', 'mahasiswa123'));
-    expect(state.user.role).toBe('mahasiswa');
+    expect(state.user.role).toBe('MAHASISWA');
   });
 
   it('rejects with the backend error and never contacts Moodle when credentials are wrong', async () => {
@@ -134,7 +134,7 @@ describe('FE-06.2 session restore', () => {
     expect(state.user).toBeNull();
     await act(async () => pending.resolve(instructorMe));
     expect(state.initializing).toBe(false);
-    expect(state.user).toMatchObject({ fullname: 'Rina Kartika', role: 'dosen', backendId: 'user_001' });
+    expect(state.user).toMatchObject({ fullname: 'Rina Kartika', role: 'DOSEN', backendId: 'user_001' });
     expect(storedTokens()).toEqual(['mock-token:user_001', JSON.stringify({ token: 'mock-3-test' })]);
   });
 
@@ -208,7 +208,7 @@ describe('FE-06.2 session restore', () => {
     await mount();
     await act(async () => state.login('mahasiswa', 'mahasiswa123'));
     await act(async () => pending.reject(authFailed()));
-    expect(state.user).toMatchObject({ fullname: 'Andi Saputra', role: 'mahasiswa' });
+    expect(state.user).toMatchObject({ fullname: 'Andi Saputra', role: 'MAHASISWA' });
     expect(JSON.parse(localStorage.getItem(MOODLE_SESSION_KEY)).token).toBe('mock-5-new');
   });
 });

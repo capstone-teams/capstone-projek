@@ -111,8 +111,8 @@ export function listAssignParticipants(assignId) {
 const TEACHER_OPTIONS = ['update', 'reports', 'backup', 'gradebook'];
 
 /**
- * Menentukan peran user dari Moodle: "dosen" bila mengajar di minimal satu course
- * (atau admin situs), selain itu "mahasiswa".
+ * Data user Moodle untuk sesi: identitas, admin situs, dan kursus yang diajar (hak per kursus).
+ * Role aplikasi (DOSEN/MAHASISWA) TIDAK ditentukan di sini; sumbernya GET /auth/me backend (FE-06.3).
  */
 export async function resolveSession() {
   const site = await getSiteInfo();
@@ -135,7 +135,6 @@ export async function resolveSession() {
       firstname: site.firstname,
       avatar: site.userpictureurl,
       isAdmin: !!site.userissiteadmin,
-      role: site.userissiteadmin || teacherCourseIds.length ? 'dosen' : 'mahasiswa',
       teacherCourseIds,
     },
   };

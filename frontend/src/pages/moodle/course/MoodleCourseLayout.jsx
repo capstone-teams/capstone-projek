@@ -7,6 +7,7 @@ import { getAdministrationOptions, getCourse, getCourseContents, logCourseView }
 import { PageContainer } from '../../../components/layout/MoodleLayout';
 import { ErrorAlert, Spinner } from '../../../components/ui';
 import { EditModeToggle } from '../../../components/moodle/editing';
+import { ROLE } from '../../../types/auth';
 
 // Hak mengubah isi kursus (moodle/course:update) dari core_course_get_user_administration_options.
 const canUpdate = (options) => options?.[0]?.options.some((o) => o.name === 'update' && o.available) ?? false;
@@ -34,7 +35,7 @@ export default function MoodleCourseLayout() {
   const base = '/course/' + courseId;
   const tabs = [{ to: base, label: 'Kursus', end: true }, { to: base + '/participants', label: 'Peserta' }, { to: base + '/grades', label: 'Nilai' }];
   // Generator AI hanya untuk dosen pengampu kursus ini.
-  const canUseAi = isTeacher && user.role === 'dosen';
+  const canUseAi = isTeacher && user.role === ROLE.DOSEN;
   if (canUseAi) tabs.push({ to: base + '/ai', label: 'Generator AI' });
   const onAiTab = pathname.startsWith(base + '/ai');
   return <PageContainer>
