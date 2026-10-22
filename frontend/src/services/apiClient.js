@@ -172,29 +172,74 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
   try {
     response = await fetch(`${API_BASE_URL}${path}${qs}`, init);
   } catch {
-    throw new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.');
+    throw networkError();
   }
+  return settle(response.status, await response.text(), { token, isAuthLogin });
+}
 
-  const text = await response.text();
+const networkError = () => new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.');
+
+/** Ubah response HTTP mentah menjadi data, atau lempar ApiError (dipakai fetch dan upload XHR). */
+function settle(status, text, { token, isAuthLogin }) {
+  const ok = status >= 200 && status < 300;
   let data = null;
   if (text) {
     try {
       data = JSON.parse(text);
     } catch {
-      if (response.ok) throw new ApiError(response.status, 'INVALID_RESPONSE', 'Respons JSON backend tidak valid.');
+      if (ok) throw new ApiError(status, 'INVALID_RESPONSE', 'Respons JSON backend tidak valid.');
       data = null;
     }
   }
-
-  if (response.status === 401 && token && !isAuthLogin && unauthorizedHandler) unauthorizedHandler();
-  if (!response.ok) throw fail(response.status, data);
+  if (status === 401 && token && !isAuthLogin && unauthorizedHandler) unauthorizedHandler();
+  if (!ok) throw fail(status, data);
   return data;
+}
+
+/**
+ * Upload multipart dengan laporan progres (fetch tidak melaporkan progres pengiriman).
+ * onProgress(persen 0–100). Mode mock tidak mengirim data sungguhan, jadi progres disimulasikan
+ * bertahap (maks. 90%) selama request berjalan, lalu 100% setelah selesai.
+ */
+export function upload(path, form, { onProgress } = {}) {
+  const token = getToken();
+  if (USE_MOCK) {
+    let simulated = 0;
+    onProgress?.(simulated);
+    const timer = onProgress && setInterval(() => onProgress((simulated = Math.min(simulated + 15, 90))), 60);
+    return request('POST', path, { body: form })
+      .finally(() => clearInterval(timer))
+      .then((data) => {
+        onProgress?.(100);
+        return data;
+      });
+  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}${path}`);
+    xhr.setRequestHeader('Accept', 'application/json');
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onerror = () => reject(networkError());
+    xhr.onload = () => {
+      try {
+        resolve(settle(xhr.status, xhr.responseText, { token, isAuthLogin: false }));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    onProgress?.(0);
+    xhr.send(form);
+  });
 }
 
 export const api = {
   get: (path, opts) => request('GET', path, opts),
   post: (path, body, opts) => request('POST', path, { ...opts, body }),
   put: (path, body, opts) => request('PUT', path, { ...opts, body }),
+  upload,
 };
 
 // Header untuk operasi yang idempoten (design-api.md §21).

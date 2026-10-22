@@ -1,22 +1,18 @@
 import { useState } from 'react';
-import { listRps } from '../../../services/rpsService';
+import { RPS_READY } from '../../../services/rpsService';
 import { createCourse } from '../../../services/courseService';
-import { useAction, useApi } from '../../../hooks/useApi';
-import { usePolling } from '../../../hooks/usePolling';
-import { Badge, Card, ErrorAlert, Field, Spinner } from '../../ui';
+import { useAction } from '../../../hooks/useApi';
+import { useRpsLibrary } from '../../../hooks/useRpsLibrary';
+import { Alert, Card, ErrorAlert, Field, Spinner } from '../../ui';
 import ActivityConfigFields from '../ActivityConfigFields';
+import RpsList from '../RpsList';
 import RpsUploadForm from '../RpsUploadForm';
-import { RPS_STATUS_LABELS } from '../../../utils/workflow';
-
-const PROCESSING = ['uploaded', 'processing', 'analyzing'];
 
 /** Form awal saat kursus belum punya project generator: pilih/unggah RPS lalu atur aktivitas. */
 export default function AiProjectStart({ moodleCourse, onCreated }) {
-  const rps = useApi(listRps);
-  const items = rps.data?.items ?? [];
-  const processed = items.filter((r) => r.status === 'processed');
-  const processing = items.filter((r) => PROCESSING.includes(r.status));
-  usePolling(() => rps.reload({ silent: true }), 2000, processing.length > 0);
+  // Unggah RPS (FE-08.1): validasi klien, progres, pemrosesan, dan daftar RPS milik dosen.
+  const library = useRpsLibrary();
+  const processed = library.items.filter((r) => RPS_READY.includes(r.status));
 
   const [form, setForm] = useState({
     rps_id: '',
@@ -39,31 +35,37 @@ export default function AiProjectStart({ moodleCourse, onCreated }) {
     <div className="grid grid--2">
       <Card title="1. RPS mata kuliah">
         <p className="mb-3 text-muted">RPS adalah sumber utama informasi akademik untuk agent.</p>
-        <ErrorAlert error={rps.error} />
-        {rps.loading && !rps.data ? (
-          <Spinner />
-        ) : (
-          <div className="stack">
-            {processing.map((r) => (
-              <div key={r.id} className="list__split">
-                <span>{r.filename}</span>
-                <Badge tone="info">{RPS_STATUS_LABELS[r.status] ?? r.status}</Badge>
-              </div>
-            ))}
-            {processed.length > 0 && (
-              <Field label="Pilih RPS yang sudah diproses">
-                <select value={rpsId} onChange={update('rps_id')} required>
-                  {processed.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.filename}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            <RpsUploadForm onDone={() => rps.reload({ silent: true })} />
-          </div>
-        )}
+        <div className="stack">
+          <RpsUploadForm onUploaded={library.addUploaded} />
+          <ErrorAlert error={library.error} />
+          <ErrorAlert error={library.actionError} onClose={library.clearActionError} />
+          {library.unavailable && (
+            <Alert tone="info">Daftar RPS dari server belum tersedia; yang tampil adalah RPS yang Anda unggah pada sesi ini.</Alert>
+          )}
+          {library.loading ? (
+            <Spinner label="Memuat daftar RPS…" />
+          ) : (
+            !library.error && (
+              <RpsList
+                items={library.items}
+                highlightId={library.highlightId}
+                processingId={library.processingId}
+                onProcess={library.process}
+              />
+            )
+          )}
+          {processed.length > 0 && (
+            <Field label="RPS untuk kursus ini" hint="Hanya RPS yang selesai diproses yang dapat dipakai generator.">
+              <select value={rpsId} onChange={update('rps_id')} required>
+                {processed.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.filename}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+        </div>
       </Card>
 
       <Card title="2. Mulai generator AI">

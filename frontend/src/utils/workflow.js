@@ -50,12 +50,23 @@ export function currentStepIndex(status) {
   return i === -1 ? 0 : i;
 }
 
+// Status RPS mengikuti enum backend (huruf besar, design-api §6.5).
 export const RPS_STATUS_LABELS = {
-  uploaded: 'Diunggah',
-  processing: 'Diproses',
-  analyzing: 'Dianalisis',
-  processed: 'Siap',
-  failed: 'Gagal',
+  UPLOADED: 'Diunggah',
+  PROCESSING: 'Diproses',
+  PROCESSED: 'Siap',
+  FAILED: 'Gagal',
+  ANALYZING: 'Dianalisis',
+  ANALYZED: 'Teranalisis',
+};
+
+export const RPS_STATUS_TONES = {
+  UPLOADED: 'neutral',
+  PROCESSING: 'info',
+  ANALYZING: 'info',
+  PROCESSED: 'success',
+  ANALYZED: 'success',
+  FAILED: 'danger',
 };
 
 export const RUN_TYPE_LABELS = {

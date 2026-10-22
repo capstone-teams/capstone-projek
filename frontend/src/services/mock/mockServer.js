@@ -22,7 +22,12 @@ export function configureMock(options) {
 }
 
 const TOTAL_WEEKS = SAMPLE_TOPICS.length;
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// Mengikuti default backend (RPS_MAX_UPLOAD_BYTES, RPS_ALLOWED_EXTENSIONS="pdf").
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const RPS_ALLOWED_EXTENSIONS = ['pdf'];
+const RPS_SCHEMA_VERSION = '2.0';
+// Nama file yang memuat kata ini disimulasikan gagal diproses (untuk mencoba status FAILED).
+const RPS_FAIL_MARKER = 'rusak';
 
 let db;
 let seq;
@@ -98,8 +103,32 @@ function publicCourse(c) {
   };
 }
 
+// Bentuk item GET /rps (design-api §6.5).
 function publicRps(r) {
-  return { id: r.id, filename: r.filename, size: r.size, status: r.status, created_at: r.created_at };
+  return {
+    id: r.id,
+    filename: r.filename,
+    status: r.status,
+    schema_version: RPS_SCHEMA_VERSION,
+    workflow_id: r.workflow_id ?? null,
+    has_source_document: r.status === 'PROCESSED',
+    created_at: r.created_at,
+    updated_at: r.updated_at ?? r.created_at,
+  };
+}
+
+// Bentuk GET /rps/{id} (design-api §6.2).
+function rpsDetail(r) {
+  return {
+    id: r.id,
+    filename: r.filename,
+    status: r.status,
+    created_at: r.created_at,
+    has_source_document: r.status === 'PROCESSED',
+    processing_duration_ms: r.processing_duration_ms ?? null,
+    processing_error_code: r.status === 'FAILED' ? 'RPS_PROCESSING_FAILED' : null,
+    processing_error_message: r.status === 'FAILED' ? 'Dokumen RPS gagal diproses karena kesalahan tak terduga.' : null,
+  };
 }
 
 function contentList(course) {
@@ -248,39 +277,57 @@ const handlers = {
   // RPS
   listRps: () => ok({ items: db.rps.map(publicRps).reverse() }),
 
+  // Mengikuti backend: 400 INVALID_FILE dengan pesan publik yang sama untuk semua penyebab,
+  // 201 untuk dokumen baru dan 200 + deduplicated bila isi yang sama sudah pernah diunggah.
   uploadRps(_p, { body }) {
     const file = body?.get?.('file');
-    if (!file) return fail(400, 'INVALID_FILE', 'File RPS wajib diunggah.');
-    if (!/\.(pdf|docx)$/i.test(file.name)) return fail(400, 'INVALID_FILE', 'Format file harus PDF atau DOCX.');
-    if (file.size > MAX_UPLOAD_BYTES) return fail(400, 'INVALID_FILE', 'Ukuran file maksimal 10 MB.');
-    const rps = { id: nextId('rps'), filename: file.name, size: file.size, status: 'uploaded', created_at: now(), analysis: null };
-    db.rps.push(rps);
-    return ok({ id: rps.id, filename: rps.filename, status: rps.status }, 201);
+    const extension = file?.name?.split('.').pop()?.toLowerCase();
+    if (!file || !file.size || !RPS_ALLOWED_EXTENSIONS.includes(extension) || file.size > MAX_UPLOAD_BYTES) {
+      return fail(400, 'INVALID_FILE', 'File RPS tidak valid.');
+    }
+    const fileHash = `mock-${file.name}-${file.size}`;
+    const existing = db.rps.find((r) => r.file_hash === fileHash);
+    const rps = existing ?? { id: nextId('rps'), filename: file.name, file_hash: fileHash, status: 'UPLOADED', created_at: now(), analysis: null };
+    if (!existing) db.rps.push(rps);
+    return ok(
+      { id: rps.id, filename: rps.filename, status: rps.status, file_hash: rps.file_hash, schema_version: RPS_SCHEMA_VERSION, deduplicated: !!existing },
+      existing ? 200 : 201,
+    );
   },
 
   getRps({ rpsId }) {
     const rps = db.rps.find((r) => r.id === rpsId);
-    return rps ? ok(publicRps(rps)) : notFound('RPS');
+    return rps ? ok(rpsDetail(rps)) : notFound('RPS');
   },
 
+  // 202 menjadwalkan konversi; 200 + reused bila sudah diproses; 409 bila sedang diproses.
   processRps({ rpsId }) {
     const rps = db.rps.find((r) => r.id === rpsId);
     if (!rps) return notFound('RPS');
-    if (!['uploaded', 'failed'].includes(rps.status)) return conflict(`RPS berstatus "${rps.status}" tidak dapat diproses ulang.`);
+    if (rps.status === 'PROCESSED') return ok({ rps_id: rps.id, status: rps.status, schema_version: RPS_SCHEMA_VERSION, reused: true });
+    if (rps.status === 'PROCESSING') return fail(409, 'INVALID_REQUEST', 'Status RPS tidak mengizinkan operasi ini.');
     const run = createRun('rps_processing', null, 'document_extraction');
-    rps.status = 'processing';
+    const startedAt = Date.now();
+    rps.status = 'PROCESSING';
+    rps.updated_at = now();
     schedule([
       () => {
-        rps.status = 'analyzing';
         run.stage = 'rps_analysis';
       },
       () => {
-        rps.analysis = buildRpsAnalysis(rps.id);
-        rps.status = 'processed';
-        finishRun(run);
+        if (rps.filename.toLowerCase().includes(RPS_FAIL_MARKER)) {
+          rps.status = 'FAILED';
+          finishRun(run, 'failed');
+        } else {
+          rps.analysis = buildRpsAnalysis(rps.id);
+          rps.status = 'PROCESSED';
+          finishRun(run);
+        }
+        rps.processing_duration_ms = Date.now() - startedAt;
+        rps.updated_at = now();
       },
     ]);
-    return ok({ rps_id: rps.id, status: 'processing', agent_run_id: run.id }, 202);
+    return ok({ rps_id: rps.id, status: 'PROCESSING', schema_version: RPS_SCHEMA_VERSION, reused: false }, 202);
   },
 
   getRpsAnalysis({ rpsId }) {
@@ -329,7 +376,7 @@ const handlers = {
   createCourse(_p, { body }) {
     const rps = db.rps.find((r) => r.id === body?.rps_id);
     if (!rps) return fail(422, 'INVALID_REQUEST', 'rps_id tidak valid.', ['rps_id']);
-    if (rps.status !== 'processed') return fail(422, 'INVALID_REQUEST', 'RPS harus selesai diproses terlebih dahulu.', ['rps_id']);
+    if (rps.status !== 'PROCESSED') return fail(422, 'INVALID_REQUEST', 'RPS harus selesai diproses terlebih dahulu.', ['rps_id']);
     const moodleId = body.moodle_course_id == null ? '' : String(body.moodle_course_id).trim();
     // Satu kursus Moodle hanya punya satu project generator.
     if (moodleId && db.courses.some((c) => String(c.moodle_course_id) === moodleId)) {
@@ -766,8 +813,8 @@ export function resetMockDb() {
   const rps = {
     id: nextId('rps'),
     filename: 'RPS-Pemrograman-Web-2026.pdf',
-    size: 482133,
-    status: 'processed',
+    file_hash: 'mock-RPS-Pemrograman-Web-2026.pdf-482133',
+    status: 'PROCESSED',
     created_at: now(),
     analysis: null,
   };

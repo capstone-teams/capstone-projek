@@ -70,24 +70,71 @@ describe('auth', () => {
 });
 
 describe('RPS', () => {
-  it('upload, proses async, lalu analisis tersedia', async () => {
-    const file = new File(['%PDF'], 'rps-basis-data.pdf', { type: 'application/pdf' });
-    const uploaded = await rps.uploadRps(file);
-    expect(uploaded.status).toBe('uploaded');
+  const pdf = (name = 'rps-basis-data.pdf', content = '%PDF') => new File([content], name, { type: 'application/pdf' });
+
+  it('upload, proses async, lalu analisis tersedia (kontrak §6.1–§6.3)', async () => {
+    const uploaded = await rps.uploadRps(pdf());
+    expect(uploaded).toMatchObject({ filename: 'rps-basis-data.pdf', status: 'UPLOADED', schema_version: '2.0', deduplicated: false });
 
     const proc = await rps.processRps(uploaded.id);
-    expect(proc).toMatchObject({ status: 'processing', agent_run_id: expect.any(String) });
+    expect(proc).toEqual({ rps_id: uploaded.id, status: 'PROCESSING', schema_version: '2.0', reused: false });
+    await expectApiError(rps.processRps(uploaded.id), 409, 'INVALID_REQUEST');
     await expectApiError(rps.getRpsAnalysis(uploaded.id), 409, 'INVALID_REQUEST');
 
     await flush();
-    expect((await rps.getRps(uploaded.id)).status).toBe('processed');
-    const analysis = await rps.getRpsAnalysis(uploaded.id);
-    expect(analysis.weekly_plan).toHaveLength(16);
+    expect(await rps.getRps(uploaded.id)).toMatchObject({ status: 'PROCESSED', has_source_document: true, processing_error_code: null });
+    expect((await rps.getRpsAnalysis(uploaded.id)).weekly_plan).toHaveLength(16);
+    expect(await rps.processRps(uploaded.id)).toMatchObject({ status: 'PROCESSED', reused: true });
   });
 
-  it('menolak file selain PDF/DOCX', async () => {
-    const file = new File(['x'], 'rps.txt', { type: 'text/plain' });
-    await expectApiError(rps.uploadRps(file), 400, 'INVALID_FILE');
+  it('mendeduplikasi isi yang sama dan menampilkan item daftar dengan workflow_id', async () => {
+    const first = await rps.uploadRps(pdf());
+    const again = await rps.uploadRps(pdf());
+    expect(again).toMatchObject({ id: first.id, deduplicated: true });
+    const { items } = await rps.listRps();
+    expect(items.filter((item) => item.id === first.id)).toHaveLength(1);
+    expect(items.find((item) => item.id === first.id)).toEqual({
+      id: first.id,
+      filename: 'rps-basis-data.pdf',
+      status: 'UPLOADED',
+      schema_version: '2.0',
+      workflow_id: null,
+      has_source_document: false,
+      created_at: expect.any(String),
+      updated_at: expect.any(String),
+    });
+  });
+
+  it('menandai pemrosesan yang gagal dengan kode dan pesan error', async () => {
+    const uploaded = await rps.uploadRps(pdf('rps-rusak.pdf'));
+    await rps.processRps(uploaded.id);
+    await flush();
+    expect(await rps.getRps(uploaded.id)).toMatchObject({
+      status: 'FAILED',
+      processing_error_code: 'RPS_PROCESSING_FAILED',
+      processing_error_message: expect.any(String),
+    });
+  });
+
+  it('menolak file tidak valid seperti default backend (hanya PDF, maks. 20 MiB)', async () => {
+    await expectApiError(rps.uploadRps(new File(['x'], 'rps.txt', { type: 'text/plain' })), 400, 'INVALID_FILE');
+    await expectApiError(rps.uploadRps(new File(['x'], 'rps.docx')), 400, 'INVALID_FILE');
+    await expectApiError(rps.uploadRps(pdf('kosong.pdf', '')), 400, 'INVALID_FILE');
+    const big = pdf('besar.pdf');
+    Object.defineProperty(big, 'size', { value: 20 * 1024 * 1024 + 1 });
+    await expectApiError(rps.uploadRps(big), 400, 'INVALID_FILE');
+  });
+
+  it('validateRpsFile menolak format dan ukuran yang salah sebelum dikirim', () => {
+    expect(rps.validateRpsFile(null)).toBe('Pilih file RPS terlebih dahulu.');
+    expect(rps.validateRpsFile(new File(['x'], 'rps.txt'))).toBe('Format file harus PDF atau DOCX.');
+    expect(rps.validateRpsFile(new File(['x'], 'RPS'))).toBe('Format file harus PDF atau DOCX.');
+    expect(rps.validateRpsFile(new File([''], 'rps.pdf'))).toMatch(/^File kosong/);
+    const big = new File(['x'], 'rps.PDF');
+    Object.defineProperty(big, 'size', { value: 21 * 1024 * 1024 });
+    expect(rps.validateRpsFile(big)).toBe('Ukuran file 21.0 MB melebihi batas 20.0 MB.');
+    expect(rps.validateRpsFile(new File(['x'], 'rps.pdf'))).toBeNull();
+    expect(rps.validateRpsFile(new File(['x'], 'RPS Final.DOCX'))).toBeNull();
   });
 });
 

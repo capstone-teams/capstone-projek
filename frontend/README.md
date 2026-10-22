@@ -149,6 +149,34 @@ Filter Kursus saya disimpan di localStorage per pengguna. Logout atau pergantian
 pengguna menghapus state sementara dan memuat preferensi akun aktif. useAction
 menerima loadingLabel untuk indikator loading global.
 
+## Unggah RPS
+
+Unggah RPS berada di tab **Generator AI** kursus, pada kartu "1. RPS mata kuliah"
+yang tampil selama kursus belum punya project generator (`AiProjectStart`). Kartu
+memuat formulir unggah, daftar RPS milik dosen, dan pilihan RPS yang sudah diproses
+untuk kursus tersebut. File dipilih lewat klik atau diseret ke area unggah, lalu divalidasi
+di klien sebelum dikirim: format PDF atau DOCX dan ukuran 1 byte–20 MB (mengikuti
+default `RPS_MAX_UPLOAD_BYTES` backend). File yang tidak valid ditandai dengan
+pesan di bawah area unggah dan tidak dikirim. DOCX ditampilkan sebagai format
+didukung, tetapi backend saat ini hanya menerima PDF (`RPS_ALLOWED_EXTENSIONS`);
+pemrosesan DOCX menyusul pada M03, sehingga unggahan DOCX dijawab
+`400 INVALID_FILE` dan pesannya ditampilkan.
+
+Unggahan memakai `POST /api/v1/rps` dengan indikator progres (`api.upload`
+berbasis XHR; di mode mock progresnya disimulasikan), lalu langsung `POST /api/v1/rps/{rps_id}/process`. RPS baru muncul
+di daftar dengan penanda "Baru" dan statusnya dipantau setiap 2 detik sampai
+selesai. Status mengikuti enum backend (`UPLOADED`, `PROCESSING`, `PROCESSED`,
+`FAILED`); RPS gagal menampilkan pesan dari `processing_error_message` dan tombol
+Proses ulang. Unggahan isi yang sama (`deduplicated`) dan pemrosesan ulang dokumen
+yang sudah diproses (`reused`) ditampilkan sebagai informasi.
+
+Daftar memakai `GET /api/v1/rps`. Selama endpoint itu masih stub `501` di backend
+(BE-08.3), kartu menampilkan RPS yang diunggah pada sesi ini dan memantau
+statusnya lewat `GET /api/v1/rps/{rps_id}`. Response pemrosesan belum memuat
+`workflow_id` (menyusul bersama Agent Run); nilainya disimpan bila tersedia dan
+diambil dari item daftar (`workflow_id`, terisi setelah BE-11.2). Di mock, nama
+file yang memuat kata `rusak` disimulasikan gagal diproses.
+
 ## Edit mode kursus
 
 Pengajar yang boleh mengubah kursus (opsi `update` pada
@@ -256,7 +284,8 @@ Unit test mencakup API, Moodle, workflow, halaman, sesi, shared state, dan detai
 rencana. Suite browser runtime.spec.js menguji routing/login/workflow;
 auth-06-2.spec.js menguji login akun uji, error kredensial, pemulihan sesi saat
 reload, dan logout; role-guard-06-3.spec.js menguji halaman awal per role, menu,
-dan halaman 403; course-edit-mode.spec.js menguji Mode edit pada 375/1440 px;
+dan halaman 403; course-edit-mode.spec.js menguji Mode edit pada 375/1440 px; rps-upload-08-1.spec.js
+menguji validasi, unggah, dan pemrosesan RPS di Generator AI pada 375/1440 px;
 foundation-71.spec.js menguji sesi, state, keyboard, empty/error, serta responsive;
 course-plan-74.spec.js menguji rencana pada 375/768/1024/1440 px dan pemilihan minggu.
 presentation.spec.js berjalan melalui test:design untuk style dan batas konten
