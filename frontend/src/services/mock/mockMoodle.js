@@ -86,6 +86,8 @@ function mod(course, section, modname, name, description, extra = {}) {
     description,
     visible: 1,
     uservisible: true,
+    indent: 0,
+    contextid: 1000 + id,
     dates: [],
     ...extra,
     _course: course.id,
@@ -155,6 +157,8 @@ COURSE_DEFS.forEach((c) => {
   });
   CONTENTS[c.id] = sections;
 });
+// Salinan awal untuk resetMockMoodle(): Edit mode mengubah CONTENTS di memori.
+const INITIAL_CONTENTS = structuredClone(CONTENTS);
 
 // Nilai contoh untuk tugas yang sudah lewat tenggat.
 const GRADES = {};
@@ -248,12 +252,21 @@ const handlers = {
     const contacts = Object.entries(c.enrol)
       .filter(([, r]) => r === 'editingteacher')
       .map(([id]) => ({ id: Number(id), fullname: fullname(USERS[id]) }));
-    return { courses: [{ ...courseSummary(c, user.id), categoryname: c.category, contacts }], warnings: [] };
+    return { courses: [{ ...courseSummary(c, user.id), categoryname: c.category, format: 'topics', contacts }], warnings: [] };
   },
   core_course_get_contents(user, { courseid }) {
     const c = COURSE_DEFS.find((x) => x.id === Number(courseid));
     if (!c?.enrol[user.id]) return wsError('requireloginerror', 'Course or activity not accessible. (Not enrolled)');
-    return CONTENTS[c.id].map((s) => ({ ...s, modules: s.modules.map(({ _course, _section, ...m }) => m) }));
+    // Mahasiswa tidak dapat membuka section/aktivitas yang disembunyikan (uservisible=false).
+    const student = c.enrol[user.id] === 'student';
+    return CONTENTS[c.id].map((s) => {
+      const sectionVisible = !student || s.visible === 1;
+      return {
+        ...s,
+        uservisible: sectionVisible,
+        modules: s.modules.map(({ _course, _section, ...m }) => ({ ...m, uservisible: sectionVisible && (!student || m.visible === 1) })),
+      };
+    });
   },
   core_course_view_course(user, { courseid }) {
     recent.set(`${user.id}:${courseid}`, now());
@@ -396,6 +409,142 @@ const handlers = {
       }));
   },
 };
+
+// ---- Editor kursus (Edit mode). Mengikuti core_courseformat\stateactions dan
+// core_update_inplace_editable pada Moodle 5.x; hanya editingteacher yang boleh mengubah.
+
+function editableCourse(user, courseid) {
+  const c = COURSE_DEFS.find((x) => x.id === Number(courseid));
+  if (!c?.enrol[user.id]) return { error: wsError('requireloginerror', 'Course or activity not accessible. (Not enrolled)') };
+  if (c.enrol[user.id] !== 'editingteacher') {
+    return { error: wsError('nopermissions', 'Sorry, but you do not currently have permissions to do that (Manage activities).') };
+  }
+  return { course: c, sections: CONTENTS[c.id] };
+}
+
+function findCm(sections, cmid) {
+  for (const section of sections) {
+    const index = section.modules.findIndex((m) => m.id === Number(cmid));
+    if (index !== -1) return { section, index, cm: section.modules[index] };
+  }
+  return null;
+}
+
+const CM_ACTIONS = {
+  cm_hide: (found) => { found.cm.visible = 0; },
+  cm_show: (found) => { found.cm.visible = 1; },
+  cm_moveright: (found) => { found.cm.indent = Math.min((found.cm.indent ?? 0) + 1, 16); },
+  cm_moveleft: (found) => { found.cm.indent = Math.max((found.cm.indent ?? 0) - 1, 0); },
+  cm_delete: (found) => { found.section.modules.splice(found.index, 1); },
+  cm_duplicate: (found) => {
+    const id = ++cmSeq;
+    const copy = { ...structuredClone(found.cm), id, instance: id, name: `${found.cm.name} (copy)`, contextid: 1000 + id };
+    copy.url = `/mod/${copy.modname}/view.php?id=${id}`;
+    const page = PAGES.find((p) => p.coursemodule === found.cm.id);
+    if (page) PAGES.push({ ...page, id, coursemodule: id, name: copy.name });
+    found.section.modules.splice(found.index + 1, 0, copy);
+  },
+};
+
+function moveCm(sections, found, targetsectionid, targetcmid) {
+  const target = sections.find((s) => s.id === Number(targetsectionid))
+    ?? (targetcmid ? findCm(sections, targetcmid)?.section : null);
+  if (!target) return wsError('invalidparameter', 'Target section tidak ditemukan.');
+  found.section.modules.splice(found.index, 1);
+  const before = targetcmid ? target.modules.findIndex((m) => m.id === Number(targetcmid)) : -1;
+  target.modules.splice(before === -1 ? target.modules.length : before, 0, found.cm);
+  return null;
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+}
+
+const editingHandlers = {
+  core_courseformat_update_course(user, { action, courseid, ids = [], targetsectionid, targetcmid }) {
+    const { error, course, sections } = editableCourse(user, courseid);
+    if (error) return error;
+    const targets = Object.values(ids).map(Number);
+    if (action === 'section_add') {
+      const number = sections.length;
+      sections.push({ id: course.id * 100 + number, name: 'New section', section: number, summary: '', visible: 1, uservisible: true, modules: [] });
+      return '[]';
+    }
+    if (action === 'section_hide' || action === 'section_show') {
+      for (const id of targets) {
+        const section = sections.find((s) => s.id === id);
+        if (!section) return wsError('invalidrecord', 'Section tidak ditemukan.');
+        if (section.section === 0 && action === 'section_hide') return wsError('cannothidesection', 'Section umum tidak dapat disembunyikan.');
+        section.visible = action === 'section_hide' ? 0 : 1;
+      }
+      return '[]';
+    }
+    if (action !== 'cm_move' && !CM_ACTIONS[action]) return wsError('invalidparameter', `Aksi ${action} tidak didukung mock.`);
+    for (const id of targets) {
+      const found = findCm(sections, id);
+      if (!found) return wsError('invalidrecord', 'Aktivitas tidak ditemukan.');
+      if (action === 'cm_move') {
+        const moveError = moveCm(sections, found, targetsectionid, targetcmid);
+        if (moveError) return moveError;
+      } else {
+        CM_ACTIONS[action](found);
+      }
+    }
+    return '[]';
+  },
+  core_update_inplace_editable(user, { component, itemtype, itemid, value }) {
+    const name = String(value ?? '').trim();
+    if (!name) return wsError('invalidparameter', 'Nama tidak boleh kosong.');
+    const courseId = itemtype === 'activityname'
+      ? Object.keys(CONTENTS).find((id) => findCm(CONTENTS[id], itemid))
+      : Object.keys(CONTENTS).find((id) => CONTENTS[id].some((s) => s.id === Number(itemid)));
+    const { error, sections } = editableCourse(user, courseId);
+    if (error) return error;
+    if (component === 'core_course' && itemtype === 'activityname') {
+      findCm(sections, itemid).cm.name = name;
+    } else if (/^format_/.test(component) && itemtype === 'sectionname') {
+      sections.find((s) => s.id === Number(itemid)).name = name;
+    } else {
+      return wsError('invalidparameter', `Item ${component}/${itemtype} tidak didukung mock.`);
+    }
+    return { component, itemtype, itemid: Number(itemid), displayvalue: name, value: name, editlabel: '', edithint: '' };
+  },
+  // Bukan fungsi Moodle: Moodle core belum punya Web Service untuk membuat assign/label
+  // beserta isinya (core_courseformat_create_module hanya untuk modul FEATURE_QUICKCREATE).
+  mock_course_create_activity(user, { courseid, sectionnum, modname, name, intro = '', text = '', allowsubmissionsfromdate = 0, duedate = 0, grade = 100 }) {
+    const { error, course, sections } = editableCourse(user, courseid);
+    if (error) return error;
+    const section = sections.find((s) => s.section === Number(sectionnum));
+    if (!section) return wsError('invalidrecord', 'Section tidak ditemukan.');
+    if (modname === 'assign') {
+      if (!String(name ?? '').trim()) return wsError('invalidparameter', 'Nama tugas wajib diisi.');
+      const opens = Number(allowsubmissionsfromdate) || 0;
+      const due = Number(duedate) || 0;
+      if (opens && due && due <= opens) return wsError('invalidparameter', 'Tenggat harus setelah tanggal dibuka.');
+      const dates = [...(opens ? [{ label: 'Opened:', timestamp: opens }] : []), ...(due ? [{ label: 'Due:', timestamp: due }] : [])];
+      const cm = mod(course, section.section, 'assign', name.trim(), intro, { dates });
+      ASSIGNS.push({ id: cm.instance, cmid: cm.id, course: course.id, name: cm.name, intro, duedate: due, allowsubmissionsfromdate: opens, grade: Number(grade) || 100, cutoffdate: 0 });
+      section.modules.push(cm);
+      return { cmid: cm.id };
+    }
+    if (modname === 'label') {
+      const plain = String(text ?? '').trim();
+      if (!plain) return wsError('invalidparameter', 'Isi teks wajib diisi.');
+      const html = plain.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
+      // Seperti Moodle: nama label diambil dari awal isinya.
+      const cm = mod(course, section.section, 'label', plain.replace(/\s+/g, ' ').slice(0, 50), html);
+      section.modules.push(cm);
+      return { cmid: cm.id };
+    }
+    return wsError('invalidparameter', `Jenis aktivitas ${modname} belum didukung.`);
+  },
+};
+Object.assign(handlers, editingHandlers);
+
+/** Kembalikan isi kursus mock ke kondisi awal (untuk test). */
+export function resetMockMoodle() {
+  Object.keys(CONTENTS).forEach((id) => { CONTENTS[id] = structuredClone(INITIAL_CONTENTS[id]); });
+}
 
 export async function mockRequestToken(username, password) {
   await sleep(200);

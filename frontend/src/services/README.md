@@ -6,7 +6,8 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | --- | --- |
 | moodle/moodleClient.js | Token Moodle, REST/form transport, invalid-token handler, dan URL file |
 | moodle/moodleApi.js | Pemulihan sesi/peran, kursus, peserta, nilai, aktivitas, dan profil |
-| mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true |
+| moodle/courseEditing.js | Mode edit kursus: aksi `core_courseformat_update_course`, ubah nama `core_update_inplace_editable`, dan URL halaman edit Moodle |
+| mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true, termasuk aksi Mode edit (hanya editingteacher) dan `resetMockMoodle()` untuk test |
 | apiClient.js | HTTP/mock backend, Bearer token, ApiError, handler 401 bila token ditolak, dan pemeriksaan respons |
 | authService.js | Login (`POST /auth/login`), current user (`GET /auth/me`), pemetaan role backend → UI, dan logout client |
 | rpsService.js, profileService.js, courseService.js | RPS, preferensi, dan workflow backend |

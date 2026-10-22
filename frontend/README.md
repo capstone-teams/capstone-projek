@@ -136,6 +136,48 @@ Filter Kursus saya disimpan di localStorage per pengguna. Logout atau pergantian
 pengguna menghapus state sementara dan memuat preferensi akun aktif. useAction
 menerima loadingLabel untuk indikator loading global.
 
+## Edit mode kursus
+
+Pengajar yang boleh mengubah kursus (opsi `update` pada
+`core_course_get_user_administration_options`, yaitu editing teacher atau admin)
+melihat saklar **Mode edit** di header tab Kursus. Pilihannya disimpan sebagai
+preferensi `course.editMode` per pengguna. Mahasiswa dan non-editing teacher
+tidak melihat saklar tersebut.
+
+Saat Mode edit aktif:
+
+- ikon pensil mengganti nama section dan aktivitas (Enter atau keluar dari kolom
+  menyimpan, Escape membatalkan);
+- menu ⋮ aktivitas: Edit pengaturan, Pindahkan, Geser ke kanan/kiri,
+  Sembunyikan/Tampilkan, Duplikat, Atur peran, dan Hapus (dengan konfirmasi);
+- menu ⋮ section: Edit pengaturan dan Sembunyikan/Tampilkan section (section
+  umum tidak dapat disembunyikan);
+- tombol "Tambah aktivitas atau sumber" di setiap section dan "Tambah section"
+  di akhir kursus. Pemilih aktivitas saat ini berisi Tugas (nama, deskripsi,
+  tanggal dibuka, tenggat, nilai maksimum) dan Teks dan media (isi teks); keduanya
+  diisi lewat formulir di aplikasi dengan validasi field wajib;
+- badge "Disembunyikan dari mahasiswa" pada item tersembunyi.
+
+Pindahkan memakai dialog pilihan section dan posisi sehingga dapat dipakai dengan
+keyboard; drag-and-drop dan blok (Add a block) belum tersedia. Edit pengaturan
+dan Atur peran dibuka di Moodle pada tab baru.
+
+Moodle core belum menyediakan Web Service untuk membuat Tugas atau Teks dan media
+beserta isinya (`core_courseformat_create_module` hanya untuk modul dengan
+`FEATURE_QUICKCREATE`, yaitu `mod_subsection`). Karena itu pembuatan aktivitas
+dari formulir aplikasi baru berjalan di mock Moodle (`mock_course_create_activity`).
+Dengan `VITE_MOODLE_MOCK=false`, tombol simpan diganti "Lanjutkan di Moodle" yang
+membuka formulir `modedit.php`, sampai tim memutuskan jalurnya (plugin Moodle atau
+endpoint backend). Setiap
+aksi memuat ulang isi kursus agar tampilan mengikuti Moodle, termasuk saat aksi
+gagal.
+
+Aksi memakai `core_courseformat_update_course` dan `core_update_inplace_editable`
+(editor kursus Moodle 4.x/5.x). Keduanya tidak termasuk layanan
+`moodle_mobile_app`, sehingga pada Moodle nyata harus ditambahkan ke external
+service yang dipakai frontend. Mock Moodle mendukung aksi yang sama; isi kursus
+kembali ke fixture awal saat reload.
+
 ## Rencana kuliah
 
 Tab Rencana menampilkan informasi course, CPMK, tujuan, topik, metode mengajar,
@@ -161,7 +203,11 @@ Mock mengambil CPMK/metode dari RPS.
     RequireAuth, AppStatus).
   - auth/: potongan halaman pages/auth (AuthLayout, AuthField, PasswordField,
     AuthSubmitButton, GoogleLoginButton); import lewat `components/auth`.
-  - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml).
+  - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml);
+    course/ berisi potongan halaman kursus (CourseSection, ActivityRow) dan
+    editing/ berisi komponen Mode edit (EditModeToggle, ActionMenu,
+    InlineNameEditor, ActivityEditMenu, SectionEditMenu, dialog Pindahkan/Hapus/
+    Tambah aktivitas); import lewat `components/moodle/editing`.
   - ai/: komponen generator AI (WorkflowStepper, EventLog, InstructionModal,
     ActivityConfigFields, RpsUploadForm, InstructorSetupForm, TeachingProfileForm,
     TeachingPreferencesCard); ai/course/ berisi potongan halaman
@@ -196,7 +242,7 @@ npm run verify:foundation
 Unit test mencakup API, Moodle, workflow, halaman, sesi, shared state, dan detail
 rencana. Suite browser runtime.spec.js menguji routing/login/workflow;
 auth-06-2.spec.js menguji login akun uji, error kredensial, pemulihan sesi saat
-reload, dan logout;
+reload, dan logout; course-edit-mode.spec.js menguji Mode edit pada 375/1440 px;
 foundation-71.spec.js menguji sesi, state, keyboard, empty/error, serta responsive;
 course-plan-74.spec.js menguji rencana pada 375/768/1024/1440 px dan pemilihan minggu.
 presentation.spec.js berjalan melalui test:design untuk style dan batas konten
