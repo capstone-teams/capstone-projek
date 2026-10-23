@@ -8,9 +8,11 @@ import App from '../src/App';
 import { MOODLE_SESSION_KEY } from '../src/services/config';
 import { login as backendLogin } from '../src/services/authService';
 import * as rpsService from '../src/services/rpsService';
+import * as monitoringSocket from '../src/services/monitoringSocket';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+vi.setConfig({ testTimeout: 20000 });
 
 const TOKENS = { dosen: 'mock-3-test', mahasiswa: 'mock-5-test' };
 let container;
@@ -81,7 +83,7 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     expect(q('form.upload')).not.toBeNull();
     // Tidak ada halaman RPS terpisah di menu.
     expect([...container.querySelectorAll('nav[aria-label="Navigasi situs"] a')].map((a) => a.textContent)).toEqual(['Dasbor', 'Kursusku']);
-    expect(rowFor('RPS-Pemrograman-Web-2026.pdf').textContent).toContain('Siap');
+    expect(rowFor('RPS-Pemrograman-Web-2026.pdf').textContent).toContain('Selesai dianalisis');
     expect(rowFor('RPS-Pemrograman-Web-2026.pdf').textContent).toContain('Belum dibuat');
   });
 
@@ -114,8 +116,8 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     expect(process).toHaveBeenCalledOnce();
     expect(rowFor('RPS-Basis-Data.pdf').textContent).toContain('Baru');
     expect(rows()[0]).toBe(rowFor('RPS-Basis-Data.pdf'));
-    // Pemrosesan dipantau sampai selesai.
-    await waitFor(() => rowFor('RPS-Basis-Data.pdf').textContent.includes('Siap'), 'status Siap');
+    // Pemrosesan dipantau sampai selesai dianalisis.
+    await waitFor(() => rowFor('RPS-Basis-Data.pdf').textContent.includes('Selesai dianalisis'), 'status Selesai dianalisis');
     expect(q('form.upload input[type="file"]').value).toBe('');
   });
 
@@ -129,14 +131,16 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     expect(rowFor('RPS-Final.docx')).toBeUndefined();
   });
 
-  it('menampilkan status gagal dengan pesannya dan dapat memproses ulang', async () => {
+  it('konversi yang gagal menampilkan pesannya dan dapat diproses ulang', async () => {
     await render();
     await waitFor(() => submitButton(), 'form');
     await pick(new File(['%PDF'], 'rps-rusak.pdf', { type: 'application/pdf' }));
     await act(async () => q('form.upload').requestSubmit());
     await waitFor(() => rowFor('rps-rusak.pdf')?.textContent.includes('Gagal'), 'status Gagal');
-    const retry = [...rowFor('rps-rusak.pdf').querySelectorAll('button')].find((b) => b.textContent === 'Proses ulang');
-    expect(retry).toBeTruthy();
+    expect(rowFor('rps-rusak.pdf').textContent).toContain('Dokumen RPS gagal diproses');
+    const labels = [...rowFor('rps-rusak.pdf').querySelectorAll('button')].map((b) => b.textContent);
+    expect(labels).toContain('Proses ulang');
+    expect(labels).not.toContain('Analisis ulang');
   });
 
   it('tetap menampilkan RPS sesi ini bila GET /rps belum tersedia (501)', async () => {
@@ -148,7 +152,8 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     await pick(new File(['%PDF'], 'RPS-Sesi.pdf', { type: 'application/pdf' }));
     await act(async () => q('form.upload').requestSubmit());
     await waitFor(() => rowFor('RPS-Sesi.pdf'), 'RPS sesi di daftar');
-    await waitFor(() => rowFor('RPS-Sesi.pdf').textContent.includes('Siap'), 'dipantau lewat GET /rps/{id}');
+    // Tanpa GET /rps tidak ada workflow_id; status terakhir dari GET /rps/{id} bisa PROCESSED atau ANALYZED.
+    await waitFor(() => /Siap dianalisis|Selesai dianalisis/.test(rowFor('RPS-Sesi.pdf').textContent), 'dipantau lewat GET /rps/{id}');
   });
 
   it('RPS yang selesai diproses dapat dipilih untuk kursus', async () => {
@@ -156,7 +161,7 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     await waitFor(() => submitButton(), 'form');
     await pick(new File(['%PDF'], 'RPS-Basis-Data.pdf', { type: 'application/pdf' }));
     await act(async () => q('form.upload').requestSubmit());
-    await waitFor(() => rowFor('RPS-Basis-Data.pdf')?.textContent.includes('Siap'), 'status Siap');
+    await waitFor(() => rowFor('RPS-Basis-Data.pdf')?.textContent.includes('Selesai dianalisis'), 'status Selesai dianalisis');
     const options = [...q('select').options].map((option) => option.textContent);
     expect(options).toEqual(['RPS-Basis-Data.pdf', 'RPS-Pemrograman-Web-2026.pdf']);
   });
@@ -165,5 +170,69 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     await render(AI_START, 'mahasiswa');
     await waitFor(() => container.textContent.includes('Akses ditolak'), '403');
     expect(q('form.upload')).toBeNull();
+  });
+});
+
+describe('FE-08.2 status pemrosesan RPS', () => {
+  async function upload(name) {
+    await render();
+    await waitFor(() => submitButton(), 'form');
+    await pick(new File(['%PDF'], name, { type: 'application/pdf' }));
+    await act(async () => q('form.upload').requestSubmit());
+    await waitFor(() => rowFor(name), name + ' di daftar');
+  }
+  it('status berubah otomatis melewati tahap analisis hingga selesai, tanpa memuat ulang', async () => {
+    // Langkah mock 2 detik (lebih realistis): polling menemukan PROCESSED + workflow_id, lalu event
+    // workflow memperbarui status ke ANALYZING dan ANALYZED tanpa menunggu polling berikutnya.
+    configureMock({ latencyMs: 0, stepMs: 2000 });
+    const subscribe = vi.spyOn(monitoringSocket, 'subscribeWorkflowEvents');
+    const reload = vi.spyOn(rpsService, 'listRps');
+    await upload('RPS-Otomatis.pdf');
+    const seenLabels = new Set();
+    await waitFor(() => {
+      // Teks badge tanpa penanda visual (✓/✕).
+      const badge = (rowFor('RPS-Otomatis.pdf').querySelector('[title]')?.textContent ?? '').replace(/[✓✕]/g, '').trim();
+      seenLabels.add(badge);
+      return badge === 'Selesai dianalisis';
+    }, 'Selesai dianalisis', 13000);
+    configureMock({ latencyMs: 0, stepMs: 5 });
+    expect(subscribe).toHaveBeenCalledWith('workflow_001', expect.any(Function));
+    expect([...seenLabels]).toEqual(expect.arrayContaining(['Diproses', 'Dianalisis', 'Selesai dianalisis']));
+    const row = rowFor('RPS-Otomatis.pdf');
+    expect(row.textContent).toMatch(/workflow_\d+/);
+    expect(row.querySelector('[role="status"]')).toBeNull();
+    // Status diperoleh dari GET /rps/{id} dan event workflow, bukan dari memuat ulang halaman.
+    expect(reload.mock.calls.length).toBeLessThan(10);
+  });
+
+  it('RPS yang gagal dianalisis dapat dianalisis ulang dari UI', async () => {
+    const reanalyze = vi.spyOn(rpsService, 'reanalyzeRps');
+    await upload('rps-gagal-analisis.pdf');
+    await waitFor(() => rowFor('rps-gagal-analisis.pdf').textContent.includes('Gagal'), 'status Gagal');
+    expect(rowFor('rps-gagal-analisis.pdf').textContent).toContain('Analisis RPS gagal. Coba analisis ulang.');
+    const button = [...rowFor('rps-gagal-analisis.pdf').querySelectorAll('button')].find((b) => b.textContent === 'Analisis ulang');
+    await act(async () => button.click());
+    expect(reanalyze).toHaveBeenCalledOnce();
+    await waitFor(() => rowFor('rps-gagal-analisis.pdf').textContent.includes('Selesai dianalisis'), 'analisis ulang selesai');
+    expect(rowFor('rps-gagal-analisis.pdf').textContent).not.toContain('Analisis RPS gagal');
+  });
+
+  it('menampilkan ringkasan hasil analisis untuk RPS yang selesai dianalisis', async () => {
+    await render();
+    await waitFor(() => rowFor('RPS-Pemrograman-Web-2026.pdf'), 'RPS contoh');
+    const toggle = [...rowFor('RPS-Pemrograman-Web-2026.pdf').querySelectorAll('button')].find((b) => b.textContent === 'Lihat hasil analisis');
+    await act(async () => toggle.click());
+    await waitFor(() => q('[aria-label="Ringkasan hasil analisis"]'), 'ringkasan');
+    const summary = q('[aria-label="Ringkasan hasil analisis"]').textContent;
+    expect(summary).toContain('16 minggu');
+    expect(summary).toMatch(/\d+ capaian/);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('tab RPS menampilkan status dan tautan Pantau workflow ke Ringkasan', async () => {
+    await render('/course/2/ai/rps');
+    await waitFor(() => container.textContent.includes('Selesai dianalisis'), 'status di tab RPS');
+    const monitor = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Pantau workflow');
+    expect(monitor.getAttribute('href')).toBe('/course/2/ai');
   });
 });

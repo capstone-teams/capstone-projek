@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/services/apiClient';
 import * as auth from '../src/services/authService';
 import * as rps from '../src/services/rpsService';
+import { isRpsInProgress } from '../src/utils/rpsStatus';
+import { subscribeWorkflowEvents } from '../src/services/monitoringSocket';
 import * as courses from '../src/services/courseService';
 import * as profile from '../src/services/profileService';
 import { subscribeCourseEvents } from '../src/services/monitoringSocket';
@@ -82,9 +84,50 @@ describe('RPS', () => {
     await expectApiError(rps.getRpsAnalysis(uploaded.id), 409, 'INVALID_REQUEST');
 
     await flush();
-    expect(await rps.getRps(uploaded.id)).toMatchObject({ status: 'PROCESSED', has_source_document: true, processing_error_code: null });
+    expect(await rps.getRps(uploaded.id)).toMatchObject({ status: 'ANALYZED', has_source_document: true, processing_error_code: null });
     expect((await rps.getRpsAnalysis(uploaded.id)).weekly_plan).toHaveLength(16);
-    expect(await rps.processRps(uploaded.id)).toMatchObject({ status: 'PROCESSED', reused: true });
+    expect(await rps.processRps(uploaded.id)).toMatchObject({ status: 'ANALYZED', reused: true });
+  });
+
+  it('menjalankan analisis sebagai workflow dengan event WORKFLOW_* (FE-08.2)', async () => {
+    const uploaded = await rps.uploadRps(pdf());
+    await rps.processRps(uploaded.id);
+    await vi.advanceTimersByTimeAsync(10);
+    const { items } = await rps.listRps();
+    const item = items.find((i) => i.id === uploaded.id);
+    expect(item).toMatchObject({ status: 'PROCESSED', workflow_id: expect.stringMatching(/^workflow_/), has_source_document: true });
+    expect(isRpsInProgress(item)).toBe(true);
+
+    const events = [];
+    const unsubscribe = subscribeWorkflowEvents(item.workflow_id, (event) => events.push(event));
+    await flush();
+    unsubscribe();
+    expect(events.map((e) => e.event)).toEqual(['WORKFLOW_STARTED', 'WORKFLOW_STAGE_STARTED', 'WORKFLOW_STAGE_COMPLETED', 'WORKFLOW_COMPLETED']);
+    expect(events[0]).toMatchObject({ workflow_id: item.workflow_id, stage: 'rps_analysis', timestamp: expect.any(String) });
+    expect(events.at(-1).progress).toEqual({ completed: 2, total: 2 });
+    expect(isRpsInProgress(await rps.getRps(uploaded.id))).toBe(false);
+  });
+
+  it('analisis yang gagal dapat dianalisis ulang; konversi yang gagal tidak (§6.6)', async () => {
+    const analysis = await rps.uploadRps(pdf('rps-gagal-analisis.pdf'));
+    await rps.processRps(analysis.id);
+    await flush();
+    expect(await rps.getRps(analysis.id)).toMatchObject({
+      status: 'FAILED',
+      has_source_document: true,
+      processing_error_message: 'Analisis RPS gagal. Coba analisis ulang.',
+    });
+    const again = await rps.reanalyzeRps(analysis.id);
+    expect(again).toEqual({ rps_id: analysis.id, workflow_id: expect.stringMatching(/^workflow_/), status: 'ANALYZING' });
+    await expectApiError(rps.reanalyzeRps(analysis.id), 409, 'INVALID_REQUEST');
+    await flush();
+    expect((await rps.getRps(analysis.id)).status).toBe('ANALYZED');
+
+    const conversion = await rps.uploadRps(pdf('rps-rusak.pdf'));
+    await rps.processRps(conversion.id);
+    await flush();
+    expect(await rps.getRps(conversion.id)).toMatchObject({ status: 'FAILED', has_source_document: false });
+    await expectApiError(rps.reanalyzeRps(conversion.id), 409, 'INVALID_REQUEST');
   });
 
   it('mendeduplikasi isi yang sama dan menampilkan item daftar dengan workflow_id', async () => {

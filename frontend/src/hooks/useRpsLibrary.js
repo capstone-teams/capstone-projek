@@ -1,58 +1,73 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useApi } from './useApi';
 import { usePolling } from './usePolling';
-import { RPS_IN_PROGRESS, getRps, listRps, processRps } from '../services/rpsService';
+import { useWorkflowEvents } from './useWorkflowEvents';
+import { getRps, listRps, processRps, reanalyzeRps } from '../services/rpsService';
+import { isRpsInProgress } from '../utils/rpsStatus';
 
-const POLL_MS = 2000;
+// Polling hanya cadangan: event workflow (§17) memicu pembaruan lebih cepat bila tersedia.
+const POLL_MS = 3000;
 
 // GET /rps masih stub 501 di backend sampai BE-08.3; daftar lalu memakai RPS yang diunggah pada sesi ini.
 const listOrUnavailable = () =>
-  listRps().catch((error) => {
-    if (error?.status === 501) return { items: [], unavailable: true };
-    throw error;
-  });
+  listRps()
+    .then((data) => ({ ...data, fetchedAt: Date.now() }))
+    .catch((error) => {
+      if (error?.status === 501) return { items: [], unavailable: true, fetchedAt: Date.now() };
+      throw error;
+    });
 
 const byNewest = (a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
 
 /**
- * Daftar RPS milik dosen (GET /rps) beserta RPS yang baru diunggah, dipantau selama masih diproses.
- * workflow_id disimpan dari response pemrosesan bila ada, dan dari daftar backend (§6.5).
+ * Daftar RPS milik dosen (GET /rps) dengan status yang diperbarui otomatis:
+ * event workflow memicu GET /rps/{id} untuk RPS terkait, dan polling berkala menjadi cadangan
+ * sampai setiap RPS ANALYZED atau FAILED. `progress` menyimpan tahap workflow terakhir per RPS.
  */
 export function useRpsLibrary() {
   const list = useApi(listOrUnavailable);
-  const [recent, setRecent] = useState([]);
+  // Data terbaru per RPS (dari upload, GET /rps/{id}, atau aksi) yang menimpa item daftar.
+  const [local, setLocal] = useState({});
+  const [progress, setProgress] = useState({});
   const [highlightId, setHighlightId] = useState(null);
-  const [processing, setProcessing] = useState(null);
+  const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState(null);
   const unavailable = !!list.data?.unavailable;
+  const reloadList = list.reload;
 
   const items = useMemo(() => {
-    const server = list.data?.items ?? [];
-    const merged = new Map(server.map((item) => [item.id, item]));
-    for (const item of recent) {
-      const known = merged.get(item.id);
-      merged.set(item.id, known ? { ...known, workflow_id: known.workflow_id ?? item.workflow_id ?? null } : item);
-    }
+    const fetchedAt = list.data?.fetchedAt ?? 0;
+    const merged = new Map((list.data?.items ?? []).map((item) => [item.id, item]));
+    // Data yang lebih baru menang: patch lokal setelah daftar dimuat menimpa item daftar;
+    // patch yang lebih lama hanya melengkapi field yang tidak ada di daftar (mis. pesan error).
+    Object.values(local).forEach(({ updatedAt, ...patch }) => {
+      const server = merged.get(patch.id);
+      merged.set(patch.id, !server || updatedAt > fetchedAt ? { ...server, ...patch } : { ...patch, ...server });
+    });
     return [...merged.values()].sort(byNewest);
-  }, [list.data, recent]);
+  }, [list.data, local]);
 
   const remember = useCallback((id, patch) => {
-    setRecent((current) => {
-      const existing = current.find((item) => item.id === id);
-      return existing ? current.map((item) => (item.id === id ? { ...item, ...patch } : item)) : [{ id, ...patch }, ...current];
-    });
+    setLocal((current) => ({ ...current, [id]: { ...current[id], ...patch, id, updatedAt: Date.now() } }));
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (!unavailable) return list.reload({ silent: true });
-    // Tanpa GET /rps: pantau status tiap RPS sesi ini lewat GET /rps/{id} (§6.2).
-    const pending = recent.filter((item) => RPS_IN_PROGRESS.includes(item.status));
-    const details = await Promise.all(pending.map((item) => getRps(item.id).catch(() => null)));
-    details.filter(Boolean).forEach((detail) => remember(detail.id, detail));
-    return null;
-  }, [unavailable, list, recent, remember]);
+  /** Ambil status dokumen dari GET /rps/{id} (§6.2). Perubahan status memuat ulang daftar untuk workflow_id. */
+  const refreshOne = useCallback(async (item) => {
+    const detail = await getRps(item.id).catch(() => null);
+    if (!detail) return;
+    remember(item.id, detail);
+    if (detail.status !== item.status && !unavailable) reloadList({ silent: true });
+  }, [remember, unavailable, reloadList]);
 
-  usePolling(refresh, POLL_MS, items.some((item) => RPS_IN_PROGRESS.includes(item.status)));
+  const pending = items.filter(isRpsInProgress);
+  usePolling(() => Promise.all(pending.map(refreshOne)), POLL_MS, pending.length > 0);
+
+  useWorkflowEvents(pending.map((item) => item.workflow_id), (event) => {
+    const item = items.find((candidate) => candidate.workflow_id === event.workflow_id);
+    if (!item) return;
+    setProgress((current) => ({ ...current, [item.id]: { stage: event.stage, progress: event.progress, message: event.message, event: event.event } }));
+    refreshOne(item);
+  });
 
   /** Dipanggil RpsUploadForm setelah file tersimpan di server. */
   const addUploaded = useCallback(({ rps, processing: started }) => {
@@ -60,38 +75,47 @@ export function useRpsLibrary() {
       filename: rps.filename,
       status: started?.status ?? rps.status,
       created_at: rps.created_at ?? new Date().toISOString(),
-      workflow_id: started?.workflow_id ?? null,
+      ...(started?.workflow_id ? { workflow_id: started.workflow_id } : {}),
     });
     setHighlightId(rps.id);
-    list.reload({ silent: true });
-  }, [remember, list]);
+    reloadList({ silent: true });
+  }, [remember, reloadList]);
 
-  /** Proses (ulang) RPS yang belum diproses atau gagal. */
-  const process = useCallback(async (item) => {
-    setProcessing(item.id);
+  const run = useCallback(async (item, action) => {
+    setBusyId(item.id);
     setActionError(null);
     try {
-      const started = await processRps(item.id);
-      remember(item.id, { ...item, status: started.status, workflow_id: started.workflow_id ?? item.workflow_id ?? null });
-      await list.reload({ silent: true });
+      const result = await action(item.id);
+      setProgress((current) => ({ ...current, [item.id]: null }));
+      remember(item.id, {
+        status: result.status,
+        processing_error_code: null,
+        processing_error_message: null,
+        ...(result.workflow_id ? { workflow_id: result.workflow_id } : {}),
+      });
+      await reloadList({ silent: true });
     } catch (error) {
       setActionError(error);
     } finally {
-      setProcessing(null);
+      setBusyId(null);
     }
-  }, [remember, list]);
+  }, [remember, reloadList]);
 
   return {
     items,
+    progress,
     loading: list.loading && !list.data,
     error: list.error,
     unavailable,
     highlightId,
-    processingId: processing,
+    busyId,
     actionError,
     clearActionError: () => setActionError(null),
     addUploaded,
-    process,
-    reload: () => list.reload(),
+    /** Konversi (ulang) dokumen yang belum punya source_document: POST /rps/{id}/process. */
+    process: (item) => run(item, processRps),
+    /** Analisis ulang dari source_document: POST /rps/{id}/reanalyze (§6.6). */
+    reanalyze: (item) => run(item, reanalyzeRps),
+    reload: () => reloadList(),
   };
 }

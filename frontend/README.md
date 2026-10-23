@@ -177,6 +177,37 @@ statusnya lewat `GET /api/v1/rps/{rps_id}`. Response pemrosesan belum memuat
 diambil dari item daftar (`workflow_id`, terisi setelah BE-11.2). Di mock, nama
 file yang memuat kata `rusak` disimulasikan gagal diproses.
 
+### Status pemrosesan RPS (FE-08.2)
+
+Konstanta status ada di `src/utils/rpsStatus.js` (dipakai juga FE-11.1): enum
+backend `UPLOADED`, `PROCESSING`, `PROCESSED`, `ANALYZING`, `ANALYZED`, `FAILED`
+beserta label Bahasa Indonesia, warna, dan penanda visual (`RpsStatusBadge`:
+indikator berputar saat berjalan, ✓ selesai, ✕ gagal). Urutan normal: konversi
+(`PROCESSING` → `PROCESSED`) lalu analisis sebagai workflow (`ANALYZING` →
+`ANALYZED`).
+
+Daftar RPS memperbarui status tanpa memuat ulang halaman. Status dokumen dibaca
+dari `GET /api/v1/rps/{rps_id}`; event workflow (`WS /api/v1/ws/workflows/{id}`,
+design-api §17, `subscribeWorkflowEvents`) memicu pembaruan segera beserta tahap
+dan progresnya, sedangkan polling setiap 3 detik menjadi cadangan sampai status
+`ANALYZED` atau `FAILED`. `PROCESSED` dianggap masih berjalan hanya bila workflow
+analisis sudah ada (`workflow_id`); karena `GET /rps/{id}` tidak memuat
+`workflow_id`, nilainya diambil dari `GET /rps`.
+
+RPS gagal menampilkan `processing_error_message`. Bila dokumen sudah terkonversi
+(`has_source_document`), tombol **Analisis ulang** memanggil
+`POST /api/v1/rps/{rps_id}/reanalyze`; bila konversinya yang gagal, tombol
+**Proses ulang** memanggil `POST /rps/{id}/process`. RPS yang selesai dianalisis
+menampilkan **Lihat hasil analisis**: ringkasan langsung di kartu selama project
+belum dibuat. Tab RPS kursus (halaman hasil analisis yang sudah ada) menampilkan
+status RPS dan tautan **Pantau workflow** ke tab Ringkasan (Aktivitas agent).
+
+Status backend saat ini: enum belum memuat `ANALYZING`/`ANALYZED` (BE-08.2), dan
+`/rps/{id}/reanalyze`, `/rps/{id}/analysis`, `/workflows/*`, serta WebSocket
+workflow belum tersedia (stub `501`, BE-08.3/BE-11.3). Mock mengikuti kontrak;
+nama file berisi `gagal-analisis` gagal saat analisis pertama untuk mencoba
+Analisis ulang.
+
 ## Edit mode kursus
 
 Pengajar yang boleh mengubah kursus (opsi `update` pada

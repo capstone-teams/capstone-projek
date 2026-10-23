@@ -3,18 +3,7 @@ import { formatFileSize } from '../utils/format';
 
 // design-api.md §6 (RPS API).
 
-/** Status RPS: enum kanonik backend, huruf besar (§6.5). ANALYZING/ANALYZED menyusul pada BE-08.2. */
-export const RPS_STATUS = {
-  UPLOADED: 'UPLOADED',
-  PROCESSING: 'PROCESSING',
-  PROCESSED: 'PROCESSED',
-  FAILED: 'FAILED',
-  ANALYZING: 'ANALYZING',
-  ANALYZED: 'ANALYZED',
-};
-/** Status yang masih berjalan di background; daftar dipantau selama ada RPS berstatus ini. */
-export const RPS_IN_PROGRESS = [RPS_STATUS.UPLOADED, RPS_STATUS.PROCESSING, RPS_STATUS.ANALYZING];
-export const RPS_READY = [RPS_STATUS.PROCESSED, RPS_STATUS.ANALYZED];
+// Konstanta status RPS: utils/rpsStatus.js (dipakai juga FE-11.1).
 
 // Batas sisi klien mengikuti default backend (RPS_MAX_UPLOAD_BYTES = 20 MiB).
 // DOCX ditampilkan sebagai format didukung; pemrosesannya di backend menyusul pada M03.
@@ -54,6 +43,11 @@ export function getRps(rpsId) {
 /** POST /rps/{id}/process: 202 dijadwalkan, atau 200 + reused bila sudah pernah diproses. */
 export function processRps(rpsId) {
   return api.post(`/rps/${rpsId}/process`);
+}
+
+/** POST /rps/{id}/reanalyze (§6.6): analisis ulang dari source_document; mengembalikan workflow_id. */
+export function reanalyzeRps(rpsId) {
+  return api.post(`/rps/${rpsId}/reanalyze`);
 }
 
 export function getRpsAnalysis(rpsId) {

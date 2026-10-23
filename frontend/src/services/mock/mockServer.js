@@ -26,8 +26,15 @@ const TOTAL_WEEKS = SAMPLE_TOPICS.length;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const RPS_ALLOWED_EXTENSIONS = ['pdf'];
 const RPS_SCHEMA_VERSION = '2.0';
-// Nama file yang memuat kata ini disimulasikan gagal diproses (untuk mencoba status FAILED).
+// Pemicu kegagalan di mock (berdasarkan nama file) untuk mencoba status FAILED:
+// 'rusak' gagal saat konversi (belum ada source_document -> Proses ulang),
+// 'gagal-analisis' gagal saat analisis pada percobaan pertama (-> Analisis ulang).
 const RPS_FAIL_MARKER = 'rusak';
+const RPS_ANALYSIS_FAIL_MARKER = 'gagal-analisis';
+const RPS_FAILURE_MESSAGE = {
+  conversion: 'Dokumen RPS gagal diproses karena kesalahan tak terduga.',
+  analysis: 'Analisis RPS gagal. Coba analisis ulang.',
+};
 
 let db;
 let seq;
@@ -64,6 +71,21 @@ function emit(course, event, extra = {}) {
   course.events.push(payload);
   if (course.events.length > 200) course.events.shift();
   listeners.get(course.id)?.forEach((fn) => fn(payload));
+}
+
+// Event workflow (design-api 17): disimpan per workflow dan dikirim ke pelanggan subscribeMockWorkflowEvents.
+function emitWorkflow(workflow, event, extra = {}) {
+  const payload = {
+    event,
+    workflow_id: workflow.id,
+    stage: workflow.stage,
+    progress: { ...workflow.progress },
+    message: null,
+    timestamp: now(),
+    ...extra,
+  };
+  workflow.events.push(payload);
+  listeners.get('workflow:' + workflow.id)?.forEach((fn) => fn(payload));
 }
 
 function setStatus(course, status, stage = null) {
@@ -111,7 +133,7 @@ function publicRps(r) {
     status: r.status,
     schema_version: RPS_SCHEMA_VERSION,
     workflow_id: r.workflow_id ?? null,
-    has_source_document: r.status === 'PROCESSED',
+    has_source_document: !!r.has_source_document,
     created_at: r.created_at,
     updated_at: r.updated_at ?? r.created_at,
   };
@@ -124,10 +146,10 @@ function rpsDetail(r) {
     filename: r.filename,
     status: r.status,
     created_at: r.created_at,
-    has_source_document: r.status === 'PROCESSED',
+    has_source_document: !!r.has_source_document,
     processing_duration_ms: r.processing_duration_ms ?? null,
     processing_error_code: r.status === 'FAILED' ? 'RPS_PROCESSING_FAILED' : null,
-    processing_error_message: r.status === 'FAILED' ? 'Dokumen RPS gagal diproses karena kesalahan tak terduga.' : null,
+    processing_error_message: r.status === 'FAILED' ? RPS_FAILURE_MESSAGE[r.failed_stage] : null,
   };
 }
 
@@ -242,6 +264,54 @@ function startPlanning(course, instruction) {
   return run;
 }
 
+function updateRps(rps, status) {
+  rps.status = status;
+  rps.updated_at = now();
+}
+
+/** Workflow analisis RPS: PROCESSED -> ANALYZING -> ANALYZED/FAILED, dengan event WORKFLOW_*. */
+function startRpsAnalysis(rps, { immediate = false } = {}) {
+  const workflow = {
+    id: nextId('workflow'),
+    status: 'QUEUED',
+    stage: 'rps_analysis',
+    progress: { completed: 0, total: 2 },
+    rps_id: rps.id,
+    events: [],
+    created_at: now(),
+  };
+  db.workflows.push(workflow);
+  rps.workflow_id = workflow.id;
+  rps.analysis_attempts = (rps.analysis_attempts ?? 0) + 1;
+  rps.failed_stage = null;
+  updateRps(rps, immediate ? 'ANALYZING' : 'PROCESSED');
+  schedule([
+    () => {
+      workflow.status = 'RUNNING';
+      emitWorkflow(workflow, 'WORKFLOW_STARTED', { message: 'Workflow analisis RPS dimulai.' });
+      updateRps(rps, 'ANALYZING');
+      workflow.progress.completed = 1;
+      emitWorkflow(workflow, 'WORKFLOW_STAGE_STARTED', { message: 'Agent menganalisis isi RPS.' });
+    },
+    () => {
+      workflow.progress.completed = 2;
+      if (rps.filename.toLowerCase().includes(RPS_ANALYSIS_FAIL_MARKER) && rps.analysis_attempts === 1) {
+        workflow.status = 'FAILED';
+        rps.failed_stage = 'analysis';
+        updateRps(rps, 'FAILED');
+        emitWorkflow(workflow, 'WORKFLOW_FAILED', { message: RPS_FAILURE_MESSAGE.analysis });
+        return;
+      }
+      rps.analysis = buildRpsAnalysis(rps.id);
+      workflow.status = 'COMPLETED';
+      updateRps(rps, 'ANALYZED');
+      emitWorkflow(workflow, 'WORKFLOW_STAGE_COMPLETED', { message: 'Analisis RPS selesai.' });
+      emitWorkflow(workflow, 'WORKFLOW_COMPLETED', { message: 'Workflow analisis RPS selesai.' });
+    },
+  ]);
+  return workflow;
+}
+
 // ---------------------------------------------------------------- handlers
 
 const handlers = {
@@ -300,34 +370,42 @@ const handlers = {
     return rps ? ok(rpsDetail(rps)) : notFound('RPS');
   },
 
-  // 202 menjadwalkan konversi; 200 + reused bila sudah diproses; 409 bila sedang diproses.
+  // 202 menjadwalkan konversi; 200 + reused bila sudah dikonversi; 409 bila sedang berjalan.
   processRps({ rpsId }) {
     const rps = db.rps.find((r) => r.id === rpsId);
     if (!rps) return notFound('RPS');
-    if (rps.status === 'PROCESSED') return ok({ rps_id: rps.id, status: rps.status, schema_version: RPS_SCHEMA_VERSION, reused: true });
+    if (rps.has_source_document) return ok({ rps_id: rps.id, status: rps.status, schema_version: RPS_SCHEMA_VERSION, reused: true });
     if (rps.status === 'PROCESSING') return fail(409, 'INVALID_REQUEST', 'Status RPS tidak mengizinkan operasi ini.');
     const run = createRun('rps_processing', null, 'document_extraction');
     const startedAt = Date.now();
-    rps.status = 'PROCESSING';
-    rps.updated_at = now();
+    updateRps(rps, 'PROCESSING');
     schedule([
       () => {
-        run.stage = 'rps_analysis';
-      },
-      () => {
-        if (rps.filename.toLowerCase().includes(RPS_FAIL_MARKER)) {
-          rps.status = 'FAILED';
-          finishRun(run, 'failed');
-        } else {
-          rps.analysis = buildRpsAnalysis(rps.id);
-          rps.status = 'PROCESSED';
-          finishRun(run);
-        }
         rps.processing_duration_ms = Date.now() - startedAt;
-        rps.updated_at = now();
+        if (rps.filename.toLowerCase().includes(RPS_FAIL_MARKER)) {
+          rps.failed_stage = 'conversion';
+          updateRps(rps, 'FAILED');
+          finishRun(run, 'failed');
+          return;
+        }
+        rps.has_source_document = true;
+        finishRun(run);
+        // Tahap analisis berjalan sebagai workflow (BE-08.2/BE-11.2).
+        startRpsAnalysis(rps);
       },
     ]);
     return ok({ rps_id: rps.id, status: 'PROCESSING', schema_version: RPS_SCHEMA_VERSION, reused: false }, 202);
+  },
+
+  // design-api 6.6: analisis ulang dari source_document; tidak menjalankan konversi lagi.
+  reanalyzeRps({ rpsId }) {
+    const rps = db.rps.find((r) => r.id === rpsId);
+    if (!rps) return notFound('RPS');
+    if (!rps.has_source_document || ['PROCESSING', 'ANALYZING'].includes(rps.status)) {
+      return fail(409, 'INVALID_REQUEST', 'Status RPS tidak mengizinkan operasi ini.');
+    }
+    const workflow = startRpsAnalysis(rps, { immediate: true });
+    return ok({ rps_id: rps.id, workflow_id: workflow.id, status: 'ANALYZING' }, 202);
   },
 
   getRpsAnalysis({ rpsId }) {
@@ -376,7 +454,9 @@ const handlers = {
   createCourse(_p, { body }) {
     const rps = db.rps.find((r) => r.id === body?.rps_id);
     if (!rps) return fail(422, 'INVALID_REQUEST', 'rps_id tidak valid.', ['rps_id']);
-    if (rps.status !== 'PROCESSED') return fail(422, 'INVALID_REQUEST', 'RPS harus selesai diproses terlebih dahulu.', ['rps_id']);
+    if (!['PROCESSED', 'ANALYZED'].includes(rps.status) || !rps.analysis) {
+      return fail(422, 'INVALID_REQUEST', 'RPS harus selesai dianalisis terlebih dahulu.', ['rps_id']);
+    }
     const moodleId = body.moodle_course_id == null ? '' : String(body.moodle_course_id).trim();
     // Satu kursus Moodle hanya punya satu project generator.
     if (moodleId && db.courses.some((c) => String(c.moodle_course_id) === moodleId)) {
@@ -664,6 +744,7 @@ const ROUTES = [
   ['POST', '/rps', 'uploadRps'],
   ['GET', '/rps/:rpsId', 'getRps'],
   ['POST', '/rps/:rpsId/process', 'processRps'],
+  ['POST', '/rps/:rpsId/reanalyze', 'reanalyzeRps'],
   ['GET', '/rps/:rpsId/analysis', 'getRpsAnalysis'],
   ['GET', '/instructors/me/profile', 'getProfile'],
   ['PUT', '/instructors/me/profile', 'updateProfile'],
@@ -747,6 +828,10 @@ export async function handleMockRequest({ method, path, query, body, token }) {
   }
 }
 
+export function subscribeMockWorkflowEvents(workflowId, fn) {
+  return subscribeMockEvents('workflow:' + workflowId, fn);
+}
+
 export function subscribeMockEvents(courseId, fn) {
   if (!listeners.has(courseId)) listeners.set(courseId, new Set());
   listeners.get(courseId).add(fn);
@@ -791,6 +876,7 @@ export function resetMockDb() {
     rps: [],
     courses: [],
     runs: [],
+    workflows: [],
     executions: {},
     verifications: {},
     profile: {
@@ -814,7 +900,8 @@ export function resetMockDb() {
     id: nextId('rps'),
     filename: 'RPS-Pemrograman-Web-2026.pdf',
     file_hash: 'mock-RPS-Pemrograman-Web-2026.pdf-482133',
-    status: 'PROCESSED',
+    status: 'ANALYZED',
+    has_source_document: true,
     created_at: now(),
     analysis: null,
   };

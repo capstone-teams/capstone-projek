@@ -36,10 +36,24 @@ for (const width of [375, 1440]) {
     const row = page.getByRole('list', { name: 'Daftar RPS' }).getByRole('listitem').filter({ hasText: 'RPS-Basis-Data.pdf' });
     await expect(row).toBeVisible();
     await expect(row.getByText('Baru', { exact: true })).toBeVisible();
-    await expect(row.getByText('Siap', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(row.getByText('Selesai dianalisis', { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.getByLabel(/^RPS untuk kursus ini/)).toHaveValue(/.+/);
     await expect(page.getByLabel(/^RPS untuk kursus ini/).locator('option').first()).toHaveText('RPS-Basis-Data.pdf');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(errors).toEqual([]);
   });
 }
+
+test('FE-08.2: failed analysis shows its message and can be reanalyzed from the UI', async ({ page }) => {
+  await seed(page);
+  await page.goto('/course/3/ai');
+  await page.locator('form.upload input[type="file"]').setInputFiles(pdf('rps-gagal-analisis.pdf'));
+  await page.getByRole('button', { name: 'Unggah & proses' }).click();
+  const row = page.getByRole('list', { name: 'Daftar RPS' }).getByRole('listitem').filter({ hasText: 'rps-gagal-analisis.pdf' });
+  await expect(row.getByText('Gagal', { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(row.getByText('Analisis RPS gagal. Coba analisis ulang.')).toBeVisible();
+  await row.getByRole('button', { name: 'Analisis ulang' }).click();
+  await expect(row.getByText('Selesai dianalisis', { exact: true })).toBeVisible({ timeout: 15000 });
+  await row.getByRole('button', { name: 'Lihat hasil analisis' }).click();
+  await expect(row.getByLabel('Ringkasan hasil analisis')).toContainText('16 minggu');
+});

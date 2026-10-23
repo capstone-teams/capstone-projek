@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RPS_READY } from '../../../services/rpsService';
+import { RPS_READY } from '../../../utils/rpsStatus';
 import { createCourse } from '../../../services/courseService';
 import { useAction } from '../../../hooks/useApi';
 import { useRpsLibrary } from '../../../hooks/useRpsLibrary';
@@ -48,9 +48,11 @@ export default function AiProjectStart({ moodleCourse, onCreated }) {
             !library.error && (
               <RpsList
                 items={library.items}
+                progress={library.progress}
                 highlightId={library.highlightId}
-                processingId={library.processingId}
+                busyId={library.busyId}
                 onProcess={library.process}
+                onReanalyze={library.reanalyze}
               />
             )
           )}

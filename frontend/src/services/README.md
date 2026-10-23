@@ -13,7 +13,7 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | rpsService.js | RPS: validasi file di klien (PDF/DOCX, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
 | profileService.js, courseService.js | Preferensi dan workflow backend |
 | coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
-| monitoringSocket.js | Event workflow dan reconnect WebSocket |
+| monitoringSocket.js | WebSocket dengan reconnect: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
 | mock/ | State machine backend ketika VITE_USE_MOCK=true; auth mengikuti kontrak backend (role huruf besar, pesan error identik, kata sandi `<username>123`) |
 | config.js | URL, mode mock, dan kunci penyimpanan dari environment |
 

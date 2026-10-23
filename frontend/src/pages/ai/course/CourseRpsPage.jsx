@@ -1,7 +1,9 @@
+import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { getRps, getRpsAnalysis } from '../../../services/rpsService';
 import { useApi } from '../../../hooks/useApi';
 import { Card, ErrorAlert, Spinner } from '../../../components/ui';
+import RpsStatusBadge from '../../../components/ai/RpsStatusBadge';
 
 /** Hasil analisis RPS yang dipakai project generator kursus ini. */
 export default function CourseRpsPage() {
@@ -18,9 +20,16 @@ export default function CourseRpsPage() {
   const { rps, analysis } = data;
   return (
     <div className="stack">
-      <p className="text-muted">
-        {analysis.course.code} — {analysis.course.name} · {analysis.course.credits} SKS · {rps.filename}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="flex flex-wrap items-center gap-2 text-muted">
+          {analysis.course.code} — {analysis.course.name} · {analysis.course.credits} SKS · {rps.filename}
+          <RpsStatusBadge status={rps.status} />
+        </p>
+        {/* Monitoring workflow kursus ini ada di tab Ringkasan (Aktivitas agent). */}
+        <Link to=".." relative="path" className="btn btn--ghost btn--sm">
+          Pantau workflow
+        </Link>
+      </div>
 
       <div className="grid grid--2">
         <Card title="Capaian pembelajaran">
