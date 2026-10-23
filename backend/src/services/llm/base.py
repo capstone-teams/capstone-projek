@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import httpx
@@ -50,6 +51,43 @@ class LLMTimeoutError(LLMConnectionError):
     public_message = "LLM provider request timed out."
 
 
+class LLMRateLimitError(LLMProviderError):
+    """The provider rejected the request due to rate limits (HTTP 429)."""
+
+    status_code = 429
+    public_message = "Layanan LLM sedang sibuk (rate limit terlampaui)."
+
+
+class LLMRetryExhaustedError(LLMProviderError):
+    """Batas retry pemanggilan LLM telah habis."""
+
+    error_code = "LLM_RETRY_EXHAUSTED"
+    status_code = 503
+    public_message = "Gagal terhubung ke layanan LLM setelah beberapa kali percobaan."
+
+
+class LLMInvalidOutputError(LLMProviderError):
+    """Output dari provider bukan JSON yang valid atau tidak sesuai format."""
+
+    error_code = "LLM_INVALID_OUTPUT"
+    status_code = 502
+    public_message = "Format output dari layanan LLM tidak sesuai."
+
+
+@dataclass(frozen=True)
+class LLMUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class LLMResponse:
+    content: str
+    usage: LLMUsage = field(default_factory=LLMUsage)
+    model: str = ""
+
+
 class BaseLLMProvider(ABC):
     """Common interface every LLM provider must implement.
 
@@ -63,6 +101,16 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     async def generate(self, prompt: str, system_prompt: Optional[str] = None, **kwargs: Any) -> str:
         """Generate a completion for `prompt` and return the raw text."""
+
+    async def generate_response(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """Generate completion and return content with token usage metadata."""
+        text = await self.generate(prompt, system_prompt=system_prompt, **kwargs)
+        return LLMResponse(content=text, usage=LLMUsage(), model=self.model)
 
     @abstractmethod
     def is_configured(self) -> bool:
@@ -117,6 +165,8 @@ def _status_error(provider_name: str, exc: httpx.HTTPStatusError) -> LLMProvider
     status = exc.response.status_code
     if status in (401, 403) or _rejected_credential(exc):
         return LLMConfigurationError(f"{provider_name} provider rejected the credential (HTTP {status})")
+    if status == 429:
+        return LLMRateLimitError(f"{provider_name} provider rate limit exceeded (HTTP 429)")
     if status >= 500:
         return LLMConnectionError(f"{provider_name} provider request failed (HTTP {status})")
     return LLMProviderError(f"{provider_name} provider request failed (HTTP {status})")
