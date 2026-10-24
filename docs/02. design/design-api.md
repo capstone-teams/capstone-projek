@@ -468,8 +468,13 @@ Response sama dengan §7.1. Validasi (BE-10.2):
 Batas panjang `additional_prompt` dikonfigurasi melalui environment, sehingga
 angkanya tidak di-hardcode pada kontrak ini.
 
-> **Status implementasi (BE-06.4).** Terbit pada OpenAPI sebagai kontrak;
-> rutenya stub `501 NOT_IMPLEMENTED` sampai BE-10.2 mendarat.
+Aturan pengosongan: nilai `null` pada field `instructor_profile` berarti "tidak
+diubah"; `additional_prompt` dikosongkan dengan mengirim string kosong `""`.
+Field yang tidak dikirim tidak berubah, dan body `{}` mengembalikan setup saat
+ini tanpa menulis apa pun.
+
+> **Status implementasi.** Kontrak terbit pada BE-06.4; endpoint aslinya
+> tersedia sejak BE-10.2 dan stub `501 NOT_IMPLEMENTED` untuk §7 sudah dibuang.
 
 ---
 
