@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.services.auth.errors import AuthDomainError
+from src.services.instructor.errors import InstructorSetupError
 from src.services.llm.base import LLMProviderError
 from src.services.rps.errors import RPSDomainError
 from src.services.user.errors import UserNotFoundError
@@ -146,6 +147,25 @@ async def rps_error_handler(request: Request, exc: RPSDomainError) -> JSONRespon
     )
 
 
+async def instructor_setup_error_handler(
+    request: Request, exc: InstructorSetupError
+) -> JSONResponse:
+    """Translate an instructor setup failure into the standard API error format (BE-10.2).
+
+    Business-rule violations become 400 ``INVALID_REQUEST`` and carry
+    ``error.details`` (one entry per offending field), so the setup form can
+    show each message next to the field that caused it. Values from the request
+    are never echoed back — only the field path and the rule that failed.
+    """
+    logger.warning("Instructor setup failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+        details=exc.details,
+    )
+
+
 ERROR_RESPONSE_SCHEMA_REF = "#/components/schemas/ErrorResponse"
 
 
@@ -202,4 +222,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AuthDomainError, auth_error_handler)
     app.add_exception_handler(UserNotFoundError, user_not_found_error_handler)
     app.add_exception_handler(RPSDomainError, rps_error_handler)
+    app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
     _document_standard_validation_error(app)

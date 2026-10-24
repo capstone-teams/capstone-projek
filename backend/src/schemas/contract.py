@@ -3,12 +3,13 @@
 Endpoint pada modul ini **belum ada implementasinya**. Tujuannya satu: membuat
 bentuk request/response terlihat pada OpenAPI (``/docs``) supaya frontend dapat
 membangun halaman beserta mock sebelum endpoint-nya selesai (design-api §6.4,
-§6.5, §6.6, §7, §16, §17). Rute stub-nya ada di :mod:`src.routes.contract`.
+§6.5, §6.6, §16, §17). Rute stub-nya ada di :mod:`src.routes.contract`.
 
 Semua DTO dikumpulkan pada satu modul agar mudah dihapus: begitu BE-08.3
-(daftar & analisis RPS), BE-10.2 (setup dosen), dan BE-11.3 (workflow & event)
-mengimplementasikan endpoint-nya, model di sini dipindahkan ke modul schema
-fitur masing-masing dan rute stub-nya dibuang.
+(daftar & analisis RPS) dan BE-11.3 (workflow & event) mengimplementasikan
+endpoint-nya, model di sini dipindahkan ke modul schema fitur masing-masing dan
+rute stub-nya dibuang. Setup dosen (§7) sudah dipindahkan ke
+:mod:`src.schemas.instructor` oleh BE-10.2.
 
 Nilai ``role`` mengikuti enum kanonik backend (:class:`src.services.user.UserRole`
 — ``INSTRUCTOR``, ``STUDENT``, ``ADMIN``). Pemetaan ke istilah proposal
@@ -31,10 +32,6 @@ from src.schemas.rps_structured import RPSStructuredData
 from src.services.rps.enums import RPSStatus
 
 __all__ = [
-    "ActivityConfiguration",
-    "InstructorProfileSetup",
-    "InstructorSetupResponse",
-    "InstructorSetupUpdate",
     "RPSAnalysisResponse",
     "RPSListItem",
     "RPSListResponse",
@@ -160,106 +157,6 @@ class RPSReanalyzeResponse(BaseModel):
                 "rps_id": RPS_ID_EXAMPLE,
                 "workflow_id": WORKFLOW_ID_EXAMPLE,
                 "status": "ANALYZING",
-            }
-        }
-    )
-
-
-# --- Setup dosen (design-api §7, BE-10.2) ----------------------------------
-
-
-class InstructorProfileSetup(BaseModel):
-    """Preferensi mengajar dosen yang dipakai agent pada semua kursusnya."""
-
-    teaching_style: str | None = None
-    expertise: str | None = None
-    delivery_preference: str | None = None
-    language_preference: str | None = None
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "teaching_style": "Interaktif dengan studi kasus",
-                "expertise": "Rekayasa Perangkat Lunak",
-                "delivery_preference": "Materi ringkas, banyak contoh kode",
-                "language_preference": "Bahasa Indonesia",
-            }
-        }
-    )
-
-
-class ActivityConfiguration(BaseModel):
-    """Jenis aktivitas pembelajaran yang boleh dihasilkan agent.
-
-    Minimal satu harus ``true``; konfigurasi tanpa aktivitas aktif ditolak
-    ``INVALID_REQUEST`` dengan detail per field (BE-10.2).
-    """
-
-    learning_material: bool = True
-    learning_resource: bool = False
-    assignment: bool = False
-    quiz: bool = False
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "learning_material": True,
-                "learning_resource": True,
-                "assignment": False,
-                "quiz": False,
-            }
-        }
-    )
-
-
-class InstructorSetupResponse(BaseModel):
-    """Response ``GET``/``PUT /api/v1/instructors/me/setup`` (design-api §7)."""
-
-    instructor_profile: InstructorProfileSetup
-    additional_prompt: str = Field(default="", description="Instruksi tambahan untuk agent.")
-    activity_configuration: ActivityConfiguration
-    updated_at: datetime
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "instructor_profile": {
-                    "teaching_style": "Interaktif dengan studi kasus",
-                    "expertise": "Rekayasa Perangkat Lunak",
-                    "delivery_preference": "Materi ringkas, banyak contoh kode",
-                    "language_preference": "Bahasa Indonesia",
-                },
-                "additional_prompt": "Sertakan contoh SQL pada setiap materi.",
-                "activity_configuration": {
-                    "learning_material": True,
-                    "learning_resource": True,
-                    "assignment": False,
-                    "quiz": False,
-                },
-                "updated_at": "2026-10-21T08:02:00Z",
-            }
-        }
-    )
-
-
-class InstructorSetupUpdate(BaseModel):
-    """Body ``PUT /api/v1/instructors/me/setup`` (design-api §7).
-
-    Seluruh field opsional: hanya nilai yang dikirim yang diubah. Batas panjang
-    ``additional_prompt`` dikonfigurasi melalui environment (BE-10.2), sehingga
-    nilai batasnya tidak di-hardcode pada kontrak ini.
-    """
-
-    instructor_profile: InstructorProfileSetup | None = None
-    additional_prompt: str | None = None
-    activity_configuration: ActivityConfiguration | None = None
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "instructor_profile": {"teaching_style": "Berbasis proyek"},
-                "additional_prompt": "Sertakan contoh SQL pada setiap materi.",
-                "activity_configuration": {"learning_material": True, "quiz": True},
             }
         }
     )
