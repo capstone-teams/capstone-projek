@@ -2,7 +2,7 @@
 
 Tujuannya semata menerbitkan bentuk request/response pada OpenAPI agar frontend
 dapat membangun halaman beserta mock sebelum endpoint-nya selesai (design-api
-§6.4–§6.7, §7, §16, §17). **Setiap** handler di sini menjawab ``501`` dengan
+§6.4–§6.7, §16, §17). **Setiap** handler di sini menjawab ``501`` dengan
 amplop error standar (design-api §18) — tidak ada data palsu yang bisa
 dikonsumsi client.
 
@@ -10,23 +10,21 @@ Rute stub ini berumur pendek dan **harus** dibuang saat implementasi aslinya
 mendarat:
 
 - ``/rps`` (GET), ``/rps/{id}/analysis``, ``/rps/{id}/reanalyze`` → BE-08.3
-- ``/instructors/me/setup`` (GET/PUT) → BE-10.2
 - ``/workflows``, ``/workflows/{id}/events`` → BE-11.3
 
 Otorisasi tidak dipasang di sini: stub tidak menyentuh data siapa pun. Endpoint
-aslinya wajib instructor-only seperti endpoint RPS pada :mod:`src.routes.rps`.
+aslinya wajib instructor-only seperti endpoint RPS pada :mod:`src.routes.rps`
+(contoh yang sudah rilis: :mod:`src.routes.instructors`, BE-10.2).
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Path
+from fastapi import APIRouter, Path
 from fastapi.responses import JSONResponse
 
 from src.schemas.contract import (
-    InstructorSetupResponse,
-    InstructorSetupUpdate,
     RPSAnalysisResponse,
     RPSListResponse,
     RPSReanalyzeResponse,
@@ -116,30 +114,6 @@ async def get_rps_analysis_stub(rps_id: RpsIdPath) -> RPSAnalysisResponse:
 )
 async def reanalyze_rps_stub(rps_id: RpsIdPath) -> RPSReanalyzeResponse:
     """``POST /api/v1/rps/{rps_id}/reanalyze`` — analisis ulang tanpa Docling."""
-    return _not_implemented()
-
-
-@router.get(
-    "/instructors/me/setup",
-    response_model=InstructorSetupResponse,
-    summary="Setup dosen (kontrak, BE-10.2)",
-    responses=NOT_IMPLEMENTED_RESPONSE,
-)
-async def get_instructor_setup_stub() -> InstructorSetupResponse:
-    """``GET /api/v1/instructors/me/setup`` — setup dosen yang sedang login."""
-    return _not_implemented()
-
-
-@router.put(
-    "/instructors/me/setup",
-    response_model=InstructorSetupResponse,
-    summary="Simpan setup dosen (kontrak, BE-10.2)",
-    responses=NOT_IMPLEMENTED_RESPONSE,
-)
-async def update_instructor_setup_stub(
-    payload: Annotated[InstructorSetupUpdate, Body(description="Perubahan setup dosen.")],
-) -> InstructorSetupResponse:
-    """``PUT /api/v1/instructors/me/setup`` — simpan setup dosen yang sedang login."""
     return _not_implemented()
 
 

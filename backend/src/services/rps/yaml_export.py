@@ -36,7 +36,13 @@ from pydantic import BaseModel
 
 from src.services.rps.errors import RPSValidationError
 
-__all__ = ["HEADING_LABELS", "LLM_FIELDS", "document_to_yaml", "structured_data_to_yaml"]
+__all__ = [
+    "HEADING_LABELS",
+    "LLM_FIELDS",
+    "document_to_yaml",
+    "dump_yaml",
+    "structured_data_to_yaml",
+]
 
 #: Label Docling yang ditampilkan sebagai ``heading`` (bukan paragraf biasa).
 HEADING_LABELS = frozenset({"title", "section_header", "subtitle"})
@@ -167,7 +173,7 @@ def document_to_yaml(source_document: dict[str, Any]) -> str:
         "page_count": _page_count(source_document),
         "blocks": [block for _, _, block in blocks],
     }
-    return _dump(payload)
+    return dump_yaml(payload)
 
 
 def structured_data_to_yaml(structured_data: dict[str, Any] | BaseModel) -> str:
@@ -189,14 +195,18 @@ def structured_data_to_yaml(structured_data: dict[str, Any] | BaseModel) -> str:
     payload = {field: value for field, value in selected.items() if value not in (None, {}, [])}
     if not payload:
         raise RPSValidationError("structured_data", "tidak memuat field akademik apa pun")
-    return _dump(payload)
+    return dump_yaml(payload)
 
 
 # --- Bagian dalam -----------------------------------------------------------
 
 
-def _dump(payload: dict[str, Any]) -> str:
-    """Tulis YAML tanpa mengubah urutan field (urutan = urutan kontrak)."""
+def dump_yaml(payload: dict[str, Any]) -> str:
+    """Tulis YAML tanpa mengubah urutan field (urutan = urutan kontrak).
+
+    Publik supaya serializer konteks lain (mis. konteks dosen BE-10.3) memakai
+    format YAML yang sama dengan input LLM RPS.
+    """
     return yaml.safe_dump(
         payload,
         allow_unicode=True,
