@@ -34,8 +34,6 @@ CONTRACT_ENDPOINTS = {
     ("/api/v1/rps", "get"): "RPSListResponse",
     ("/api/v1/rps/{rps_id}/analysis", "get"): "RPSAnalysisResponse",
     ("/api/v1/rps/{rps_id}/reanalyze", "post"): "RPSReanalyzeResponse",
-    ("/api/v1/instructors/me/setup", "get"): "InstructorSetupResponse",
-    ("/api/v1/instructors/me/setup", "put"): "InstructorSetupResponse",
     ("/api/v1/workflows", "get"): "WorkflowListResponse",
     ("/api/v1/workflows/{workflow_id}/events", "get"): "WorkflowEventListResponse",
 }
@@ -47,8 +45,6 @@ STUB_CALLS = [
     ("get", "/api/v1/rps", None),
     ("get", f"/api/v1/rps/{RPS_ID}/analysis", None),
     ("post", f"/api/v1/rps/{RPS_ID}/reanalyze", None),
-    ("get", "/api/v1/instructors/me/setup", None),
-    ("put", "/api/v1/instructors/me/setup", {}),
     ("get", "/api/v1/workflows", None),
     ("get", f"/api/v1/workflows/{WORKFLOW_ID}/events", None),
 ]
@@ -150,10 +146,12 @@ def test_stubs_answer_not_implemented_with_the_standard_envelope(method, path, b
         ("post", "/api/v1/rps"),
         ("get", f"/api/v1/rps/{RPS_ID}"),
         ("post", f"/api/v1/rps/{RPS_ID}/process"),
+        ("get", "/api/v1/instructors/me/setup"),
+        ("put", "/api/v1/instructors/me/setup"),
     ],
 )
 def test_implemented_endpoints_are_not_shadowed_by_the_contract_stubs(method, path):
-    """Endpoint BE-05 tetap memakai otorisasinya sendiri, bukan stub."""
+    """Endpoint yang sudah diimplementasikan memakai otorisasinya sendiri, bukan stub."""
     response = getattr(client, method)(path)
 
     assert response.status_code == 401

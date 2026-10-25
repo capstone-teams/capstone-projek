@@ -27,6 +27,7 @@ from src.config.database import get_session_factory
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
+from src.services.instructor.service import InstructorSetupService
 from src.services.rps.runner import run_rps_processing
 from src.services.rps.service import RPSService
 from src.services.user.domain import User
@@ -41,6 +42,7 @@ __all__ = [
     "get_auth_service",
     "get_current_user",
     "get_db_session",
+    "get_instructor_service",
     "get_rps_processing_runner",
     "get_rps_service",
     "get_user_service",
@@ -75,6 +77,17 @@ def get_user_service(session: AsyncSession = Depends(get_db_session)) -> UserSer
 def get_auth_service(session: AsyncSession = Depends(get_db_session)) -> AuthService:
     """Auth Service untuk endpoint authentication."""
     return AuthService.from_session(session)
+
+
+def get_instructor_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> InstructorSetupService:
+    """Instructor Setup Service untuk endpoint setup dosen (BE-10.2).
+
+    Batas panjang Additional Prompt dibaca dari environment di dalam service,
+    sehingga route tidak perlu mengetahui konfigurasi tersebut.
+    """
+    return InstructorSetupService.from_session(session)
 
 
 def get_rps_service(session: AsyncSession = Depends(get_db_session)) -> RPSService:
