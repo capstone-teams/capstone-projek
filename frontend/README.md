@@ -208,6 +208,36 @@ workflow belum tersedia (stub `501`, BE-08.3/BE-11.3). Mock mengikuti kontrak;
 nama file berisi `gagal-analisis` gagal saat analisis pertama untuk mencoba
 Analisis ulang.
 
+### Hasil analisis RPS (FE-08.3)
+
+Tab **RPS** di Generator AI kursus adalah halaman Hasil Analisis RPS (Proposal
+§3.7.5), dibuka setelah project dibuat dan sebelum course planning. Datanya dari
+`GET /api/v1/rps/{rps_id}/analysis` (design-api §6.4) berupa RPS Structured Data
+(content-schema §6.2/§7), dinormalisasi oleh `src/utils/rpsAnalysis.js` dan
+ditampilkan `RpsAnalysisDetails` (`src/components/ai/course/`):
+
+- identitas mata kuliah; CPL, CPMK, dan Sub-CPMK beserta relasinya (CPMK → CPL,
+  Sub-CPMK → CPMK, dan relasi baliknya); kode yang dirujuk tetapi tidak
+  tercantum diberi tanda ⚠;
+- tabel rencana mingguan: minggu (dengan label UTS/UAS), Sub-CPMK, materi,
+  indikator, metode, penilaian, dan bobot. Indikator diambil dari
+  `assessment.description` karena RPS Week Schema tidak memiliki field indikator;
+- penilaian (dengan total bobot) dan referensi;
+- peringatan ekstraksi (`extraction.warnings`), keyakinan, dan halaman sumber.
+
+Setiap bagian bertanda **Lengkap**, **Sebagian** (`partial`), atau **Tidak
+ditemukan** (`not_found`). Kontrak backend belum memuat status per bagian, jadi
+status diturunkan dari data: bagian kosong = tidak ditemukan; bagian yang
+terisi tetapi tidak utuh (field identitas kosong, capaian tanpa relasi, minggu
+tanpa materi/Sub-CPMK/metode, atau rujukan tanpa sasaran seperti
+`validate_references` backend) = sebagian, beserta catatannya.
+
+Tombol **Lanjut ke Course Planning** membuka tab Rencana (FE-05). Dengan backend
+nyata tombol nonaktif bertuliskan "Course planning aktif pada M03"; di mode mock
+tombol aktif. `GET /rps/{id}/analysis` masih stub `501` sampai BE-08.3; di mock,
+nama file berisi `tidak-lengkap` menghasilkan analisis dengan bagian yang tidak
+ditemukan.
+
 ## Edit mode kursus
 
 Pengajar yang boleh mengubah kursus (opsi `update` pada
@@ -317,6 +347,7 @@ auth-06-2.spec.js menguji login akun uji, error kredensial, pemulihan sesi saat
 reload, dan logout; role-guard-06-3.spec.js menguji halaman awal per role, menu,
 dan halaman 403; course-edit-mode.spec.js menguji Mode edit pada 375/1440 px; rps-upload-08-1.spec.js
 menguji validasi, unggah, dan pemrosesan RPS di Generator AI pada 375/1440 px;
+rps-analysis.spec.js menguji halaman hasil analisis RPS pada 375/1440 px;
 foundation-71.spec.js menguji sesi, state, keyboard, empty/error, serta responsive;
 course-plan-74.spec.js menguji rencana pada 375/768/1024/1440 px dan pemilihan minggu.
 presentation.spec.js berjalan melalui test:design untuk style dan batas konten

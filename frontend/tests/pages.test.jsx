@@ -183,7 +183,7 @@ describe('halaman dosen', () => {
     ['/my/courses', 'Menunggu review rencana'],
     ['/course/2', 'Generator AI'],
     ['/course/2/ai', 'Aktivitas agent'],
-    ['/course/2/ai/rps', 'Komponen penilaian'],
+    ['/course/2/ai/rps', 'Hasil analisis RPS'],
     ['/course/2/ai/plan', 'Rencana course · versi 1'],
     ['/course/4/ai/plan', 'Setujui rencana'],
     ['/course/3/ai', 'Mulai generator AI'],

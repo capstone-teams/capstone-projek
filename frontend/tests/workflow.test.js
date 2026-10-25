@@ -81,11 +81,13 @@ describe('RPS', () => {
     const proc = await rps.processRps(uploaded.id);
     expect(proc).toEqual({ rps_id: uploaded.id, status: 'PROCESSING', schema_version: '2.0', reused: false });
     await expectApiError(rps.processRps(uploaded.id), 409, 'INVALID_REQUEST');
-    await expectApiError(rps.getRpsAnalysis(uploaded.id), 409, 'INVALID_REQUEST');
+    await expectApiError(rps.getRpsAnalysis(uploaded.id), 422, 'INVALID_REQUEST');
 
     await flush();
     expect(await rps.getRps(uploaded.id)).toMatchObject({ status: 'ANALYZED', has_source_document: true, processing_error_code: null });
-    expect((await rps.getRpsAnalysis(uploaded.id)).weekly_plan).toHaveLength(16);
+    const analysis = await rps.getRpsAnalysis(uploaded.id);
+    expect(analysis).toMatchObject({ rps_id: uploaded.id, analyzed_at: expect.any(String), data: { schema_version: '2.0' } });
+    expect(analysis.data.weeks).toHaveLength(16);
     expect(await rps.processRps(uploaded.id)).toMatchObject({ status: 'ANALYZED', reused: true });
   });
 

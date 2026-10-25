@@ -1,90 +1,71 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { getRps, getRpsAnalysis } from '../../../services/rpsService';
+import { USE_MOCK } from '../../../services/config';
 import { useApi } from '../../../hooks/useApi';
-import { Card, ErrorAlert, Spinner } from '../../../components/ui';
+import { ErrorAlert, Spinner } from '../../../components/ui';
 import RpsStatusBadge from '../../../components/ai/RpsStatusBadge';
+import RpsAnalysisDetails from '../../../components/ai/course/RpsAnalysisDetails';
+import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
+import { formatDateTime } from '../../../utils/format';
 
-/** Hasil analisis RPS yang dipakai project generator kursus ini. */
+// Course planning (FE-05) baru tersedia di backend pada M03; di mode mock sudah dapat dicoba.
+const COURSE_PLANNING_AVAILABLE = USE_MOCK;
+
+/** Hasil Analisis RPS (FE-08.3): diperiksa dosen sebelum melanjutkan ke course planning. */
 export default function CourseRpsPage() {
   const { course } = useCourse();
   const rpsId = course.rps_id;
-  const { data, error, loading } = useApi(
+  const { data, error, loading, reload } = useApi(
     () => Promise.all([getRps(rpsId), getRpsAnalysis(rpsId)]).then(([rps, analysis]) => ({ rps, analysis })),
     [rpsId],
   );
+  const analysis = useMemo(() => (data ? normalizeRpsAnalysis(data.analysis) : null), [data]);
 
-  if (loading && !data) return <Spinner />;
-  if (error) return <ErrorAlert error={error} />;
+  if (loading && !data) return <Spinner label="Memuat hasil analisis…" />;
+  if (error) {
+    return (
+      <div>
+        <ErrorAlert error={error} />
+        <button type="button" className="btn" onClick={() => reload()}>Coba lagi</button>
+      </div>
+    );
+  }
 
-  const { rps, analysis } = data;
+  const { rps } = data;
   return (
     <div className="stack">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="flex flex-wrap items-center gap-2 text-muted">
-          {analysis.course.code} — {analysis.course.name} · {analysis.course.credits} SKS · {rps.filename}
-          <RpsStatusBadge status={rps.status} />
-        </p>
-        {/* Monitoring workflow kursus ini ada di tab Ringkasan (Aktivitas agent). */}
-        <Link to=".." relative="path" className="btn btn--ghost btn--sm">
-          Pantau workflow
-        </Link>
-      </div>
-
-      <div className="grid grid--2">
-        <Card title="Capaian pembelajaran">
-          <ul className="list">
-            {analysis.learning_outcomes.map((lo) => (
-              <li key={lo.code}>
-                <strong>{lo.code}</strong> {lo.description}
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card title="Komponen penilaian">
-          <ul className="list">
-            {analysis.assessment.map((a) => (
-              <li key={a.component} className="list__split">
-                <span>{a.component}</span>
-                <strong>{a.weight}%</strong>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
-
-      <Card title="Rencana mingguan dari RPS">
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Minggu</th>
-                <th>Topik</th>
-                <th>CPMK</th>
-                <th>Metode</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analysis.weekly_plan.map((w) => (
-                <tr key={w.week}>
-                  <td>{w.week}</td>
-                  <td>{w.topic}</td>
-                  <td>{w.cpmk?.join(', ')}</td>
-                  <td>{w.method}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-xl">Hasil analisis RPS</h2>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
+            <span className="wrap-anywhere">{rps.filename}</span>
+            <RpsStatusBadge status={rps.status} />
+            {analysis.analyzedAt && <span>Dianalisis {formatDateTime(analysis.analyzedAt)}</span>}
+          </p>
         </div>
-      </Card>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Monitoring workflow kursus ini ada di tab Ringkasan (Aktivitas agent). */}
+          <Link to=".." relative="path" className="btn btn--ghost btn--sm">
+            Pantau workflow
+          </Link>
+          {COURSE_PLANNING_AVAILABLE ? (
+            <Link to="../plan" relative="path" className="btn btn--primary">
+              Lanjut ke Course Planning
+            </Link>
+          ) : (
+            <span className="flex flex-col items-end gap-1">
+              <button type="button" className="btn btn--primary" disabled aria-describedby="planning-hint">
+                Lanjut ke Course Planning
+              </button>
+              <span id="planning-hint" className="text-xs text-muted">Course planning aktif pada M03.</span>
+            </span>
+          )}
+        </div>
+      </div>
 
-      <Card title="Referensi">
-        <ul className="list">
-          {analysis.references.map((r) => (
-            <li key={r}>{r}</li>
-          ))}
-        </ul>
-      </Card>
+      <RpsAnalysisDetails analysis={analysis} />
     </div>
   );
 }

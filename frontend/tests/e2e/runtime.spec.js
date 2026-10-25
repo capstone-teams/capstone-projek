@@ -64,7 +64,7 @@ const teacherPages = [
   ['/course/2/grades', 'Rekap nilai mahasiswa'],
   ['/course/2/mod/102', 'Konsep utama'],
   ['/course/2/ai', 'Aktivitas agent'],
-  ['/course/2/ai/rps', 'Komponen penilaian'],
+  ['/course/2/ai/rps', 'Hasil analisis RPS'],
   ['/course/2/ai/plan', 'Rencana course · versi 1'],
   ['/course/2/ai/content', 'Tujuan pembelajaran'],
 ];

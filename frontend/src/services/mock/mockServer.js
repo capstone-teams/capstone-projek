@@ -11,6 +11,7 @@ import {
   SAMPLE_TOPICS,
   buildPlanWeeks,
   buildRpsAnalysis,
+  buildRpsStructuredData,
   buildWeekContent,
 } from './mockData';
 
@@ -31,6 +32,8 @@ const RPS_SCHEMA_VERSION = '2.0';
 // 'gagal-analisis' gagal saat analisis pada percobaan pertama (-> Analisis ulang).
 const RPS_FAIL_MARKER = 'rusak';
 const RPS_ANALYSIS_FAIL_MARKER = 'gagal-analisis';
+// Nama file berisi 'tidak-lengkap' menghasilkan analisis dengan bagian yang tidak ditemukan.
+const RPS_INCOMPLETE_MARKER = 'tidak-lengkap';
 const RPS_FAILURE_MESSAGE = {
   conversion: 'Dokumen RPS gagal diproses karena kesalahan tak terduga.',
   analysis: 'Analisis RPS gagal. Coba analisis ulang.',
@@ -411,8 +414,10 @@ const handlers = {
   getRpsAnalysis({ rpsId }) {
     const rps = db.rps.find((r) => r.id === rpsId);
     if (!rps) return notFound('RPS');
-    if (!rps.analysis) return conflict('RPS belum selesai diproses.');
-    return ok(rps.analysis);
+    // design-api §6.4: 422 bila belum dianalisis; data = RPS Structured Data (content-schema §6.2).
+    if (!rps.analysis) return fail(422, 'INVALID_REQUEST', 'RPS belum dianalisis.');
+    const incomplete = rps.filename.toLowerCase().includes(RPS_INCOMPLETE_MARKER);
+    return ok({ rps_id: rps.id, analyzed_at: rps.updated_at ?? rps.created_at, data: buildRpsStructuredData({ incomplete }) });
   },
 
   // Instructor profile
