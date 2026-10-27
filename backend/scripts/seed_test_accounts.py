@@ -48,6 +48,7 @@ from src.services.seed import (
     SeedConfigurationError,
     SeedError,
     SeedResult,
+    seed_instructor_setup,
     seed_test_accounts,
     validate_seed_password,
 )
@@ -142,16 +143,23 @@ def resolve_passwords(
     return passwords, generated
 
 
-async def _run_seed(passwords: Mapping[str, str]) -> list[SeedResult]:
+async def _run_seed(passwords: Mapping[str, str]) -> tuple[list[SeedResult], bool]:
+    """Seed akun uji, lalu setup default dosen (BE-10.1) pada session yang sama."""
     session_factory = get_session_factory()
     try:
         async with session_factory() as session:
-            return await seed_test_accounts(session, passwords=passwords)
+            results = await seed_test_accounts(session, passwords=passwords)
+            setup_created = await seed_instructor_setup(session)
+            return results, setup_created
     finally:
         await dispose_engine()
 
 
-def _print_results(results: list[SeedResult], generated: Mapping[str, str]) -> None:
+def _print_results(
+    results: list[SeedResult],
+    generated: Mapping[str, str],
+    setup_created: bool = False,
+) -> None:
     print("Seed akun uji selesai:")
     for result in results:
         account = result.account
@@ -159,6 +167,11 @@ def _print_results(results: list[SeedResult], generated: Mapping[str, str]) -> N
             f"  {result.action.value:<9} {account.role.value:<10} "
             f"{account.username:<15} {account.email}"
         )
+
+    print(
+        "  setup dosen: "
+        + ("dibuat (learning material aktif)" if setup_created else "sudah ada, tidak diubah")
+    )
 
     if generated:
         print("\nPassword akun yang dibuat (tampil sekali; simpan di kanal internal):")
@@ -182,7 +195,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_CONFIGURATION
 
     try:
-        results = asyncio.run(_run_seed(passwords))
+        results, setup_created = asyncio.run(_run_seed(passwords))
     except SeedConfigurationError as exc:
         print(f"Seed gagal: {exc}", file=sys.stderr)
         return EXIT_CONFIGURATION
@@ -198,7 +211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return EXIT_FAILURE
 
-    _print_results(results, generated)
+    _print_results(results, generated, setup_created)
     return EXIT_OK
 
 

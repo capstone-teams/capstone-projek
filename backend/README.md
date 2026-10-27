@@ -20,12 +20,14 @@ backend/
 │   │   ├── admin.py              # GET /admin/users (ADMIN only)
 │   │   ├── auth.py               # POST /auth/login, GET /auth/me
 │   │   ├── rps.py                # POST /rps, GET /rps/{id}, POST /rps/{id}/process
+│   │   ├── instructors.py        # GET/PUT /instructors/me/setup (INSTRUCTOR only)
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
 │   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
 │   │   ├── rps/                  # Unggah, penyimpanan, & konversi dokumen RPS (BE-05)
+│   │   ├── instructor/           # Setup dosen: profil, aktivitas, konteks agent (BE-10)
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
 │   │   └── dependencies.py       # Dependency provider untuk routes (+ require_roles)
@@ -34,6 +36,7 @@ backend/
 │   │   ├── admin.py              # DTO operasi administrasi
 │   │   ├── auth.py
 │   │   ├── rps.py                # DTO endpoint RPS
+│   │   ├── instructor.py         # DTO setup dosen (BE-10)
 │   │   └── rps_structured.py     # Kontrak RPS Structured Data (BE-05.3)
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
 │   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
@@ -588,6 +591,71 @@ unggah → proses.
 default `TEST_DATABASE_URL`), sehingga native enum `rps_status` dan kolom JSONB
 benar-benar terpakai. Konverter diganti konverter palsu di sana agar suite tetap
 ringan dan deterministik.
+
+---
+
+## 🎓 Instructor Setup (BE-10)
+
+Setup dosen adalah konteks tambahan untuk agent: gaya mengajar, keahlian,
+preferensi penyampaian, jenis aktivitas yang boleh dibuat, dan additional prompt.
+Nilai ini **tidak** menggantikan informasi akademik RPS (PRD FR-010); agent hanya
+mengubah penyajian, bukan fakta akademik.
+
+```text
+instructor_profiles         (0..1 per dosen)  ──┐
+activity_configurations     (0..1 per dosen)  ──┴──▶ konteks agent (YAML)
+                                                     ＋ YAML RPS ──▶ prompt
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/instructors/me/setup` | `INSTRUCTOR` | Seluruh setup dosen. Dosen baru menerima nilai default (learning material aktif), bukan 404 |
+| `PUT` | `/api/v1/instructors/me/setup` | `INSTRUCTOR` | Ubah **sebagian** setup: hanya field yang dikirim yang berubah. Response berbentuk sama dengan `GET` |
+
+`PUT` mengikuti kontrak design-api §7.2 (terbit pada BE-06.4). `null` pada field
+`instructor_profile` berarti "tidak diubah"; `additional_prompt` dikosongkan
+dengan mengirim `""`. Body `{}` mengembalikan setup saat ini tanpa menulis apa pun.
+
+Respons kegagalan (design-api §7.2):
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Additional Prompt melebihi batas, tidak ada jenis aktivitas aktif, atau tipe data salah | 422 | `INVALID_REQUEST` (dengan `details` per field) |
+| Role bukan `INSTRUCTOR` | 403 | `AUTHORIZATION_DENIED` |
+| Tanpa access token | 401 | `AUTHENTICATION_FAILED` |
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Tabel `instructor_profiles`, `activity_configurations` | `src/models/instructor_profile.py`, `src/models/activity_configuration.py` |
+| Aturan nilai (batas panjang, minimal satu jenis konten aktif) | `src/services/instructor/domain.py` |
+| Ambil/simpan setup, seed default, konteks agent | `src/services/instructor/service.py` |
+| Serialisasi konteks ke YAML (BE-10.3) | `src/services/instructor/context.py` |
+| DTO request/response (dipindahkan dari kontrak BE-06.4) | `src/schemas/instructor.py` |
+| Endpoint | `src/routes/instructors.py` |
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Batas Additional Prompt berasal dari environment**
+   (`INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH`, default 2000 karakter), bukan
+   di-hardcode pada schema — prompt ini dikirim ke LLM bersama konteks RPS.
+2. **Seluruh kesalahan input → 422 `INVALID_REQUEST`.** Kontrak §7.2 memakai
+   code itu, bukan `VALIDATION_FAILED` milik handler global, sehingga kesalahan
+   tipe body pun diterjemahkan oleh `_InvalidRequestRoute` pada
+   `src/routes/instructors.py`. Pelanggaran dikumpulkan sekaligus (satu
+   `details` per field) supaya form dapat menandai semua field bermasalah dalam
+   satu kali simpan.
+3. **Tidak ada yang tersimpan bila satu field tidak valid**: hasil penggabungan
+   parsial divalidasi sebelum database disentuh, sehingga mematikan aktivitas
+   terakhir yang masih aktif tetap ditolak.
+4. **Agent tidak query database.** Konteks dosen diberikan sebagai payload/YAML
+   oleh `InstructorSetupService`, dan selalu membawa penanda
+   `context_role: supporting` + `academic_source_of_truth: rps`.
+5. **Seed tidak menimpa setup dosen.** `scripts/seed_test_accounts.py` hanya
+   membuat setup default untuk akun dosen uji bila belum ada.
 
 ---
 

@@ -106,6 +106,20 @@ melalui kanal internal tim dan **tidak** di-commit ke repository.
 > bersifat ilustratif; frontend harus memakai nilai dari response, bukan
 > meng-hardcode contoh tersebut.
 
+**Padanan istilah proposal.** Class diagram pada proposal memakai istilah
+Indonesia. Nilai yang beredar di API, seed akun uji, dan OpenAPI tetap enum
+kanonik — padanannya satu-satu, tidak ada nilai tambahan:
+
+| Proposal | Nilai kanonik API | Akun uji (BE-06.3) |
+| :--- | :--- | :--- |
+| `DOSEN` | `INSTRUCTOR` | akun dosen pada `scripts/seed_test_accounts.py` |
+| `MAHASISWA` | `STUDENT` | akun mahasiswa pada `scripts/seed_test_accounts.py` |
+| — | `ADMIN` | operasi administrasi (`/api/v1/admin/*`) |
+
+Endpoint khusus dosen menolak akun mahasiswa dengan `403 AUTHORIZATION_DENIED`
+(design-api §22), dan role selalu dibaca ulang dari record User pada setiap
+request (tidak menjadi klaim token).
+
 Response tidak pernah memuat password, hash password, atau credential Moodle.
 
 ### Response gagal
