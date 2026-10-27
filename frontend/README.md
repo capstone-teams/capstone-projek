@@ -280,6 +280,16 @@ Aksi memakai `core_courseformat_update_course` dan `core_update_inplace_editable
 service yang dipakai frontend. Mock Moodle mendukung aksi yang sama; isi kursus
 kembali ke fixture awal saat reload.
 
+Rujukan dokumentasi Moodle (moodledev.io) dan pengecekannya pada source Moodle 5.3:
+
+| Hal | Dokumentasi | Hasil cek source |
+| --- | --- | --- |
+| `core_courseformat_update_course` menggantikan `core_course_edit_section`/`edit_module` sejak 4.0 | [Migrating 3.11 formats](https://moodledev.io/docs/4.4/apis/plugintypes/format/migration) | Ada di `lib/db/services.php`: `'ajax' => true`, tanpa `'services'` |
+| Fungsi baru tersedia di aplikasi mobile bila memuat `MOODLE_OFFICIAL_MOBILE_SERVICE` pada `'services'` | [Function Declarations](https://moodledev.io/docs/5.1/apis/subsystems/external/description) | Hanya fungsi baca seperti `core_course_get_contents` yang memuatnya; fungsi editor tidak |
+| Fungsi di luar layanan bawaan dibuka lewat service kustom | [Service creation](https://moodledev.io/docs/5.0/apis/subsystems/external/advanced/custom-services) | Dipakai bila fungsi editor ditambahkan ke service frontend |
+| Tidak ada external function pembuat Tugas; yang ada hanya fungsi PHP `assign_add_instance()` | [mod_assign](https://phpdoc.moodledev.io/4.4/d3/d4f/group__mod__assign.html) | `mod/assign/db/services.php` tidak memuat fungsi create |
+| Menulis external function sendiri | [Writing a new service](https://moodledev.io/docs/5.0/apis/subsystems/external/writing-a-service) | Jalur yang perlu dipilih tim untuk pembuatan aktivitas |
+
 ## Rencana kuliah
 
 Tab Rencana menampilkan informasi course, CPMK, tujuan, topik, metode mengajar,

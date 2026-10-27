@@ -6,6 +6,14 @@
  *
  * Keduanya bertanda 'ajax' => true di lib/db/services.php dan TIDAK termasuk layanan
  * moodle_mobile_app; pada Moodle nyata tambahkan ke external service yang dipakai frontend.
+ *
+ * (moodledev.io):
+ * - Fungsi editor kursus pengganti core_course_edit_section/edit_module sejak 4.0:
+ *   https://moodledev.io/docs/4.4/apis/plugintypes/format/migration
+ * - Cara fungsi dibuka ke 'ajax' dan layanan mobile (MOODLE_OFFICIAL_MOBILE_SERVICE):
+ *   https://moodledev.io/docs/5.1/apis/subsystems/external/description
+ * - Service kustom untuk fungsi di luar layanan bawaan:
+ *   https://moodledev.io/docs/5.0/apis/subsystems/external/advanced/custom-services
  */
 import { USE_MOODLE_MOCK } from '../config';
 import { MoodleError, callWs, moodleUrl } from './moodleClient';
@@ -60,6 +68,10 @@ export function renameSection(courseFormat, sectionId, name) {
 // ---- Membuat aktivitas dari formulir aplikasi.
 // Moodle core belum menyediakan Web Service untuk membuat assign/label beserta isinya
 // (core_courseformat_create_module hanya untuk modul FEATURE_QUICKCREATE, yaitu mod_subsection).
+// Di dokumentasi mod_assign hanya ada fungsi PHP assign_add_instance(), bukan external function:
+// https://phpdoc.moodledev.io/4.4/d3/d4f/group__mod__assign.html
+// Fungsi baru perlu ditulis sendiri (plugin Moodle), pola penulisannya:
+// https://moodledev.io/docs/5.0/apis/subsystems/external/writing-a-service
 // Sampai tim memilih jalurnya (plugin Moodle atau endpoint backend), hanya mock yang mendukung.
 
 export const CAN_CREATE_IN_APP = USE_MOODLE_MOCK;
