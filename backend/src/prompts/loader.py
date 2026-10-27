@@ -28,4 +28,3 @@ def render_prompt(name: str, version: str, variables: dict) -> str:
         raise PromptRenderError(f"Gagal merender template: {e}")
 
     #buat function main.py -> buka file directory untuk upload file rps upload -> function untuk docling untuk convert ke yaml (function service -> rps -> yaml export) -> buat versi prompt dan versi non prompt
-

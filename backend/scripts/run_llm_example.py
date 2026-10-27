@@ -29,11 +29,17 @@ capaian_pembelajaran:
 topik_mingguan:
   minggu_1: Pengantar Algoritma dan Notasi Flowchart""",
     "instructor_context_yaml": """nama: Dr. Budi Santoso
-keahlian: Rekayasa Perangkat Lunak dan Algoritma
-gaya_penyampaian: Praktis, interaktif, dan berbasis studi kasus dunia nyata""",
+mata_kuliah: Rekayasa Perangkat Lunak dan Algoritma
+keahlian: Praktis, interaktif, dan berbasis studi kasus dunia nyata""",
     "additional_prompt": "Berikan analogi kehidupan sehari-hari pada bagian ringkasan materi.",
     "task_instruction": "Susun rencana materi pembelajaran untuk Minggu ke-1 sesuai RPS.",
 }
+
+# alur kerja itu rps dan instruktur profile masuk berbarengan, cara kerja ala cli setelah masuk berbarengan,
+# setelah itu baru ada pernyataan "tambahkan additional prompt" jika ada maka schema output additional_prompt = true; jika
+# tidak ada maka additional_prompt = false.
+# Baru setelah itu bisa mengecek apakah ada task_instruction atau tidak.
+# buat scriptnya jalan di cli gitu
 
 SAMPLE_SCHEMA = {
     "type": "object",
