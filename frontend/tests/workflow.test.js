@@ -3,7 +3,7 @@ import { ApiError } from '../src/services/apiClient';
 import * as auth from '../src/services/authService';
 import * as rps from '../src/services/rpsService';
 import * as courses from '../src/services/courseService';
-import * as profile from '../src/services/profileService';
+import * as instructor from '../src/services/instructorService';
 import { subscribeCourseEvents } from '../src/services/monitoringSocket';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
 
@@ -89,11 +89,13 @@ describe('RPS', () => {
   });
 });
 
-describe('profil dosen', () => {
+describe('setup dosen', () => {
   it('menyimpan perubahan', async () => {
-    const saved = await profile.updateProfile({ teaching_style: 'Project based' });
-    expect(saved.teaching_style).toBe('Project based');
-    expect((await profile.getProfile()).teaching_style).toBe('Project based');
+    const saved = await instructor.updateInstructorSetup({
+      instructor_profile: { teaching_style: 'Project based' },
+    });
+    expect(saved.instructor_profile.teaching_style).toBe('Project based');
+    expect((await instructor.getInstructorSetup()).instructor_profile.teaching_style).toBe('Project based');
   });
 });
 

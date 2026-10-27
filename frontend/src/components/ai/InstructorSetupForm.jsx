@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { updateProfile } from '../../services/profileService';
+import { updateInstructorSetup } from '../../services/instructorService';
 import { useAction } from '../../hooks/useApi';
 import { Alert, ErrorAlert, Field, Spinner } from '../ui';
 import {
@@ -14,17 +14,42 @@ function countCharacters(text) {
 
 function getInitialForm(initial) {
   const data = initial || {};
+  const profile = data.instructor_profile || {};
   return {
-    teaching_style: data.teaching_style ?? '',
-    expertise: data.expertise ?? '',
-    delivery_preference: data.delivery_preference ?? data.content_preference ?? '',
+    teaching_style: profile.teaching_style ?? data.teaching_style ?? '',
+    expertise: profile.expertise ?? data.expertise ?? '',
+    delivery_preference: profile.delivery_preference ?? data.delivery_preference ?? profile.content_preference ?? data.content_preference ?? '',
     additional_prompt: data.additional_prompt ?? '',
     activity_configuration: {
       ...DEFAULT_ACTIVITY_CONFIGURATION,
       ...(data.activity_configuration ?? {}),
     },
-    language_preference: data.language_preference ?? 'Bahasa Indonesia',
+    language_preference: profile.language_preference ?? data.language_preference ?? 'Bahasa Indonesia',
   };
+}
+
+function parseBackendErrors(err) {
+  const details = err?.details || err?.data?.error?.details;
+  if (Array.isArray(details) && details.length > 0) {
+    const fieldErrors = {};
+    for (const item of details) {
+      const field = typeof item === 'string' ? item : item?.field;
+      const message = typeof item === 'string' ? (err.message || 'Nilai tidak valid.') : (item?.message || 'Nilai tidak valid.');
+      if (!field) continue;
+      if (field === 'activity_configuration') {
+        fieldErrors.activity_configuration = message;
+      } else if (field === 'additional_prompt') {
+        fieldErrors.additional_prompt = message;
+      } else if (field === 'instructor_profile' || field === 'body') {
+        // top-level container error - keep in alert
+      } else {
+        const cleanField = field.replace(/^instructor_profile\./, '');
+        fieldErrors[cleanField] = message;
+      }
+    }
+    return fieldErrors;
+  }
+  return null;
 }
 
 export default function InstructorSetupForm({
@@ -44,7 +69,7 @@ export default function InstructorSetupForm({
   const [saved, setSaved] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const saveAction = useAction(updateProfile);
+  const saveAction = useAction(updateInstructorSetup);
 
   const currentInitialKey = JSON.stringify(safeInitial);
   if (currentInitialKey !== prevInitialKey) {
@@ -142,12 +167,14 @@ export default function InstructorSetupForm({
     setErrors({});
 
     const payload = {
-      teaching_style: form.teaching_style,
-      expertise: form.expertise,
-      delivery_preference: form.delivery_preference,
+      instructor_profile: {
+        teaching_style: form.teaching_style,
+        expertise: form.expertise,
+        delivery_preference: form.delivery_preference,
+        language_preference: form.language_preference || 'Bahasa Indonesia',
+      },
       additional_prompt: form.additional_prompt,
       activity_configuration: { ...form.activity_configuration },
-      ...(form.language_preference ? { language_preference: form.language_preference } : {}),
     };
 
     if (onSubmit) {
@@ -158,14 +185,25 @@ export default function InstructorSetupForm({
         onSaved?.(result ?? payload);
       } catch (err) {
         setSubmitError(err);
+        const fieldErrors = parseBackendErrors(err);
+        if (fieldErrors && Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+        }
       } finally {
         setIsSubmitting(false);
       }
     } else {
-      const result = await saveAction.run(payload).catch(() => null);
-      if (result) {
-        setSaved(true);
-        onSaved?.(result);
+      try {
+        const result = await saveAction.run(payload);
+        if (result) {
+          setSaved(true);
+          onSaved?.(result);
+        }
+      } catch (err) {
+        const fieldErrors = parseBackendErrors(err);
+        if (fieldErrors && Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+        }
       }
     }
   };
@@ -192,6 +230,8 @@ export default function InstructorSetupForm({
         <Field
           label="Gaya mengajar"
           hint="Contoh: Interaktif, berbasis proyek, banyak studi kasus kontekstual."
+          error={errors.teaching_style}
+          errorId="teaching_style_error"
         >
           <textarea
             id="instructor_teaching_style"
@@ -200,6 +240,9 @@ export default function InstructorSetupForm({
             value={form.teaching_style}
             onChange={update('teaching_style')}
             placeholder="Deskripsikan gaya mengajar yang diinginkan..."
+            aria-describedby={errors.teaching_style ? 'teaching_style_error' : undefined}
+            aria-invalid={errors.teaching_style ? 'true' : undefined}
+            className={errors.teaching_style ? 'border-danger focus:border-danger focus:ring-danger/20' : undefined}
             disabled={isSaving}
           />
         </Field>
@@ -207,6 +250,8 @@ export default function InstructorSetupForm({
         <Field
           label="Bidang keahlian"
           hint="Contoh: Rekayasa Perangkat Lunak, Kecerdasan Buatan, Sistem Terdistribusi."
+          error={errors.expertise}
+          errorId="expertise_error"
         >
           <input
             id="instructor_expertise"
@@ -215,6 +260,9 @@ export default function InstructorSetupForm({
             value={form.expertise}
             onChange={update('expertise')}
             placeholder="Masukkan bidang keahlian Anda..."
+            aria-describedby={errors.expertise ? 'expertise_error' : undefined}
+            aria-invalid={errors.expertise ? 'true' : undefined}
+            className={errors.expertise ? 'border-danger focus:border-danger focus:ring-danger/20' : undefined}
             disabled={isSaving}
           />
         </Field>
@@ -222,6 +270,8 @@ export default function InstructorSetupForm({
         <Field
           label="Preferensi penyampaian"
           hint="Contoh: Penjelasan konsep mendalam secara bertahap, perbanyak contoh kode praktis."
+          error={errors.delivery_preference}
+          errorId="delivery_preference_error"
         >
           <textarea
             id="instructor_delivery_preference"
@@ -230,6 +280,9 @@ export default function InstructorSetupForm({
             value={form.delivery_preference}
             onChange={update('delivery_preference')}
             placeholder="Deskripsikan preferensi penyampaian materi..."
+            aria-describedby={errors.delivery_preference ? 'delivery_preference_error' : undefined}
+            aria-invalid={errors.delivery_preference ? 'true' : undefined}
+            className={errors.delivery_preference ? 'border-danger focus:border-danger focus:ring-danger/20' : undefined}
             disabled={isSaving}
           />
         </Field>

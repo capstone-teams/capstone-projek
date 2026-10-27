@@ -254,7 +254,8 @@ const handlers = {
     if (!/\.(pdf|docx)$/i.test(file.name)) return fail(400, 'INVALID_FILE', 'Format file harus PDF atau DOCX.');
     if (file.size > MAX_UPLOAD_BYTES) return fail(400, 'INVALID_FILE', 'Ukuran file maksimal 10 MB.');
     const rps = { id: nextId('rps'), filename: file.name, size: file.size, status: 'uploaded', created_at: now(), analysis: null };
-    db.rps.push(rps);
+    db.profile = db.instructorSetup;
+  db.rps.push(rps);
     return ok({ id: rps.id, filename: rps.filename, status: rps.status }, 201);
   },
 
@@ -290,33 +291,95 @@ const handlers = {
     return ok(rps.analysis);
   },
 
-  // Instructor profile
-  getProfile: () => ok(db.profile),
+  // Instructor setup
+  getInstructorSetup: () => ok(db.instructorSetup || db.profile),
+  getProfile: () => ok(db.instructorSetup || db.profile),
 
-  updateProfile(_p, { body }) {
-    const textFields = ['teaching_style', 'expertise', 'delivery_preference', 'language_preference', 'content_preference', 'additional_prompt'];
-    const invalid = textFields.filter((f) => body?.[f] != null && typeof body[f] !== 'string');
-    if (invalid.length) return fail(422, 'INVALID_REQUEST', 'Field profil harus berupa teks.', invalid);
-    if (body?.additional_prompt && Array.from(body.additional_prompt).length > 1000) {
-      return fail(422, 'INVALID_REQUEST', 'Prompt tambahan tidak boleh melebihi 1000 karakter.', ['additional_prompt']);
+  updateInstructorSetup(_p, { body }) {
+    if (!body || typeof body !== 'object') {
+      return fail(422, 'INVALID_REQUEST', 'Body request tidak valid.', [
+        { field: 'body', message: 'Body request harus berupa objek JSON.' },
+      ]);
     }
-    textFields.forEach((f) => {
-      if (body?.[f] != null) db.profile[f] = body[f].trim();
-    });
-    if (body?.delivery_preference != null && body?.content_preference == null) {
-      db.profile.content_preference = body.delivery_preference.trim();
-    } else if (body?.content_preference != null && body?.delivery_preference == null) {
-      db.profile.delivery_preference = body.content_preference.trim();
-    }
-    if (body?.activity_configuration && typeof body.activity_configuration === 'object') {
-      const mergedConfig = { ...db.profile.activity_configuration, ...body.activity_configuration };
-      if (!Object.values(mergedConfig).some(Boolean)) {
-        return fail(422, 'INVALID_REQUEST', 'Minimal satu jenis aktivitas pembelajaran harus diaktifkan.', ['activity_configuration']);
+
+    const issues = [];
+
+    // Validasi instructor_profile jika ada
+    const profileData = body.instructor_profile || (body.teaching_style !== undefined ? body : null);
+    if (body.instructor_profile !== undefined) {
+      if (body.instructor_profile === null || typeof body.instructor_profile !== 'object') {
+        issues.push({ field: 'instructor_profile', message: 'Field instructor_profile harus berupa objek.' });
+      } else {
+        const textFields = ['teaching_style', 'expertise', 'delivery_preference', 'language_preference'];
+        for (const f of textFields) {
+          const val = body.instructor_profile[f];
+          if (val !== undefined && val !== null && typeof val !== 'string') {
+            issues.push({ field: 'instructor_profile.' + f, message: 'Field ' + f + ' harus berupa teks.' });
+          }
+        }
       }
-      db.profile.activity_configuration = mergedConfig;
     }
-    db.profile.updated_at = now();
-    return ok(db.profile);
+
+    // Validasi additional_prompt jika ada
+    if (body.additional_prompt !== undefined && body.additional_prompt !== null) {
+      if (typeof body.additional_prompt !== 'string') {
+        issues.push({ field: 'additional_prompt', message: 'Field additional_prompt harus berupa teks.' });
+      } else if (Array.from(body.additional_prompt).length > 2000) {
+        issues.push({ field: 'additional_prompt', message: 'maksimal 2000 karakter' });
+      }
+    }
+
+    // Validasi activity_configuration jika ada
+    const currentConfig = db.instructorSetup?.activity_configuration || db.profile?.activity_configuration || {};
+    let candidateConfig = { ...currentConfig };
+    if (body.activity_configuration !== undefined) {
+      if (body.activity_configuration === null || typeof body.activity_configuration !== 'object') {
+        issues.push({ field: 'activity_configuration', message: 'Field activity_configuration harus berupa objek.' });
+      } else {
+        candidateConfig = { ...candidateConfig, ...body.activity_configuration };
+        if (!Object.values(candidateConfig).some(Boolean)) {
+          issues.push({ field: 'activity_configuration', message: 'Minimal satu jenis aktivitas pembelajaran harus aktif.' });
+        }
+      }
+    }
+
+    if (issues.length > 0) {
+      return fail(422, 'INVALID_REQUEST', 'Data request tidak valid.', issues);
+    }
+
+    // Update state
+    const setup = db.instructorSetup || db.profile;
+    if (profileData && typeof profileData === 'object') {
+      const target = setup.instructor_profile || setup;
+      ['teaching_style', 'expertise', 'delivery_preference', 'language_preference'].forEach((f) => {
+        if (profileData[f] !== undefined && profileData[f] !== null) {
+          target[f] = profileData[f].trim();
+          setup[f] = profileData[f].trim();
+        }
+      });
+      if (profileData.delivery_preference != null && profileData.content_preference == null) {
+        target.content_preference = profileData.delivery_preference.trim();
+        setup.content_preference = target.content_preference;
+      } else if (profileData.content_preference != null && profileData.delivery_preference == null) {
+        target.delivery_preference = profileData.content_preference.trim();
+        setup.delivery_preference = target.delivery_preference;
+      }
+    }
+
+    if (body.additional_prompt !== undefined && body.additional_prompt !== null) {
+      setup.additional_prompt = body.additional_prompt.trim();
+    }
+
+    if (body.activity_configuration && typeof body.activity_configuration === 'object') {
+      setup.activity_configuration = candidateConfig;
+    }
+
+    setup.updated_at = now();
+    return ok(setup);
+  },
+
+  updateProfile(p, ctx) {
+    return mockServer.updateInstructorSetup(p, ctx);
   },
 
   // Course
@@ -618,6 +681,8 @@ const ROUTES = [
   ['GET', '/rps/:rpsId', 'getRps'],
   ['POST', '/rps/:rpsId/process', 'processRps'],
   ['GET', '/rps/:rpsId/analysis', 'getRpsAnalysis'],
+  ['GET', '/instructors/me/setup', 'getInstructorSetup'],
+  ['PUT', '/instructors/me/setup', 'updateInstructorSetup'],
   ['GET', '/instructors/me/profile', 'getProfile'],
   ['PUT', '/instructors/me/profile', 'updateProfile'],
   ['GET', '/courses', 'listCourses'],
@@ -746,12 +811,13 @@ export function resetMockDb() {
     runs: [],
     executions: {},
     verifications: {},
-    profile: {
-      teaching_style: 'Interaktif dengan studi kasus dan praktikum',
-      expertise: 'Rekayasa Perangkat Lunak',
-      delivery_preference: 'Materi ringkas, banyak contoh kode',
-      language_preference: 'Bahasa Indonesia',
-      content_preference: 'Materi ringkas, banyak contoh kode',
+    instructorSetup: {
+      instructor_profile: {
+        teaching_style: 'Interaktif dengan studi kasus dan praktikum',
+        expertise: 'Rekayasa Perangkat Lunak',
+        delivery_preference: 'Materi ringkas, banyak contoh kode',
+        language_preference: 'Bahasa Indonesia',
+      },
       additional_prompt: '',
       activity_configuration: {
         learning_material: true,
@@ -760,6 +826,10 @@ export function resetMockDb() {
         quiz: false,
       },
       updated_at: now(),
+      teaching_style: 'Interaktif dengan studi kasus dan praktikum',
+      expertise: 'Rekayasa Perangkat Lunak',
+      delivery_preference: 'Materi ringkas, banyak contoh kode',
+      language_preference: 'Bahasa Indonesia',
     },
   };
 
@@ -772,6 +842,7 @@ export function resetMockDb() {
     analysis: null,
   };
   rps.analysis = buildRpsAnalysis(rps.id);
+  db.profile = db.instructorSetup;
   db.rps.push(rps);
 
   // Course selesai, untuk contoh tampilan akhir.

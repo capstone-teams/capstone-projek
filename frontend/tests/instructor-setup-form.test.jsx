@@ -9,12 +9,14 @@ import {
 } from '../src/components/ai/instructorSetupConstants';
 import TeachingPreferencesCard from '../src/components/ai/TeachingPreferencesCard';
 
-const mockProfileService = vi.hoisted(() => ({
+const mockInstructorService = vi.hoisted(() => ({
+  getInstructorSetup: vi.fn(),
+  updateInstructorSetup: vi.fn(),
   getProfile: vi.fn(),
   updateProfile: vi.fn(),
 }));
 
-vi.mock('../src/services/profileService', () => mockProfileService);
+vi.mock('../src/services/instructorService', () => mockInstructorService);
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -131,11 +133,13 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(container.querySelector('form')).toBeNull();
   });
 
-  it('populates fields from custom initial props', async () => {
+  it('populates fields from custom initial props with nested DTO', async () => {
     const initial = {
-      teaching_style: 'Studi kasus interaktif',
-      expertise: 'Kecerdasan Buatan',
-      delivery_preference: 'Penjelasan konsep secara bertahap',
+      instructor_profile: {
+        teaching_style: 'Studi kasus interaktif',
+        expertise: 'Kecerdasan Buatan',
+        delivery_preference: 'Penjelasan konsep secara bertahap',
+      },
       additional_prompt: 'Perbanyak analogi dunia nyata.',
       activity_configuration: {
         learning_material: true,
@@ -159,6 +163,29 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(container.querySelector('input[name="learning_resource"]').checked).toBe(true);
     expect(container.querySelector('input[name="assignment"]').checked).toBe(false);
     expect(container.querySelector('input[name="quiz"]').checked).toBe(true);
+  });
+
+  it('populates fields from legacy flat initial props fallback', async () => {
+    const initial = {
+      teaching_style: 'Kuliah klasikal',
+      expertise: 'Algoritma',
+      delivery_preference: 'Slide presentasi terstruktur',
+      additional_prompt: 'Fokus pemahaman dasar.',
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: true,
+        quiz: false,
+      },
+    };
+
+    await renderComponent(<InstructorSetupForm initial={initial} />);
+
+    expect(container.querySelector('textarea[name="teaching_style"]').value).toBe('Kuliah klasikal');
+    expect(container.querySelector('input[name="expertise"]').value).toBe('Algoritma');
+    expect(container.querySelector('textarea[name="delivery_preference"]').value).toBe('Slide presentasi terstruktur');
+    expect(container.querySelector('textarea[name="additional_prompt"]').value).toBe('Fokus pemahaman dasar.');
+    expect(container.querySelector('input[name="assignment"]').checked).toBe(true);
   });
 
   it('updates character counter in real time when typing in additional prompt', async () => {
@@ -356,9 +383,12 @@ describe('FE-07.1 InstructorSetupForm', () => {
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith({
-      teaching_style: 'Interaktif, problem-based learning',
-      expertise: 'Software Engineering & Cloud Computing',
-      delivery_preference: 'Banyak studi kasus dunia kerja',
+      instructor_profile: {
+        teaching_style: 'Interaktif, problem-based learning',
+        expertise: 'Software Engineering & Cloud Computing',
+        delivery_preference: 'Banyak studi kasus dunia kerja',
+        language_preference: 'Bahasa Indonesia',
+      },
       additional_prompt: 'Sertakan contoh dengan Docker dan microservices.',
       activity_configuration: {
         learning_material: true,
@@ -366,7 +396,6 @@ describe('FE-07.1 InstructorSetupForm', () => {
         assignment: false,
         quiz: true,
       },
-      language_preference: 'Bahasa Indonesia',
     });
 
     expect(onSaved).toHaveBeenCalledWith({ success: true });
@@ -454,10 +483,13 @@ describe('FE-07.1 InstructorSetupForm', () => {
   });
 
   it('integrates with TeachingPreferencesCard seamlessly', async () => {
-    mockProfileService.getProfile.mockResolvedValue({
-      teaching_style: 'Diskusi aktif',
-      expertise: 'Basis Data',
-      delivery_preference: 'Banyak latihan query',
+    mockInstructorService.getInstructorSetup.mockResolvedValue({
+      instructor_profile: {
+        teaching_style: 'Diskusi aktif',
+        expertise: 'Basis Data',
+        delivery_preference: 'Banyak latihan query',
+        language_preference: 'Bahasa Indonesia',
+      },
       additional_prompt: 'Fokus pada PostgreSQL',
       activity_configuration: {
         learning_material: true,
@@ -503,6 +535,90 @@ describe('FE-07.1 InstructorSetupForm', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('maps backend 422 INVALID_REQUEST error details to inline field errors and top alert', async () => {
+    const error422 = new Error('Data request tidak valid.');
+    error422.status = 422;
+    error422.code = 'INVALID_REQUEST';
+    error422.details = [
+      { field: 'activity_configuration', message: 'Minimal satu jenis aktivitas pembelajaran harus aktif.' },
+      { field: 'additional_prompt', message: 'maksimal 2000 karakter' },
+      { field: 'instructor_profile.teaching_style', message: 'Gaya mengajar harus berupa teks.' },
+    ];
+
+    const onSubmit = vi.fn().mockRejectedValue(error422);
+    await renderComponent(<InstructorSetupForm onSubmit={onSubmit} />);
+
+    await act(async () => {
+      container.querySelector('form').requestSubmit();
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    // Top alert shows error message
+    const alertEl = container.querySelector('[role="alert"]');
+    expect(alertEl).not.toBeNull();
+    expect(alertEl.textContent).toContain('Data request tidak valid.');
+
+    // Inline errors on individual fields
+    const activityErr = container.querySelector('#activity_configuration_error');
+    expect(activityErr).not.toBeNull();
+    expect(activityErr.textContent).toContain('Minimal satu jenis aktivitas pembelajaran harus aktif.');
+
+    const promptErr = container.querySelector('#additional_prompt_error');
+    expect(promptErr).not.toBeNull();
+    expect(promptErr.textContent).toContain('maksimal 2000 karakter');
+
+    const teachingStyleErr = container.querySelector('#teaching_style_error');
+    expect(teachingStyleErr).not.toBeNull();
+    expect(teachingStyleErr.textContent).toContain('Gaya mengajar harus berupa teks.');
+
+    const teachingStyleInput = container.querySelector('textarea[name="teaching_style"]');
+    expect(teachingStyleInput.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('saves via updateInstructorSetup default hook when no onSubmit prop is provided', async () => {
+    const onSaved = vi.fn();
+    mockInstructorService.updateInstructorSetup.mockResolvedValueOnce({
+      instructor_profile: {
+        teaching_style: 'Inkuiri',
+        expertise: 'Jaringan',
+        delivery_preference: 'Praktikum lab',
+        language_preference: 'Bahasa Indonesia',
+      },
+      additional_prompt: 'Gunakan Wireshark.',
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: false,
+        quiz: false,
+      },
+      updated_at: '2026-10-27T10:00:00Z',
+    });
+
+    await renderComponent(<InstructorSetupForm onSaved={onSaved} />);
+
+    await act(async () => {
+      changeText(container.querySelector('textarea[name="teaching_style"]'), 'Inkuiri');
+      changeText(container.querySelector('textarea[name="additional_prompt"]'), 'Gunakan Wireshark.');
+    });
+
+    await act(async () => {
+      container.querySelector('form').requestSubmit();
+    });
+
+    expect(mockInstructorService.updateInstructorSetup).toHaveBeenCalledTimes(1);
+    expect(mockInstructorService.updateInstructorSetup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructor_profile: expect.objectContaining({
+          teaching_style: 'Inkuiri',
+        }),
+        additional_prompt: 'Gunakan Wireshark.',
+      })
+    );
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Profil tersimpan.');
   });
 
   it('provides backward compatibility via TeachingProfileForm wrapper', async () => {

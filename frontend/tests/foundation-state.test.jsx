@@ -7,9 +7,15 @@ import { AuthContext } from '../src/context/authContext';
 import MyCoursesPage from '../src/pages/moodle/MyCoursesPage';
 import TeachingPreferencesCard from '../src/components/ai/TeachingPreferencesCard';
 
-const services = vi.hoisted(() => ({ getCoursesByClassification: vi.fn(), getProfile: vi.fn(), updateProfile: vi.fn() }));
+const services = vi.hoisted(() => ({
+  getCoursesByClassification: vi.fn(),
+  getInstructorSetup: vi.fn(),
+  updateInstructorSetup: vi.fn(),
+  getProfile: vi.fn(),
+  updateProfile: vi.fn(),
+}));
 vi.mock('../src/services/moodle/moodleApi', () => services);
-vi.mock('../src/services/profileService', () => services);
+vi.mock('../src/services/instructorService', () => services);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let node, root, state;
 const user = { id: 3, fullname: 'Rina Kartika', username: 'dosen', teacherCourseIds: [2], role: 'dosen' };
@@ -107,8 +113,14 @@ describe('FE-04.1 pages using shared states', () => {
 
   it('profile form shows disabled pending action, failure, and saved feedback', async () => {
     const pending = deferred();
-    services.getProfile.mockResolvedValue({ teaching_style: 'Diskusi', language_preference: 'Bahasa Indonesia' });
-    services.updateProfile.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ teaching_style: 'Diskusi' });
+    services.getInstructorSetup.mockResolvedValue({
+      instructor_profile: { teaching_style: 'Diskusi', language_preference: 'Bahasa Indonesia' },
+      teaching_style: 'Diskusi',
+      language_preference: 'Bahasa Indonesia',
+    });
+    services.updateInstructorSetup.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({
+      instructor_profile: { teaching_style: 'Diskusi' },
+    });
     await render(<TeachingPreferencesCard />);
     await act(async () => node.querySelector('form').requestSubmit());
     expect(node.querySelector('button[type="submit"]').disabled).toBe(true);
