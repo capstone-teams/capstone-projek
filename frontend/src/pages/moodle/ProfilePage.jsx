@@ -32,11 +32,12 @@ export default function ProfilePage() {
       <div className="grid--2">
         <Card
           title="Detail pengguna"
-          actions={
-            <a href={moodleUrl(`/user/edit.php?id=${user.id}`)} target="_blank" rel="noreferrer" className="text-sm">
-              Edit profil di Moodle ↗
-            </a>
-          }
+// tidak perlu karena link ke edit profil Moodle
+          // actions={
+          //   <a href={moodleUrl(`/user/edit.php?id=${user.id}`)} target="_blank" rel="noreferrer" className="text-sm">
+          //     Edit profil di Moodle ↗
+          //   </a>
+          // }
         >
           <ErrorAlert error={profile.error} />
           {profile.loading && !p ? (

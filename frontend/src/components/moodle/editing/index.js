@@ -2,9 +2,10 @@
 //   import { EditModeToggle, ActivityEditMenu } from '../components/moodle/editing';
 export { default as ActionMenu } from './ActionMenu';
 export { default as ActivityEditMenu } from './ActivityEditMenu';
+export { default as ActivityChooser } from './ActivityChooser';
 export { default as ActivityFormActions } from './ActivityFormActions';
 export { default as AddActivityModal } from './AddActivityModal';
-export { default as AssignmentForm } from './AssignmentForm';
+export { AssignmentForm, QuizForm } from './DatedActivityForm';
 export { default as DeleteActivityModal } from './DeleteActivityModal';
 export { default as EditModeToggle } from './EditModeToggle';
 export { default as InlineNameEditor } from './InlineNameEditor';

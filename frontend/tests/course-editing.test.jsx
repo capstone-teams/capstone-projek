@@ -88,6 +88,10 @@ describe('Edit mode: service dan mock Moodle', () => {
     expect(week1.modules.at(-2)).toMatchObject({ id: cmid, modname: 'assign', name: 'Tugas Baru', dates: [{ label: 'Opened:', timestamp: 1000 }, { label: 'Due:', timestamp: 2000 }] });
     expect(week1.modules.at(-1)).toMatchObject({ modname: 'label', name: 'Baris satu baris dua', description: '<p>Baris satu<br>baris dua</p>' });
 
+    await createActivity(2, 1, 'quiz', { name: 'Kuis Baru', intro: '', timeopen: 1000, timeclose: 2000 });
+    expect((await getCourseContents(2))[1].modules.at(-1)).toMatchObject({ modname: 'quiz', name: 'Kuis Baru', dates: [{ label: 'Opened:', timestamp: 1000 }, { label: 'Closes:', timestamp: 2000 }] });
+    await expect(createActivity(2, 1, 'quiz', { name: ' ' })).rejects.toMatchObject({ code: 'invalidparameter' });
+    await expect(createActivity(2, 1, 'quiz', { name: 'X', timeopen: 2000, timeclose: 1000 })).rejects.toMatchObject({ message: 'Waktu ditutup harus setelah waktu dibuka.' });
     await expect(createActivity(2, 1, 'assign', { name: '  ' })).rejects.toMatchObject({ code: 'invalidparameter' });
     await expect(createActivity(2, 1, 'assign', { name: 'X', allowsubmissionsfromdate: 2000, duedate: 1000 })).rejects.toMatchObject({ message: 'Tenggat harus setelah tanggal dibuka.' });
     await expect(createActivity(2, 1, 'label', { text: '' })).rejects.toMatchObject({ code: 'invalidparameter' });
@@ -210,10 +214,15 @@ describe('Edit mode: halaman kursus', () => {
 
   async function openChooser(sectionNumber = 0) {
     await openEditMode();
-    await click([...container.querySelectorAll(`#section-${sectionNumber} button`)].find((b) => b.textContent.includes('Tambah aktivitas atau sumber')));
+    await openAdd(sectionNumber);
   }
   const dialog = () => q('dialog');
-  const chooseType = (label) => click([...dialog().querySelectorAll('[aria-label="Jenis aktivitas"] button')].find((b) => b.textContent.startsWith(label)));
+  const tiles = () => [...dialog().querySelectorAll('ul[aria-label="Activities and resources"] > li > button')];
+  const tileNames = () => tiles().map((b) => b.textContent);
+  const chooseType = (name) => click(tiles().find((b) => b.textContent === name));
+  const openAdd = (sectionNumber = 0) =>
+    click([...container.querySelectorAll(`#section-${sectionNumber} button`)].find((b) => b.textContent.includes('Tambah aktivitas atau sumber')));
+  const tab = (name) => click([...dialog().querySelectorAll('[role="tab"]')].find((b) => b.textContent === name));
   function fill(field, value) {
     const proto = field.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(field, value);
@@ -221,17 +230,57 @@ describe('Edit mode: halaman kursus', () => {
   }
   const inputByLabel = (text) => [...dialog().querySelectorAll('label')].find((l) => l.textContent.startsWith(text)).querySelector('input, textarea');
 
-  it('pemilih aktivitas menampilkan Tugas serta Teks dan media untuk section tersebut', async () => {
+  it('pemilih aktivitas meniru dialog Moodle: pencarian, tab, dan tiga jenis', async () => {
     await openChooser();
-    expect(container.textContent).toContain('Tambah aktivitas atau sumber ke "General"');
-    const types = [...dialog().querySelectorAll('[aria-label="Jenis aktivitas"] button .font-semibold')].map((el) => el.textContent);
-    expect(types).toEqual(['Tugas', 'Teks dan media']);
+    expect(dialog().querySelector('h2').textContent).toBe('Add an activity or resource');
+    expect([...dialog().querySelectorAll('[role="tab"]')].map((b) => b.textContent)).toEqual(['Starred', 'All', 'Activities', 'Resources', 'Recommended']);
+    expect(tileNames()).toEqual(['Assignment', 'Quiz', 'Text and media area']);
+    await tab('Activities');
+    expect(tileNames()).toEqual(['Assignment', 'Quiz']);
+    await tab('Resources');
+    expect(tileNames()).toEqual(['Text and media area']);
+    await tab('Recommended');
+    expect(tileNames()).toEqual(['Assignment', 'Quiz', 'Text and media area']);
+
+    // Pencarian mengabaikan tab dan menyembunyikannya, seperti di Moodle.
+    const search = dialog().querySelector('input[type="search"]');
+    await act(async () => fill(search, 'qui'));
+    expect(tileNames()).toEqual(['Quiz']);
+    expect(dialog().querySelector('[role="tablist"]')).toBeNull();
+    await act(async () => fill(search, 'zzz'));
+    expect(dialog().textContent).toContain('No results for "zzz".');
+  });
+
+  it('bintang menentukan isi tab Starred dan tersimpan untuk pengguna', async () => {
+    await openChooser();
+    await click(dialog().querySelector('[aria-label="Unstar Quiz"]'));
+    expect(tileNames()).toEqual(['Assignment', 'Text and media area']);
+    await tab('All');
+    expect(tileNames()).toEqual(['Assignment', 'Quiz', 'Text and media area']);
+    expect(dialog().querySelector('[aria-label="Star Quiz"]').getAttribute('aria-pressed')).toBe('false');
+
+    // Tutup lalu buka lagi: pilihan bintang bertahan.
+    await click(dialog().querySelector('[aria-label="Tutup"]'));
+    await waitFor(() => !q('dialog'), 'dialog tertutup');
+    await openAdd();
+    expect(tileNames()).toEqual(['Assignment', 'Text and media area']);
+  });
+
+  it('tombol info menampilkan deskripsi dan dapat langsung menambahkan', async () => {
+    await openChooser();
+    await click(dialog().querySelector('[aria-label="Assignment info"]'));
+    expect(dialog().textContent).toContain('set tasks, collect students');
+    await click(button('← Back'));
+    expect(tileNames()).toHaveLength(3);
+    await click(dialog().querySelector('[aria-label="Assignment info"]'));
+    await click(button('Add'));
+    expect(dialog().querySelector('h2').textContent).toBe('Add a new Assignment to General');
   });
 
   it('membuat tugas lewat formulir dengan validasi', async () => {
     await openChooser(1);
-    await chooseType('Tugas');
-    expect(dialog().textContent).toContain('Tambah Tugas ke "Minggu 1: Pengantar Pemrograman Web"');
+    await chooseType('Assignment');
+    expect(dialog().querySelector('h2').textContent).toBe('Add a new Assignment to Minggu 1: Pengantar Pemrograman Web');
     expect(inputByLabel('Nama tugas').closest('label').textContent).toContain('(wajib diisi)');
 
     await act(async () => dialog().querySelector('form').requestSubmit());
@@ -258,9 +307,34 @@ describe('Edit mode: halaman kursus', () => {
     expect(row.textContent).toContain('Tenggat:');
   });
 
+  it('membuat quiz lewat formulir dengan validasi waktu buka dan tutup', async () => {
+    await openChooser(1);
+    await chooseType('Quiz');
+    expect(dialog().querySelector('h2').textContent).toBe('Add a new Quiz to Minggu 1: Pengantar Pemrograman Web');
+    expect([...dialog().querySelectorAll('label')].some((l) => l.textContent.startsWith('Nilai maksimum'))).toBe(false);
+
+    await act(async () => dialog().querySelector('form').requestSubmit());
+    expect(dialog().textContent).toContain('Nama kuis wajib diisi.');
+    await act(async () => {
+      fill(inputByLabel('Nama kuis'), 'Kuis Pengantar HTTP');
+      fill(inputByLabel('Dibuka'), '2026-11-02T08:00');
+      fill(inputByLabel('Ditutup'), '2026-11-01T08:00');
+    });
+    await act(async () => dialog().querySelector('form').requestSubmit());
+    expect(dialog().textContent).toContain('Waktu ditutup harus setelah waktu dibuka.');
+
+    await act(async () => fill(inputByLabel('Ditutup'), '2026-11-09T08:00'));
+    await act(async () => dialog().querySelector('form').requestSubmit());
+    await waitFor(() => q('#section-1 [aria-label="Aksi untuk Kuis Pengantar HTTP"]'), 'quiz baru di Minggu 1');
+    expect(container.textContent).toContain('Kuis ditambahkan.');
+    const row = q('#section-1 [aria-label="Aksi untuk Kuis Pengantar HTTP"]').closest('li');
+    expect(row.textContent).toContain('Dibuka:');
+    expect(row.textContent).toContain('Ditutup:');
+  });
+
   it('membuat teks dan media; isi wajib diisi dan HTML tidak dijalankan', async () => {
     await openChooser();
-    await chooseType('Teks dan media');
+    await chooseType('Text and media area');
     await act(async () => dialog().querySelector('form').requestSubmit());
     expect(dialog().textContent).toContain('Isi teks wajib diisi.');
     await act(async () => fill(inputByLabel('Isi'), 'Selamat datang di kelas.\n\n<b>Jadwal</b> kuliah Senin.'));
@@ -274,10 +348,10 @@ describe('Edit mode: halaman kursus', () => {
 
   it('kembali ke pilihan jenis tanpa menyimpan apa pun', async () => {
     await openChooser();
-    await chooseType('Tugas');
+    await chooseType('Assignment');
     await act(async () => fill(inputByLabel('Nama tugas'), 'Draf'));
     await click(button('← Pilih jenis lain'));
-    expect(dialog().querySelector('[aria-label="Jenis aktivitas"]')).not.toBeNull();
+    expect(dialog().querySelector('ul[aria-label="Activities and resources"]')).not.toBeNull();
     expect(container.textContent).not.toContain('Tugas ditambahkan.');
     expect(findCm(await getCourseContents(2), 'Draf')).toBeUndefined();
   });

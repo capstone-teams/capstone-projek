@@ -1,50 +1,46 @@
 import { useState } from 'react';
 import { Modal } from '../../ui';
-import ActivityIcon from '../ActivityIcon';
-import AssignmentForm from './AssignmentForm';
+import ActivityChooser from './ActivityChooser';
+import { AssignmentForm, QuizForm } from './DatedActivityForm';
 import TextMediaForm from './TextMediaForm';
 import { CAN_CREATE_IN_APP, moodleEditUrl } from '../../../services/moodle/courseEditing';
 
-// Jenis yang ditampilkan di pemilih. Tahap ini baru Tugas dan Teks dan media; jenis lain
-// cukup ditambahkan ke daftar ini beserta formulirnya.
+// Jenis aktivitas di pemilih. Warna ikon dan teks mengikuti dialog "Add an activity or resource" Moodle.
+// `recommended` di Moodle diatur admin situs; di sini ditetapkan tetap.
 const ACTIVITY_TYPES = [
   {
     modname: 'assign',
-    label: 'Tugas',
-    description: 'Mahasiswa mengunggah atau menulis jawaban untuk dinilai.',
+    name: 'Assignment',
+    kind: 'activity',
+    recommended: true,
+    iconClass: 'bg-[#ee71ab]',
+    description: 'Teachers can set tasks, collect students\' work and give grades and feedback.',
     Form: AssignmentForm,
     successMessage: 'Tugas ditambahkan.',
   },
   {
+    modname: 'quiz',
+    name: 'Quiz',
+    kind: 'activity',
+    recommended: true,
+    iconClass: 'bg-[#ee71ab]',
+    description: 'Teachers can create quizzes that students attempt and that are graded automatically.',
+    Form: QuizForm,
+    successMessage: 'Kuis ditambahkan.',
+  },
+  {
     modname: 'label',
-    label: 'Teks dan media',
-    description: 'Teks, gambar, atau video yang tampil langsung di halaman kursus.',
+    name: 'Text and media area',
+    kind: 'resource',
+    recommended: true,
+    iconClass: 'bg-[#40a6e7]',
+    description: 'Add text, images or video that appear directly on the course page.',
     Form: TextMediaForm,
     successMessage: 'Teks dan media ditambahkan.',
   },
 ];
 
-function TypeChooser({ onChoose }) {
-  return (
-    <ul className="grid grid-cols-2 gap-3" aria-label="Jenis aktivitas">
-      {ACTIVITY_TYPES.map((type) => (
-        <li key={type.modname}>
-          <button
-            type="button"
-            className="flex h-full w-full cursor-pointer flex-col items-center gap-2 rounded-lg border border-line bg-white p-4 text-center text-ink transition-colors hover:border-primary hover:bg-primary-light focus-visible:outline-2 focus-visible:outline-primary"
-            onClick={() => onChoose(type)}
-          >
-            <ActivityIcon modname={type.modname} src={`/moodle/mod/${type.modname}.svg`} />
-            <span className="font-semibold">{type.label}</span>
-            <span className="text-xs text-muted">{type.description}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** Tambah aktivitas ke section: pilih jenis, lalu isi formulirnya di aplikasi. */
+/** Tambah aktivitas ke section: pilih jenis di pemilih, lalu isi formulirnya. */
 export default function AddActivityModal({ open, courseId, section, editing, onClose }) {
   const [type, setType] = useState(null);
   const [error, setError] = useState(null);
@@ -55,9 +51,8 @@ export default function AddActivityModal({ open, courseId, section, editing, onC
     if (ok) onClose();
   };
 
-  const title = type ? `Tambah ${type.label} ke "${section.name}"` : `Tambah aktivitas atau sumber ke "${section.name}"`;
   return (
-    <Modal open={open} title={title} onClose={onClose}>
+    <Modal open={open} title={type ? `Add a new ${type.name} to ${section.name}` : 'Add an activity or resource'} onClose={onClose} wide={!type}>
       {type ? (
         <type.Form
           canCreate={CAN_CREATE_IN_APP}
@@ -68,7 +63,7 @@ export default function AddActivityModal({ open, courseId, section, editing, onC
           onBack={() => { setType(null); setError(null); }}
         />
       ) : (
-        <TypeChooser onChoose={setType} />
+        <ActivityChooser types={ACTIVITY_TYPES} onChoose={setType} />
       )}
     </Modal>
   );

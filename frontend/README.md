@@ -255,9 +255,13 @@ Saat Mode edit aktif:
 - menu ⋮ section: Edit pengaturan dan Sembunyikan/Tampilkan section (section
   umum tidak dapat disembunyikan);
 - tombol "Tambah aktivitas atau sumber" di setiap section dan "Tambah section"
-  di akhir kursus. Pemilih aktivitas saat ini berisi Tugas (nama, deskripsi,
-  tanggal dibuka, tenggat, nilai maksimum) dan Teks dan media (isi teks); keduanya
-  diisi lewat formulir di aplikasi dengan validasi field wajib;
+  di akhir kursus. Tombol itu membuka dialog "Add an activity or resource" seperti
+  di Moodle: kolom pencarian, tab Starred/All/Activities/Resources/Recommended,
+  dan kartu dengan bintang (tersimpan per pengguna) serta info. Jenis yang tersedia
+  baru Assignment (nama, deskripsi, tanggal dibuka, tenggat, nilai maksimum), Quiz
+  (nama, deskripsi, waktu dibuka dan ditutup), dan Text and media area (isi teks);
+  masing-masing diisi lewat formulir di aplikasi dengan validasi field wajib. Jenis
+  baru ditambahkan di `ACTIVITY_TYPES` pada `AddActivityModal.jsx`;
 - badge "Disembunyikan dari mahasiswa" pada item tersembunyi.
 
 Pindahkan memakai dialog pilihan section dan posisi sehingga dapat dipakai dengan

@@ -77,8 +77,9 @@ export function renameSection(courseFormat, sectionId, name) {
 export const CAN_CREATE_IN_APP = USE_MOODLE_MOCK;
 
 /**
- * fields Tugas: { name, intro, allowsubmissionsfromdate, duedate, grade } (tanggal = Unix detik, 0 = tanpa tanggal).
- * fields Teks dan media: { text }.
+ * fields Assignment: { name, intro, allowsubmissionsfromdate, duedate, grade } (tanggal = Unix detik, 0 = tanpa tanggal).
+ * fields Quiz: { name, intro, timeopen, timeclose }.
+ * fields Text and media area: { text }.
  */
 export async function createActivity(courseId, sectionNumber, modname, fields) {
   if (!CAN_CREATE_IN_APP) {

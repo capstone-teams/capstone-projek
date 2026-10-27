@@ -63,14 +63,15 @@ for (const width of [375, 1440]) {
   });
 }
 
-test('teacher creates an assignment and a text block from the activity chooser', async ({ page }) => {
+test('teacher creates an assignment, a quiz and a text block from the activity chooser', async ({ page }) => {
   await seed(page);
   await page.goto('/course/2');
   await page.getByRole('switch', { name: 'Mode edit' }).click();
   const week1 = page.locator('#section-1');
   await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: /^Tugas/ }).click();
+  await expect(dialog.getByRole('heading', { name: 'Add an activity or resource' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Assignment', exact: true }).click();
   await dialog.getByRole('button', { name: 'Simpan tugas' }).click();
   await expect(dialog.getByText('Nama tugas wajib diisi.', { exact: true })).toBeVisible();
   await dialog.getByLabel(/^Nama tugas/).fill('Tugas Ringkasan HTTP');
@@ -81,7 +82,13 @@ test('teacher creates an assignment and a text block from the activity chooser',
   await expect(created).toBeVisible();
 
   await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
-  await dialog.getByRole('button', { name: /^Teks dan media/ }).click();
+  await dialog.getByRole('button', { name: 'Quiz', exact: true }).click();
+  await dialog.getByLabel(/^Nama kuis/).fill('Kuis Pengantar HTTP');
+  await dialog.getByRole('button', { name: 'Simpan kuis' }).click();
+  await expect(week1.getByRole('link', { name: 'Kuis Pengantar HTTP', exact: true })).toBeVisible();
+
+  await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
+  await dialog.getByRole('button', { name: 'Text and media area', exact: true }).click();
   await dialog.getByLabel(/^Isi/).fill('Kumpulkan tugas sebelum tenggat.');
   await dialog.getByRole('button', { name: 'Simpan', exact: true }).click();
   await expect(week1.getByText('Kumpulkan tugas sebelum tenggat.', { exact: true })).toBeVisible();
@@ -89,6 +96,20 @@ test('teacher creates an assignment and a text block from the activity chooser',
   // Tugas baru dapat dibuka seperti aktivitas lain.
   await created.click();
   await expect(page.getByRole('heading', { name: 'Tugas Ringkasan HTTP' })).toBeVisible();
+});
+
+test('activity chooser fits a phone screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 700 });
+  await seed(page);
+  await page.goto('/course/2');
+  await page.getByRole('switch', { name: 'Mode edit' }).click();
+  await page.locator('#section-1').getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Text and media area', exact: true })).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(375);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test('students and non-editing teachers do not get Edit mode', async ({ page }) => {

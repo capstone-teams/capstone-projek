@@ -511,7 +511,7 @@ const editingHandlers = {
   },
   // Bukan fungsi Moodle: Moodle core belum punya Web Service untuk membuat assign/label
   // beserta isinya (core_courseformat_create_module hanya untuk modul FEATURE_QUICKCREATE).
-  mock_course_create_activity(user, { courseid, sectionnum, modname, name, intro = '', text = '', allowsubmissionsfromdate = 0, duedate = 0, grade = 100 }) {
+  mock_course_create_activity(user, { courseid, sectionnum, modname, name, intro = '', text = '', allowsubmissionsfromdate = 0, duedate = 0, grade = 100, timeopen = 0, timeclose = 0 }) {
     const { error, course, sections } = editableCourse(user, courseid);
     if (error) return error;
     const section = sections.find((s) => s.section === Number(sectionnum));
@@ -524,6 +524,16 @@ const editingHandlers = {
       const dates = [...(opens ? [{ label: 'Opened:', timestamp: opens }] : []), ...(due ? [{ label: 'Due:', timestamp: due }] : [])];
       const cm = mod(course, section.section, 'assign', name.trim(), intro, { dates });
       ASSIGNS.push({ id: cm.instance, cmid: cm.id, course: course.id, name: cm.name, intro, duedate: due, allowsubmissionsfromdate: opens, grade: Number(grade) || 100, cutoffdate: 0 });
+      section.modules.push(cm);
+      return { cmid: cm.id };
+    }
+    if (modname === 'quiz') {
+      if (!String(name ?? '').trim()) return wsError('invalidparameter', 'Nama kuis wajib diisi.');
+      const opens = Number(timeopen) || 0;
+      const closes = Number(timeclose) || 0;
+      if (opens && closes && closes <= opens) return wsError('invalidparameter', 'Waktu ditutup harus setelah waktu dibuka.');
+      const dates = [...(opens ? [{ label: 'Opened:', timestamp: opens }] : []), ...(closes ? [{ label: 'Closes:', timestamp: closes }] : [])];
+      const cm = mod(course, section.section, 'quiz', name.trim(), intro, { dates });
       section.modules.push(cm);
       return { cmid: cm.id };
     }
