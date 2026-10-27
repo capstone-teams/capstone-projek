@@ -10,7 +10,8 @@ import { login as backendLogin } from '../src/services/authService';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
 import { resetMockMoodle } from '../src/services/mock/mockMoodle';
 import { setMoodleToken } from '../src/services/moodle/moodleClient';
-import { getCourseContents } from '../src/services/moodle/moodleApi';
+import { getAssignments, getCourseContents } from '../src/services/moodle/moodleApi';
+import { submissionTypes } from '../src/utils/assignSubmission';
 import { CM_ACTION, SECTION_ACTION, createActivity, moveActivity, renameActivity, renameSection, updateCourseState } from '../src/services/moodle/courseEditing';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -19,7 +20,11 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const TOKENS = { dosen: 'mock-3-test', mahasiswa: 'mock-5-test' };
 const findCm = (sections, name) => sections.flatMap((s) => s.modules).find((m) => m.name === name);
 
-beforeAll(() => configureMock({ latencyMs: 0, stepMs: 5 }));
+beforeAll(() => {
+  configureMock({ latencyMs: 0, stepMs: 5 });
+  // jsdom tidak mengimplementasikan scrollIntoView (dipakai saat membuka #section-n).
+  Element.prototype.scrollIntoView ??= () => {};
+});
 beforeEach(() => {
   resetMockDb();
   resetMockMoodle();
@@ -162,11 +167,9 @@ describe('Edit mode: halaman kursus', () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
-  const toggle = () => q('[role="switch"]');
+  // Pengajar yang boleh mengubah kursus langsung masuk mode edit saat membuka kursus.
   async function openEditMode() {
     await render('/course/2');
-    await waitFor(() => toggle(), 'saklar Mode edit');
-    await click(toggle());
     await waitFor(() => q('[aria-label="Aksi untuk Kuis 3"]'), 'menu aktivitas');
   }
   async function chooseAction(activity, label) {
@@ -174,34 +177,26 @@ describe('Edit mode: halaman kursus', () => {
     await click([...container.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent.startsWith(label)));
   }
 
-  it('saklar Mode edit hanya muncul untuk pengajar yang boleh mengubah kursus', async () => {
-    await render('/course/2');
-    await waitFor(() => toggle(), 'saklar pada kursus 2');
-    expect(toggle().getAttribute('aria-checked')).toBe('false');
-    expect(q('[aria-label="Aksi untuk Kuis 3"]')).toBeNull();
-    act(() => root.unmount());
-
-    // Non-editing teacher pada kursus 3.
-    root = null;
-    await render('/course/3');
-    await waitForText('Pengantar Basis Data');
-    expect(toggle()).toBeNull();
-  });
-
-  it('mahasiswa tidak melihat saklar Mode edit', async () => {
-    await render('/course/2', 'mahasiswa');
-    await waitForText('Pengantar Pemrograman Web');
-    expect(toggle()).toBeNull();
-  });
-
-  it('menampilkan kontrol edit dan mengingat pilihan Mode edit', async () => {
+  it('pengajar yang boleh mengubah kursus selalu melihat kontrol edit tanpa saklar', async () => {
     await openEditMode();
-    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(q('[role="switch"]')).toBeNull();
     expect(q('[aria-label="Ubah nama Kuis 3"]')).not.toBeNull();
     expect(q('[aria-label="Aksi untuk section General"]')).not.toBeNull();
     expect(container.textContent).toContain('Tambah aktivitas atau sumber');
     expect(button('+ Tambah section')).toBeTruthy();
-    expect(Object.values({ ...localStorage }).some((value) => value.includes('"course.editMode":true'))).toBe(true);
+  });
+
+  it('non-editing teacher dan mahasiswa tidak mendapat kontrol edit', async () => {
+    await render('/course/3');
+    await waitForText('Pengantar Basis Data');
+    expect(q('[aria-label^="Aksi untuk"]')).toBeNull();
+    act(() => root.unmount());
+
+    root = null;
+    await render('/course/2', 'mahasiswa');
+    await waitForText('Pengantar Pemrograman Web');
+    expect(q('[aria-label^="Aksi untuk"]')).toBeNull();
+    expect(container.textContent).not.toContain('Tambah aktivitas atau sumber');
   });
 
   it('menu aktivitas berisi aksi edit seperti Moodle', async () => {
@@ -228,7 +223,6 @@ describe('Edit mode: halaman kursus', () => {
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(field, value);
     field.dispatchEvent(new Event('input', { bubbles: true }));
   }
-  const inputByLabel = (text) => [...dialog().querySelectorAll('label')].find((l) => l.textContent.startsWith(text)).querySelector('input, textarea');
 
   it('pemilih aktivitas meniru dialog Moodle: pencarian, tab, dan tiga jenis', async () => {
     await openChooser();
@@ -266,7 +260,7 @@ describe('Edit mode: halaman kursus', () => {
     expect(tileNames()).toEqual(['Assignment', 'Text and media area']);
   });
 
-  it('tombol info menampilkan deskripsi dan dapat langsung menambahkan', async () => {
+  it('tombol info menampilkan deskripsi dan Add membuka halaman New Assignment', async () => {
     await openChooser();
     await click(dialog().querySelector('[aria-label="Assignment info"]'));
     expect(dialog().textContent).toContain('set tasks, collect students');
@@ -274,57 +268,119 @@ describe('Edit mode: halaman kursus', () => {
     expect(tileNames()).toHaveLength(3);
     await click(dialog().querySelector('[aria-label="Assignment info"]'));
     await click(button('Add'));
-    expect(dialog().querySelector('h2').textContent).toBe('Add a new Assignment to General');
+    await waitFor(() => pageHeading() === 'New Assignment', 'halaman New Assignment');
+    expect(container.textContent).not.toContain('Add an activity or resource');
   });
 
-  it('membuat tugas lewat formulir dengan validasi', async () => {
-    await openChooser(1);
-    await chooseType('Assignment');
-    expect(dialog().querySelector('h2').textContent).toBe('Add a new Assignment to Minggu 1: Pengantar Pemrograman Web');
-    expect(inputByLabel('Nama tugas').closest('label').textContent).toContain('(wajib diisi)');
-
-    await act(async () => dialog().querySelector('form').requestSubmit());
-    expect(dialog().textContent).toContain('Nama tugas wajib diisi.');
-    expect(inputByLabel('Nama tugas').getAttribute('aria-invalid')).toBe('true');
-
+  // ---- Halaman "New <aktivitas>" seperti course/modedit.php.
+  const pageHeading = () => [...container.querySelectorAll('h2')].map((h) => h.textContent).find((t) => t.startsWith('New ')) ?? null;
+  const field = (text) => {
+    const label = [...container.querySelectorAll('form label')].find((l) => l.textContent.replace(/Required field|!/g, '').trim() === text);
+    return label.htmlFor ? document.getElementById(label.htmlFor) : label.querySelector('input');
+  };
+  const sectionToggle = (title) => [...container.querySelectorAll('form fieldset button[aria-expanded]')].find((b) => b.textContent === title);
+  function dateGroup(label) {
+    const span = [...container.querySelectorAll('form span[id]')].find((s) => s.textContent === label);
+    return container.querySelector(`[role="group"][aria-labelledby="${span.id}"]`);
+  }
+  async function setSelect(select, value) {
     await act(async () => {
-      fill(inputByLabel('Nama tugas'), 'Tugas Pengantar');
-      fill(inputByLabel('Deskripsi'), 'Buat ringkasan <HTTP>.');
-      fill(inputByLabel('Dibuka'), '2026-10-25T08:00');
-      fill(inputByLabel('Tenggat'), '2026-10-24T08:00');
+      select.value = String(value);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    await act(async () => dialog().querySelector('form').requestSubmit());
-    expect(dialog().textContent).toContain('Tenggat harus setelah tanggal dibuka.');
-    expect(dialog().textContent).not.toContain('Nama tugas wajib diisi.');
+  }
+  const dateSelect = (label, part) => dateGroup(label).querySelector(`select[aria-label="${part}"]`);
+  const enable = (label) => dateGroup(label).querySelector('input[type="checkbox"]');
+  async function typeEditor(index, html) {
+    await act(async () => {
+      const editor = container.querySelectorAll('form [role="textbox"][contenteditable]')[index];
+      editor.innerHTML = html;
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+  async function openModEdit(name, sectionNumber = 1) {
+    await openChooser(sectionNumber);
+    await chooseType(name);
+    await waitFor(() => pageHeading() === `New ${name}`, `halaman New ${name}`);
+  }
 
-    await act(async () => fill(inputByLabel('Tenggat'), '2026-11-01T23:59'));
-    await act(async () => dialog().querySelector('form').requestSubmit());
-    await waitFor(() => q('#section-1 [aria-label="Aksi untuk Tugas Pengantar"]'), 'tugas baru di Minggu 1');
-    expect(q('dialog')).toBeNull();
+  it('membuat tugas lewat halaman New Assignment seperti Moodle', async () => {
+    await openModEdit('Assignment');
+    expect(q('[aria-label="Breadcrumb aktivitas"]').textContent).toBe('Minggu 1: Pengantar Pemrograman Web / New Assignment');
+    // Bagian dan bawaan mengikuti mod_form.php: General, Availability, Submission types terbuka; Grade tertutup.
+    expect(['General', 'Availability', 'Submission types', 'Grade'].map((t) => sectionToggle(t).getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true', 'false']);
+    expect(enable('Allow submissions from').checked).toBe(true);
+    expect(enable('Due date').checked).toBe(true);
+    expect(enable('Cut-off date').checked).toBe(false);
+    expect(dateSelect('Cut-off date', 'Day').disabled).toBe(true);
+    expect(field('Online text').checked).toBe(false);
+    expect(field('File submissions').checked).toBe(true);
+    expect(button('Save and display')).toBeTruthy();
+
+    await click(button('Save and return to course'));
+    expect(container.textContent).toContain('You must supply a value here.');
+    expect(field('Assignment name').getAttribute('aria-invalid')).toBe('true');
+
+    await act(async () => fill(field('Assignment name'), 'Tugas Pengantar'));
+    await typeEditor(0, '<p>Buat ringkasan <strong>HTTP</strong>.</p>');
+    const year = Number(dateSelect('Due date', 'Year').value);
+    await setSelect(dateSelect('Due date', 'Year'), year - 1);
+    await click(button('Save and return to course'));
+    expect(container.textContent).toContain('Due date cannot be earlier than the allow submissions from date.');
+    expect(container.textContent).not.toContain('You must supply a value here.');
+    await setSelect(dateSelect('Due date', 'Year'), year);
+
+    await click(enable('Cut-off date'));
+    expect(dateSelect('Cut-off date', 'Day').disabled).toBe(false);
+    await setSelect(dateSelect('Cut-off date', 'Year'), year - 1);
+    await click(button('Save and return to course'));
+    expect(container.textContent).toContain('Cut-off date cannot be earlier than the due date.');
+    await setSelect(dateSelect('Cut-off date', 'Year'), year + 1);
+
+    // Jenis pengumpulan: Word limit muncul setelah Online text dicentang, aktif setelah Enable.
+    expect(container.textContent).not.toContain('Word limit');
+    await click(field('Online text'));
+    expect(field('Word limit').disabled).toBe(true);
+    await click(field('Word limit').parentElement.querySelector('input[type="checkbox"]'));
+    await act(async () => fill(field('Word limit'), '250'));
+    await setSelect(field('Maximum number of uploaded files'), 3);
+
+    // Error di bagian yang tertutup membuka bagian itu.
+    await click(button('Expand all'));
+    expect(sectionToggle('Grade').getAttribute('aria-expanded')).toBe('true');
+    expect(button('Collapse all')).toBeTruthy();
+    await act(async () => fill(field('Maximum grade'), '150'));
+    await click(sectionToggle('Grade'));
+    await click(button('Save and display'));
+    expect(container.textContent).toContain('Invalid grade value. This must be an integer between 1 and 100');
+    await waitFor(() => sectionToggle('Grade').getAttribute('aria-expanded') === 'true', 'bagian Grade terbuka');
+    await act(async () => fill(field('Maximum grade'), '80'));
+
+    await click(button('Save and display'));
+    await waitFor(() => [...container.querySelectorAll('h2')].some((h) => h.textContent === 'Tugas Pengantar'), 'halaman tugas baru');
     expect(container.textContent).toContain('Tugas ditambahkan.');
-    const row = q('#section-1 [aria-label="Aksi untuk Tugas Pengantar"]').closest('li');
-    expect(row.textContent).toContain('Dibuka:');
-    expect(row.textContent).toContain('Tenggat:');
+    const created = (await getAssignments([2])).find((a) => a.name === 'Tugas Pengantar');
+    expect(created).toMatchObject({ grade: 80, intro: '<p>Buat ringkasan <strong>HTTP</strong>.</p>' });
+    expect(created.cutoffdate).toBeGreaterThan(created.duedate);
+    expect(submissionTypes(created)).toEqual({ onlineText: true, wordLimit: 250, files: true, maxFiles: 3, maxBytes: 1024 * 1024 });
   });
 
-  it('membuat quiz lewat formulir dengan validasi waktu buka dan tutup', async () => {
-    await openChooser(1);
-    await chooseType('Quiz');
-    expect(dialog().querySelector('h2').textContent).toBe('Add a new Quiz to Minggu 1: Pengantar Pemrograman Web');
-    expect([...dialog().querySelectorAll('label')].some((l) => l.textContent.startsWith('Nilai maksimum'))).toBe(false);
+  it('membuat quiz lewat halaman New Quiz; Save and return kembali ke kursus', async () => {
+    await openModEdit('Quiz');
+    expect(['General', 'Timing'].map((t) => sectionToggle(t).getAttribute('aria-expanded'))).toEqual(['true', 'false']);
+    await click(button('Save and return to course'));
+    expect(container.textContent).toContain('You must supply a value here.');
+    await act(async () => fill(field('Name'), 'Kuis Pengantar HTTP'));
+    await click(sectionToggle('Timing'));
+    await click(enable('Open the quiz'));
+    await click(enable('Close the quiz'));
+    const year = Number(dateSelect('Open the quiz', 'Year').value);
+    await setSelect(dateSelect('Close the quiz', 'Year'), year - 1);
+    await click(button('Save and return to course'));
+    expect(container.textContent).toContain('The close date must be after the open date.');
+    await setSelect(dateSelect('Close the quiz', 'Year'), year);
 
-    await act(async () => dialog().querySelector('form').requestSubmit());
-    expect(dialog().textContent).toContain('Nama kuis wajib diisi.');
-    await act(async () => {
-      fill(inputByLabel('Nama kuis'), 'Kuis Pengantar HTTP');
-      fill(inputByLabel('Dibuka'), '2026-11-02T08:00');
-      fill(inputByLabel('Ditutup'), '2026-11-01T08:00');
-    });
-    await act(async () => dialog().querySelector('form').requestSubmit());
-    expect(dialog().textContent).toContain('Waktu ditutup harus setelah waktu dibuka.');
-
-    await act(async () => fill(inputByLabel('Ditutup'), '2026-11-09T08:00'));
-    await act(async () => dialog().querySelector('form').requestSubmit());
+    await click(button('Save and return to course'));
     await waitFor(() => q('#section-1 [aria-label="Aksi untuk Kuis Pengantar HTTP"]'), 'quiz baru di Minggu 1');
     expect(container.textContent).toContain('Kuis ditambahkan.');
     const row = q('#section-1 [aria-label="Aksi untuk Kuis Pengantar HTTP"]').closest('li');
@@ -332,28 +388,36 @@ describe('Edit mode: halaman kursus', () => {
     expect(row.textContent).toContain('Ditutup:');
   });
 
-  it('membuat teks dan media; isi wajib diisi dan HTML tidak dijalankan', async () => {
-    await openChooser();
-    await chooseType('Text and media area');
-    await act(async () => dialog().querySelector('form').requestSubmit());
-    expect(dialog().textContent).toContain('Isi teks wajib diisi.');
-    await act(async () => fill(inputByLabel('Isi'), 'Selamat datang di kelas.\n\n<b>Jadwal</b> kuliah Senin.'));
-    await act(async () => dialog().querySelector('form').requestSubmit());
+  it('membuat Text and media area dari editor; HTML berbahaya dibuang', async () => {
+    await openModEdit('Text and media area', 0);
+    expect(button('Save and display')).toBeUndefined();
+    await click(button('Save and return to course'));
+    expect(container.textContent).toContain('You must supply a value here.');
+    await act(async () => fill(field('Title in course index'), 'Sambutan'));
+    await typeEditor(0, '<p>Selamat datang <b>di kelas</b>.</p><img src="x" onerror="window.__xss = 1">');
+    await click(button('Save and return to course'));
     await waitFor(() => container.textContent.includes('Teks dan media ditambahkan.'), 'toast');
     const general = q('#section-0');
     expect(general.textContent).toContain('Selamat datang di kelas.');
-    expect(general.textContent).toContain('<b>Jadwal</b> kuliah Senin.');
-    expect(general.querySelector('b')).toBeNull();
+    expect(general.querySelector('b').textContent).toBe('di kelas');
+    expect(general.querySelector('img[onerror]')).toBeNull();
+    expect(window.__xss).toBeUndefined();
+    expect(findCm(await getCourseContents(2), 'Sambutan')).toMatchObject({ modname: 'label' });
   });
 
-  it('kembali ke pilihan jenis tanpa menyimpan apa pun', async () => {
-    await openChooser();
-    await chooseType('Assignment');
-    await act(async () => fill(inputByLabel('Nama tugas'), 'Draf'));
-    await click(button('← Pilih jenis lain'));
-    expect(dialog().querySelector('ul[aria-label="Activities and resources"]')).not.toBeNull();
+  it('Cancel kembali ke kursus tanpa menyimpan apa pun', async () => {
+    await openModEdit('Assignment');
+    await act(async () => fill(field('Assignment name'), 'Draf'));
+    await click([...container.querySelectorAll('form button')].find((b) => b.textContent === 'Cancel' && !b.closest('dialog')));
+    await waitFor(() => !pageHeading() && q('#section-1'), 'kembali ke kursus');
     expect(container.textContent).not.toContain('Tugas ditambahkan.');
     expect(findCm(await getCourseContents(2), 'Draf')).toBeUndefined();
+  });
+
+  it('halaman New activity tertutup bagi pengguna yang tidak boleh mengubah kursus', async () => {
+    await render('/course/2/modedit?add=assign&section=1', 'mahasiswa');
+    await waitForText('Anda tidak dapat menambah aktivitas di kursus ini.');
+    expect(pageHeading()).toBeNull();
   });
 
   it('menyembunyikan aktivitas dan menampilkan badge', async () => {
@@ -419,7 +483,7 @@ describe('Edit mode: halaman kursus', () => {
     await chooseAction('Kuis 3', 'Sembunyikan');
     await waitFor(() => q('[role="alert"]'), 'pesan error');
     expect(q('[role="alert"]').textContent).toContain('Aktivitas tidak ditemukan.');
-    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(q('[aria-label="Aksi untuk section General"]')).not.toBeNull();
     // Tampilan disegarkan mengikuti Moodle: aktivitas yang sudah dihapus tidak lagi tampil.
     await waitFor(() => !q('[aria-label="Aksi untuk Kuis 3"]'), 'daftar disegarkan');
   });

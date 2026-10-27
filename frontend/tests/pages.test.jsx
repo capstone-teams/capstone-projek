@@ -203,7 +203,7 @@ describe('halaman mahasiswa', () => {
     ['/my/courses', 'Kursus saya'],
     ['/course/3', 'Normalisasi'],
     ['/course/2/grades', 'Laporan nilai'],
-    ['/course/2/mod/107', 'Status pengumpulan'],
+    ['/course/2/mod/107', 'Submission status'],
     // Halaman dosen lewat URL langsung → 403.
     ['/my', 'Akses ditolak'],
     ['/course/2/ai', 'Akses ditolak'],

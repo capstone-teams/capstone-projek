@@ -63,7 +63,7 @@ export default function CourseSection({ course, section, sections, isTeacher, co
           </div>
         </div>
       )}
-      {adding && <AddActivityModal open courseId={course.id} section={section} editing={editing} onClose={() => setAdding(false)} />}
+      {adding && <AddActivityModal open courseId={course.id} section={section} onClose={() => setAdding(false)} />}
     </section>
   );
 }

@@ -77,7 +77,8 @@ export function renameSection(courseFormat, sectionId, name) {
 export const CAN_CREATE_IN_APP = USE_MOODLE_MOCK;
 
 /**
- * fields Assignment: { name, intro, allowsubmissionsfromdate, duedate, grade } (tanggal = Unix detik, 0 = tanpa tanggal).
+ * fields Assignment: { name, intro, allowsubmissionsfromdate, duedate, grade } (tanggal = Unix detik, 0 = tanpa tanggal)
+ *   + jenis pengumpulan { onlinetext_enabled, onlinetext_wordlimit, file_enabled, file_maxfiles, file_maxbytes }.
  * fields Quiz: { name, intro, timeopen, timeclose }.
  * fields Text and media area: { text }.
  */

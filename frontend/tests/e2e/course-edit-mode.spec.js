@@ -15,10 +15,8 @@ for (const width of [375, 1440]) {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/course/2');
-    const toggle = page.getByRole('switch', { name: 'Mode edit' });
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    // Tanpa saklar: pengajar langsung dalam mode edit.
+    await expect(page.getByRole('switch', { name: 'Mode edit' })).toHaveCount(0);
 
     // Menu ⋮ dapat dipakai dengan keyboard: panah bawah, Escape mengembalikan fokus.
     const menuButton = page.getByRole('button', { name: 'Aksi untuk Kuis 3' });
@@ -53,56 +51,68 @@ for (const width of [375, 1440]) {
     await dialog.getByRole('button', { name: 'Hapus', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Kuis Minggu 3', exact: true })).toHaveCount(0);
 
-    // Tambah section, lalu matikan Edit mode.
+    // Tambah section.
     await page.getByRole('button', { name: '+ Tambah section' }).click();
     await expect(page.getByRole('heading', { name: 'New section' })).toBeVisible();
-    await toggle.click();
-    await expect(page.getByRole('button', { name: /^Aksi untuk/ })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(errors).toEqual([]);
   });
 }
 
-test('teacher creates an assignment, a quiz and a text block from the activity chooser', async ({ page }) => {
-  await seed(page);
-  await page.goto('/course/2');
-  await page.getByRole('switch', { name: 'Mode edit' }).click();
-  const week1 = page.locator('#section-1');
-  await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: 'Add an activity or resource' })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Assignment', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Simpan tugas' }).click();
-  await expect(dialog.getByText('Nama tugas wajib diisi.', { exact: true })).toBeVisible();
-  await dialog.getByLabel(/^Nama tugas/).fill('Tugas Ringkasan HTTP');
-  await dialog.getByLabel('Tenggat').fill('2026-11-30T23:59');
-  await dialog.getByRole('button', { name: 'Simpan tugas' }).click();
-  await expect(dialog).toHaveCount(0);
-  const created = week1.getByRole('link', { name: 'Tugas Ringkasan HTTP', exact: true });
-  await expect(created).toBeVisible();
+for (const width of [375, 1440]) {
+  test(`teacher creates an assignment, a quiz and a text block via New activity pages at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await seed(page);
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto('/course/2');
+    const week1 = page.locator('#section-1');
+    const chooser = page.getByRole('dialog', { name: 'Add an activity or resource' });
 
-  await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
-  await dialog.getByRole('button', { name: 'Quiz', exact: true }).click();
-  await dialog.getByLabel(/^Nama kuis/).fill('Kuis Pengantar HTTP');
-  await dialog.getByRole('button', { name: 'Simpan kuis' }).click();
-  await expect(week1.getByRole('link', { name: 'Kuis Pengantar HTTP', exact: true })).toBeVisible();
+    // Assignment: pemilih membuka halaman New Assignment seperti course/modedit.php.
+    await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
+    await chooser.getByRole('button', { name: 'Assignment', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'New Assignment' })).toBeVisible();
+    await expect(page.getByLabel('Breadcrumb aktivitas')).toHaveText('Minggu 1: Pengantar Pemrograman Web / New Assignment');
+    await page.getByRole('button', { name: 'Save and return to course' }).click();
+    await expect(page.getByText('You must supply a value here.')).toBeVisible();
+    await expect(page.getByLabel('Assignment name')).toBeFocused();
+    await page.getByLabel('Assignment name').fill('Tugas Ringkasan HTTP');
+    const description = page.getByRole('textbox', { name: 'Description' });
+    await description.click();
+    await page.keyboard.type('Ringkas protokol HTTP.');
+    await page.getByLabel('Online text').check();
+    await page.getByRole('button', { name: 'Expand all' }).click();
+    await page.getByLabel('Maximum grade').fill('80');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole('button', { name: 'Save and display' }).click();
+    await expect(page.getByRole('heading', { name: 'Tugas Ringkasan HTTP' })).toBeVisible();
+    await expect(page.getByText('Ringkas protokol HTTP.')).toBeVisible();
 
-  await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
-  await dialog.getByRole('button', { name: 'Text and media area', exact: true }).click();
-  await dialog.getByLabel(/^Isi/).fill('Kumpulkan tugas sebelum tenggat.');
-  await dialog.getByRole('button', { name: 'Simpan', exact: true }).click();
-  await expect(week1.getByText('Kumpulkan tugas sebelum tenggat.', { exact: true })).toBeVisible();
+    // Quiz: Save and return to course.
+    await page.goto('/course/2');
+    await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
+    await chooser.getByRole('button', { name: 'Quiz', exact: true }).click();
+    await page.getByLabel('Name', { exact: true }).fill('Kuis Pengantar HTTP');
+    await page.getByRole('button', { name: 'Save and return to course' }).click();
+    await expect(week1.getByRole('link', { name: 'Kuis Pengantar HTTP', exact: true })).toBeVisible();
 
-  // Tugas baru dapat dibuka seperti aktivitas lain.
-  await created.click();
-  await expect(page.getByRole('heading', { name: 'Tugas Ringkasan HTTP' })).toBeVisible();
-});
+    // Text and media area: tanpa Save and display.
+    await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
+    await chooser.getByRole('button', { name: 'Text and media area', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save and display' })).toHaveCount(0);
+    await page.getByRole('textbox', { name: 'Text' }).click();
+    await page.keyboard.type('Kumpulkan tugas sebelum tenggat.');
+    await page.getByRole('button', { name: 'Save and return to course' }).click();
+    await expect(week1.getByText('Kumpulkan tugas sebelum tenggat.', { exact: true })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
 
 test('activity chooser fits a phone screen', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 700 });
   await seed(page);
   await page.goto('/course/2');
-  await page.getByRole('switch', { name: 'Mode edit' }).click();
   await page.locator('#section-1').getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Text and media area', exact: true })).toBeVisible();
@@ -112,9 +122,45 @@ test('activity chooser fits a phone screen', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test('students and non-editing teachers do not get Edit mode', async ({ page }) => {
+test('students do not get edit controls', async ({ page }) => {
   await seed(page, 'mahasiswa');
   await page.goto('/course/2');
   await expect(page.getByRole('heading', { name: /Minggu 1/ })).toBeVisible();
-  await expect(page.getByRole('switch', { name: 'Mode edit' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Aksi untuk/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Tambah aktivitas atau sumber' })).toHaveCount(0);
 });
+
+for (const width of [375, 1440]) {
+  test(`student adds an online text and file submission at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await seed(page, 'mahasiswa');
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto('/course/2');
+    await page.locator('#section-4').getByRole('link', { name: 'Tugas 4: JavaScript Dasar', exact: true }).click();
+    await page.getByRole('link', { name: 'Add submission' }).click();
+    await expect(page.getByLabel('Breadcrumb aktivitas')).toContainText('Edit submission');
+    await expect(page.getByText('Maximum file size: 1 MB, maximum number of files: 20')).toBeVisible();
+    await expect(page.getByText('You can drag and drop files here to add them.')).toBeVisible();
+    await expect(page.getByRole('menubar', { name: 'Menu editor' })).toBeVisible();
+
+    // Editor: ketik, lalu tebalkan kata terakhir lewat toolbar.
+    const editor = page.getByRole('textbox', { name: 'Online text' });
+    await editor.click();
+    await page.keyboard.type('Ringkasan event loop dan DOM');
+    await expect(page.getByText('5 words')).toBeVisible();
+    await page.keyboard.press('Shift+Control+ArrowLeft');
+    await page.getByRole('button', { name: 'Bold' }).click();
+    await expect(editor.locator('b, strong')).toHaveText('DOM');
+
+    await page.getByLabel('Pilih file pengumpulan').setInputFiles({ name: 'laporan.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(2048) });
+    await expect(page.getByRole('button', { name: /laporan\.pdf/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Save changes' }).click();
+
+    await expect(page.getByText('Submitted for grading')).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Ringkasan event loop dan DOM' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Edit submission' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+}

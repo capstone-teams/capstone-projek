@@ -2,24 +2,13 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useApi } from '../../../hooks/useApi';
-import { getAssignments, getPages, getSubmissionStatus, listAssignParticipants } from '../../../services/moodle/moodleApi';
+import { getAssignments, getPages, listAssignParticipants } from '../../../services/moodle/moodleApi';
 import { moodleUrl, withToken } from '../../../services/moodle/moodleClient';
 import { Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
 import ActivityIcon from '../../../components/moodle/ActivityIcon';
 import MoodleHtml from '../../../components/moodle/MoodleHtml';
+import AssignSubmission, { AssignIntro } from '../../../components/moodle/AssignSubmission';
 import { formatUnixDateTime } from '../../../utils/format';
-
-const SUBMISSION_STATUS = {
-  new: ['Belum ada pengumpulan', 'neutral'],
-  draft: ['Draft (belum dikirim)', 'warning'],
-  submitted: ['Sudah dikumpulkan untuk dinilai', 'success'],
-  reopened: ['Dibuka kembali', 'warning'],
-};
-const GRADING_STATUS = {
-  notgraded: 'Belum dinilai',
-  graded: 'Sudah dinilai',
-  released: 'Nilai dirilis',
-};
 
 function timeRemaining(due, now) {
   if (!due) return '-';
@@ -48,44 +37,6 @@ function PageContent({ course, mod }) {
 function useNow() {
   const [now] = useState(() => Math.floor(Date.now() / 1000));
   return now;
-}
-
-function StudentSubmission({ assign }) {
-  const now = useNow();
-  const { data, error, loading } = useApi(() => getSubmissionStatus(assign.id), [assign.id]);
-  if (loading && !data) return <Spinner />;
-  if (error) return <ErrorAlert error={error} />;
-
-  const attempt = data.lastattempt ?? {};
-  const status = attempt.submission?.status ?? attempt.teamsubmission?.status ?? 'new';
-  const [statusLabel, statusTone] = SUBMISSION_STATUS[status] ?? [status, 'neutral'];
-  const overdue = assign.duedate && assign.duedate < now && status !== 'submitted';
-
-  const rows = [
-    ['Status pengumpulan', <Badge tone={statusTone}>{statusLabel}</Badge>],
-    ['Status penilaian', GRADING_STATUS[attempt.gradingstatus] ?? attempt.gradingstatus ?? '-'],
-    ['Sisa waktu', <span className={overdue ? 'font-semibold text-danger' : ''}>{timeRemaining(assign.duedate, now)}</span>],
-    ['Terakhir diubah', formatUnixDateTime(attempt.submission?.timemodified)],
-  ];
-  if (data.feedback?.gradefordisplay) rows.push(['Nilai', <MoodleHtml html={data.feedback.gradefordisplay} />]);
-
-  return (
-    <Card title="Status pengumpulan">
-      <table className="table">
-        <tbody>
-          {rows.map(([label, value]) => (
-            <tr key={label}>
-              <th className="w-1/3 bg-surface !font-normal">{label}</th>
-              <td>{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <a href={moodleUrl(`/mod/assign/view.php?id=${assign.cmid}`)} target="_blank" rel="noreferrer" className="btn btn--primary mt-4">
-        {status === 'submitted' ? 'Lihat pengumpulan di Moodle' : 'Kumpulkan tugas di Moodle'} ↗
-      </a>
-    </Card>
-  );
 }
 
 function TeacherSummary({ assign }) {
@@ -160,23 +111,9 @@ function AssignContent({ course, mod, isTeacher }) {
   if (!assign) return <EmptyState title="Tugas tidak ditemukan." />;
 
   return (
-    <div className="stack">
-      <Card>
-        <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          {assign.allowsubmissionsfromdate > 0 && (
-            <span>
-              <strong>Dibuka:</strong> {formatUnixDateTime(assign.allowsubmissionsfromdate)}
-            </span>
-          )}
-          {assign.duedate > 0 && (
-            <span>
-              <strong>Tenggat:</strong> {formatUnixDateTime(assign.duedate)}
-            </span>
-          )}
-        </div>
-        <MoodleHtml html={assign.intro} />
-      </Card>
-      {isTeacher ? <TeacherSummary assign={assign} /> : <StudentSubmission assign={assign} />}
+    <div>
+      <AssignIntro assign={assign} />
+      {isTeacher ? <TeacherSummary assign={assign} /> : <AssignSubmission assign={assign} editPath={`/course/${course.id}/mod/${mod.id}/editsubmission`} />}
     </div>
   );
 }

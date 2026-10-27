@@ -35,10 +35,11 @@ export function useCourseEditing() {
     setPending(key);
     setError(null);
     try {
-      await task();
+      // Hasil aksi (mis. { cmid } aktivitas baru) dikembalikan; aksi tanpa hasil mengembalikan true.
+      const result = await task();
       await reload({ silent: true });
       if (successMessage) notify?.(successMessage, { type: 'success' });
-      return true;
+      return result ?? true;
     } catch (e) {
       (onError ?? setError)(e);
       // Isi kursus mungkin sudah berubah di Moodle (mis. aktivitas dihapus di tab lain).

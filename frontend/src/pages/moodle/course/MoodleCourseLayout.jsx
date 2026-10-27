@@ -2,11 +2,9 @@ import { useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { useApi } from '../../../hooks/useApi';
-import { usePreference } from '../../../hooks/useAppState';
 import { getAdministrationOptions, getCourse, getCourseContents, logCourseView } from '../../../services/moodle/moodleApi';
 import { PageContainer } from '../../../components/layout/MoodleLayout';
 import { ErrorAlert, Spinner } from '../../../components/ui';
-import { EditModeToggle } from '../../../components/moodle/editing';
 import { ROLE } from '../../../types/auth';
 
 // Hak mengubah isi kursus (moodle/course:update) dari core_course_get_user_administration_options.
@@ -21,7 +19,6 @@ export default function MoodleCourseLayout() {
     () => Promise.all([getCourse(courseId), getCourseContents(courseId), getAdministrationOptions([courseId]).catch(() => [])])
       .then(([course, sections, options]) => ({ course, sections, canEdit: canUpdate(options) })), [courseId],
   );
-  const [editModePreference, setEditMode] = usePreference('course.editMode', false);
   useEffect(() => { logCourseView(courseId); }, [courseId]);
   if (loading && !data) return <PageContainer><Spinner /></PageContainer>;
   if (error || !data?.course) return <PageContainer>
@@ -30,9 +27,9 @@ export default function MoodleCourseLayout() {
   const { course, sections } = data;
   const isTeacher = user.isAdmin || user.teacherCourseIds.includes(courseId);
   const canEdit = user.isAdmin || data.canEdit;
-  // Mode edit hanya berlaku di tab Kursus untuk pengguna yang boleh mengubah kursus.
-  const editMode = canEdit && editModePreference && pathname === '/course/' + courseId;
   const base = '/course/' + courseId;
+  // Pengguna yang boleh mengubah kursus selalu dalam mode edit di tab Kursus.
+  const editMode = canEdit && pathname === base;
   const tabs = [{ to: base, label: 'Kursus', end: true }, { to: base + '/participants', label: 'Peserta' }, { to: base + '/grades', label: 'Nilai' }];
   // Generator AI hanya untuk dosen pengampu kursus ini.
   const canUseAi = isTeacher && user.role === ROLE.DOSEN;
@@ -40,10 +37,7 @@ export default function MoodleCourseLayout() {
   const onAiTab = pathname.startsWith(base + '/ai');
   return <PageContainer>
     <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb"><Link to="/my/courses">Kursus saya</Link> / <span>{course.shortname}</span></nav>
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h1 className="moodle-h1">{course.fullname}</h1>
-      {canEdit && pathname === base && <EditModeToggle checked={editModePreference} onChange={setEditMode} />}
-    </div>
+    <h1 className="moodle-h1 mb-4">{course.fullname}</h1>
     <nav className="tabs" aria-label="Navigasi kursus">{tabs.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className="tabs__link">{tab.label}</NavLink>)}</nav>
     {!onAiTab && <details className="mb-4 rounded-lg border border-line bg-white p-3">
       <summary className="cursor-pointer font-semibold">Indeks kursus</summary>

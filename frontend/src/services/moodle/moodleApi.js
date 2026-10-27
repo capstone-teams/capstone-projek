@@ -2,7 +2,7 @@
  * Fungsi Moodle Web Service yang dipakai frontend. Semua termasuk layanan
  * "moodle_mobile_app" (lihat 'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE] di db/services.php).
  */
-import { callWs } from './moodleClient';
+import { MoodleError, callWs, uploadDraftFiles } from './moodleClient';
 
 // ---- Situs & user (lib/db/services.php)
 
@@ -91,6 +91,19 @@ export async function getAssignments(courseIds) {
 
 export function getSubmissionStatus(assignId) {
   return callWs('mod_assign_get_submission_status', { assignid: assignId });
+}
+
+/**
+ * Simpan pengumpulan mahasiswa (mod_assign_save_submission): teks online sebagai HTML dan file lewat draft area.
+ * Tanpa pengaturan "wajib klik kirim" Moodle langsung menandainya dikumpulkan untuk dinilai.
+ */
+/** files: null = file tidak diubah; array entri uploadDraftFiles = isi baru area file (boleh kosong). */
+export async function saveSubmission(assignId, { onlineText, files }) {
+  const plugindata = {};
+  if (onlineText != null) plugindata.onlinetext_editor = { text: onlineText, format: 1, itemid: 0 };
+  if (files) plugindata.files_filemanager = await uploadDraftFiles(files);
+  const warnings = await callWs('mod_assign_save_submission', { assignmentid: assignId, plugindata });
+  if (Array.isArray(warnings) && warnings.length) throw new MoodleError(warnings[0].warningcode, warnings[0].message);
 }
 
 export function listAssignParticipants(assignId) {

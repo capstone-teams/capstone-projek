@@ -15,6 +15,8 @@ import CourseViewPage from './pages/moodle/course/CourseViewPage';
 import ParticipantsPage from './pages/moodle/course/ParticipantsPage';
 import GradesPage from './pages/moodle/course/GradesPage';
 import ActivityPage from './pages/moodle/course/ActivityPage';
+import EditSubmissionPage from './pages/moodle/course/EditSubmissionPage';
+import ModEditPage from './pages/moodle/course/ModEditPage';
 // Generator Konten AI (tab di halaman kursus, khusus dosen pengampu)
 import AiCourseLayout from './pages/ai/course/AiCourseLayout';
 import CourseOverviewPage from './pages/ai/course/CourseOverviewPage';
@@ -51,6 +53,8 @@ export default function App() {
             <Route path="participants" element={<ParticipantsPage />} />
             <Route path="grades" element={<GradesPage />} />
             <Route path="mod/:cmid" element={<ActivityPage />} />
+            <Route path="mod/:cmid/editsubmission" element={<EditSubmissionPage />} />
+            <Route path="modedit" element={<ModEditPage />} />
             {/* RPS, Course Target, dan Monitoring berada di tab Generator AI (khusus DOSEN). */}
             <Route element={<RequireAuth roles={[ROLE.DOSEN]} />}>
               <Route path="ai" element={<AiCourseLayout />}>

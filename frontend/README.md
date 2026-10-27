@@ -242,11 +242,10 @@ ditemukan.
 
 Pengajar yang boleh mengubah kursus (opsi `update` pada
 `core_course_get_user_administration_options`, yaitu editing teacher atau admin)
-melihat saklar **Mode edit** di header tab Kursus. Pilihannya disimpan sebagai
-preferensi `course.editMode` per pengguna. Mahasiswa dan non-editing teacher
-tidak melihat saklar tersebut.
+langsung berada dalam mode edit saat membuka tab Kursus; tidak ada saklar Mode
+edit. Mahasiswa dan non-editing teacher melihat kursus tanpa kontrol edit.
 
-Saat Mode edit aktif:
+Kontrol yang tersedia:
 
 - ikon pensil mengganti nama section dan aktivitas (Enter atau keluar dari kolom
   menyimpan, Escape membatalkan);
@@ -258,10 +257,9 @@ Saat Mode edit aktif:
   di akhir kursus. Tombol itu membuka dialog "Add an activity or resource" seperti
   di Moodle: kolom pencarian, tab Starred/All/Activities/Resources/Recommended,
   dan kartu dengan bintang (tersimpan per pengguna) serta info. Jenis yang tersedia
-  baru Assignment (nama, deskripsi, tanggal dibuka, tenggat, nilai maksimum), Quiz
-  (nama, deskripsi, waktu dibuka dan ditutup), dan Text and media area (isi teks);
-  masing-masing diisi lewat formulir di aplikasi dengan validasi field wajib. Jenis
-  baru ditambahkan di `ACTIVITY_TYPES` pada `AddActivityModal.jsx`;
+  baru Assignment, Quiz, dan Text and media area. Memilih jenis membuka halaman
+  **New ‹aktivitas›** (lihat di bawah). Jenis baru ditambahkan di `ACTIVITY_TYPES`
+  pada `AddActivityModal.jsx` dan `TYPES` pada `ModEditPage.jsx`;
 - badge "Disembunyikan dari mahasiswa" pada item tersembunyi.
 
 Pindahkan memakai dialog pilihan section dan posisi sehingga dapat dipakai dengan
@@ -272,8 +270,8 @@ Moodle core belum menyediakan Web Service untuk membuat Tugas atau Teks dan medi
 beserta isinya (`core_courseformat_create_module` hanya untuk modul dengan
 `FEATURE_QUICKCREATE`, yaitu `mod_subsection`). Karena itu pembuatan aktivitas
 dari formulir aplikasi baru berjalan di mock Moodle (`mock_course_create_activity`).
-Dengan `VITE_MOODLE_MOCK=false`, tombol simpan diganti "Lanjutkan di Moodle" yang
-membuka formulir `modedit.php`, sampai tim memutuskan jalurnya (plugin Moodle atau
+Dengan `VITE_MOODLE_MOCK=false`, tombol simpan di halaman New ‹aktivitas› diganti
+"Lanjutkan di Moodle" yang membuka formulir `modedit.php`, sampai tim memutuskan jalurnya (plugin Moodle atau
 endpoint backend). Setiap
 aksi memuat ulang isi kursus agar tampilan mengikuti Moodle, termasuk saat aksi
 gagal.
@@ -293,6 +291,81 @@ Rujukan dokumentasi Moodle (moodledev.io) dan pengecekannya pada source Moodle 5
 | Fungsi di luar layanan bawaan dibuka lewat service kustom | [Service creation](https://moodledev.io/docs/5.0/apis/subsystems/external/advanced/custom-services) | Dipakai bila fungsi editor ditambahkan ke service frontend |
 | Tidak ada external function pembuat Tugas; yang ada hanya fungsi PHP `assign_add_instance()` | [mod_assign](https://phpdoc.moodledev.io/4.4/d3/d4f/group__mod__assign.html) | `mod/assign/db/services.php` tidak memuat fungsi create |
 | Menulis external function sendiri | [Writing a new service](https://moodledev.io/docs/5.0/apis/subsystems/external/writing-a-service) | Jalur yang perlu dipilih tim untuk pembuatan aktivitas |
+
+## Pengumpulan tugas
+
+### Halaman New ‹aktivitas›
+
+Halaman `/course/:id/modedit?add=<modname>&section=<n>` setara `course/modedit.php`
+Moodle: breadcrumb `section / New Assignment`, judul **New Assignment** dengan ikon,
+tautan **Expand all/Collapse all**, bagian yang dapat dilipat, label di kiri dan isian
+di kanan, ikon wajib, serta tombol **Save and return to course**, **Save and display**
+(tidak ada untuk Text and media area), dan **Cancel**. Field, bawaan, dan pesan
+validasi diambil dari `mod_form.php` dan `lang/en` Moodle 5.3; hanya setelan yang
+benar-benar disimpan yang ditampilkan (`src/components/moodle/modedit/`):
+
+- **Assignment**: General (Assignment name, Description dengan editor),
+  Availability (Allow submissions from, Due date, Cut-off date sebagai
+  date_time_selector dengan Enable), Submission types (Online text, File
+  submissions, Word limit dengan Enable, Maximum number of uploaded files,
+  Maximum submission size), dan Grade (Type Point, Maximum grade 1–100).
+  General, Availability, dan Submission types terbuka seperti `setExpanded` Moodle.
+- **Quiz**: General (Name, Description) dan Timing (Open the quiz, Close the quiz).
+- **Text and media area**: General (Title in course index, Text dengan editor).
+
+Pesan validasi Moodle: "You must supply a value here.", "Due date cannot be earlier
+than the allow submissions from date.", "Cut-off date cannot be earlier than the due
+date.", "The close date must be after the open date.", dan "Invalid grade value. This
+must be an integer between 1 and 100". Saat validasi gagal, bagian yang berisi error
+dibuka dan field pertama difokuskan. Setelan jenis pengumpulan disimpan dengan nama
+plugin Moodle dan dibaca kembali dari `configs` pada `mod_assign_get_assignments`
+(`src/utils/assignSubmission.js`).
+
+Tampilan mahasiswa mengikuti
+[Using Assignment › Student view](https://docs.moodle.org/503/en/Using_Assignment#What_are_the_options_for_submitting_work_in_Moodle?)
+dan memakai string bahasa Inggris Moodle (`mod_assign`, `repository`):
+
+- Halaman tugas (`/course/:id/mod/:cmid`): kotak **Opened/Due** dan deskripsi,
+  tombol **Add submission** (atau **Edit submission** bila sudah ada isi) selama
+  tugas sudah dibuka dan `canedit`, lalu tabel **Submission status** (status,
+  grading status, time remaining, last modified, online text, file submissions).
+- Halaman **Edit submission** (`/course/:id/mod/:cmid/editsubmission`, setara
+  `view.php?action=editsubmission`): breadcrumb `… / Edit submission`, judul
+  dengan ikon tugas, kotak Opened/Due, lalu bagian lipat **Add submission** dengan
+  label di kiri:
+  - **Online text**: editor bergaya TinyMCE (`MoodleEditor`) dengan menu bar
+    Edit/View/Insert/Format/Tools/Table/Help, toolbar Undo, Redo, Bold, Italic,
+    Image, Multimedia, Link, Unlink, Full screen, dan tombol "more" (Underline,
+    Strikethrough, daftar, Clear formatting), serta status bar berisi jalur elemen
+    (`p`) dan jumlah kata. Melebihi batas kata menampilkan pesan
+    `wordlimitexceeded` Moodle saat menyimpan.
+  - **File submissions**: "Maximum file size: 1 MB, maximum number of files: 20"
+    dan file manager seperti Moodle (`FileManager`): Add..., Create folder,
+    tampilan ikon/detail/pohon, jalur folder **Files**, area "You can drag and
+    drop files here to add them.", dialog file untuk ganti nama, hapus, dan unduh.
+    Nama ganda diberi akhiran "(1)" seperti Moodle.
+  - **Save changes** / **Cancel** kembali ke halaman tugas.
+
+Editor memakai `contentEditable` + `document.execCommand`, bukan paket TinyMCE.
+Gambar dan media disisipkan lewat URL; perekaman audio/video dan unggah gambar ke
+editor belum tersedia. HTML dari editor disanitasi DOMPurify saat ditampilkan.
+
+Penyimpanan memakai `mod_assign_save_submission` (`plugindata`
+`onlinetext_editor` dan `files_filemanager`), keduanya termasuk
+`moodle_mobile_app`:
+
+- File tidak diubah: `files_filemanager` tidak dikirim sehingga file di Moodle
+  tetap (`file_postupdate_standard_filemanager` tidak menyentuh area tanpa draft).
+- File diubah: seluruh isi file manager diunggah ke satu draft lewat
+  `webservice/upload.php` (per folder dengan `filepath`, `itemid` yang sama). File
+  lama diunduh lalu diunggah ulang seperti aplikasi Moodle. Bila semua file
+  dihapus, draft kosong dari `core_files_get_unused_draft_itemid` dikirim. Folder
+  kosong tidak ikut tersimpan karena upload.php tidak membuat folder.
+
+Alur ini baru diuji di mock Moodle. Tugas dibuat tanpa opsi "Require students to
+click the submit button", sehingga pengumpulan langsung berstatus Submitted for
+grading; isi pengumpulan dibaca dari `lastattempt.submission.plugins` pada
+`mod_assign_get_submission_status`.
 
 ## Rencana kuliah
 
@@ -319,9 +392,11 @@ Mock mengambil CPMK/metode dari RPS.
     RequireAuth, AppStatus).
   - auth/: potongan halaman pages/auth (AuthLayout, AuthField, PasswordField,
     AuthSubmitButton, GoogleLoginButton); import lewat `components/auth`.
-  - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml);
+  - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml,
+    AssignSubmission); submission/ berisi MoodleEditor dan FileManager untuk
+    halaman Edit submission;
     course/ berisi potongan halaman kursus (CourseSection, ActivityRow) dan
-    editing/ berisi komponen Mode edit (EditModeToggle, ActionMenu,
+    editing/ berisi komponen mode edit (ActionMenu,
     InlineNameEditor, ActivityEditMenu, SectionEditMenu, dialog Pindahkan/Hapus/
     Tambah aktivitas); import lewat `components/moodle/editing`.
   - ai/: komponen generator AI (WorkflowStepper, EventLog, InstructionModal,
@@ -359,7 +434,7 @@ Unit test mencakup API, Moodle, workflow, halaman, sesi, shared state, dan detai
 rencana. Suite browser runtime.spec.js menguji routing/login/workflow;
 auth-06-2.spec.js menguji login akun uji, error kredensial, pemulihan sesi saat
 reload, dan logout; role-guard-06-3.spec.js menguji halaman awal per role, menu,
-dan halaman 403; course-edit-mode.spec.js menguji Mode edit pada 375/1440 px; rps-upload-08-1.spec.js
+dan halaman 403; course-edit-mode.spec.js menguji mode edit dan pengumpulan tugas mahasiswa pada 375/1440 px; rps-upload-08-1.spec.js
 menguji validasi, unggah, dan pemrosesan RPS di Generator AI pada 375/1440 px;
 rps-analysis.spec.js menguji halaman hasil analisis RPS pada 375/1440 px;
 foundation-71.spec.js menguji sesi, state, keyboard, empty/error, serta responsive;
