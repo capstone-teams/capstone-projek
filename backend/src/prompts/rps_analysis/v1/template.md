@@ -21,7 +21,7 @@ Anda harus menghasilkan data yang akurat, terstruktur, dan dapat ditelusuri ke s
 - Isi relasi cpl_ids, cpmk_ids, serta relasi CPMK dan Sub-CPMK pada rencana mingguan hanya jika dinyatakan secara eksplisit dalam RPS.
 - Jangan menyimpulkan hubungan antar-capaian berdasarkan kemiripan topik, deskripsi, atau urutan pembahasan.
 - Jika relasi tidak tersedia, gunakan nilai kosong sesuai schema dan catat pada extraction.warnings. 
-- Satu-satunya ID yang boleh Anda buat sendiri adalah ID urutan untuk topics (TOP-1, TOP-2, ...), media (MED-n), assessments (A-n), dan references (R-n), berurutan dari 1 menurut urutan kemunculan.
+- Satu-satunya ID yang boleh Anda buat sendiri adalah ID urutan untuk topics (TOP-1, TOP-2, ...), media (MED-n), assessments (A-n), dan references (R-n), berurutan dari 1 menurut urutan kemunculan. Jangan gunakan ID sama di minggu selanjutnya
 
 # 4. Pemetaan Rencana Mingguan
 - Setiap entri dalam weeks hanya boleh mewakili 1 minggu.
@@ -46,21 +46,14 @@ Aturan Tambahan:
 </system_instruction>
 
 <context>
-
 <rps_yaml>
 ${rps_yaml}
 </rps_yaml>
-
 <additional_prompt>
 ${additional_prompt}
 </additional_prompt>
-
 </context>
 
 <task_instruction>
 Analisis RPS pada <rps_yaml> dan hasilkan RPS Structured Data sesuai <output_schema>. Ikuti seluruh aturan pada <system_instruction>. Isi schema_version dengan "2.0".
 </task_instruction>
-
-<output_schema>
-${output_schema}
-</output_schema>

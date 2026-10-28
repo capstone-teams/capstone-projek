@@ -38,11 +38,15 @@ DEFAULT_RPS_CONVERTER_TABLE_MODE = "accurate"
 DEFAULT_RPS_PROCESSING_LEASE_SECONDS = 900
 
 # Nilai bawaan konfigurasi LLM timeout & retry
-DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
+DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
 DEFAULT_LLM_MAX_RETRIES = 3
 DEFAULT_LLM_RETRY_BACKOFF_FACTOR = 2.0
 DEFAULT_LLM_RETRY_MIN_WAIT = 0.5
 DEFAULT_LLM_RETRY_MAX_WAIT = 10.0
+
+#Nilai bawaan konfigurasi analisis RPS
+DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 2
+MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 5
 
 
 class Settings(BaseSettings):
@@ -132,6 +136,9 @@ class Settings(BaseSettings):
     # konversi yang terputus (server dimatikan) tidak mengunci dokumen selamanya.
     RPS_PROCESSING_LEASE_SECONDS: int | None = None
 
+    # Batas retry dapat diubah melalui konfigurasi dengan kode di bawah ini.
+    RPS_ANALYSIS_MAX_FIX_ATTEMPTS: int | None = None
+
     model_config = SettingsConfigDict(
         # Urutan penting: pydantic-settings menggabungkan file-file ini secara
         # berurutan dan file TERAKHIR yang menang. ``.env.example`` diletakkan
@@ -200,6 +207,18 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator("RPS_ANALYSIS_MAX_FIX_ATTEMPTS", mode="after")
+    @classmethod
+    def parse_rps_analysis_max_fix_attempts(cls, v: int | None) -> int | None:
+        """Nilai di luar rentang gagal saat startup, bukan saat analisis berjalan."""
+        if v is not None and not 0 <= v <= MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS:
+            raise ValueError(
+                "RPS_ANALYSIS_MAX_FIX_ATTEMPTS harus antara 0 dan "
+                f"{MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS}"
+            )
+        return v
+
+
     @property
     def rps_storage_path(self) -> Path:
         """Direktori absolut penyimpanan dokumen RPS."""
@@ -264,6 +283,15 @@ class Settings(BaseSettings):
             DEFAULT_RPS_PROCESSING_LEASE_SECONDS
             if self.RPS_PROCESSING_LEASE_SECONDS is None
             else self.RPS_PROCESSING_LEASE_SECONDS
+        )
+
+    @property
+    def rps_analysis_max_fix_attempts(self) -> int:
+        """Jumlah retry tambahan analisis RPS yang berlaku."""
+        return (
+            DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS
+            if self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS is None
+            else self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS
         )
 
     @property

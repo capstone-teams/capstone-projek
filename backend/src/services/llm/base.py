@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
+import logging
+import re
 
 import httpx
 
@@ -14,6 +16,7 @@ PLACEHOLDER_API_KEY = "your_llm_api_key_here"
 # Prompt used by `check_connectivity()`: cheap, and its answer is easy to eyeball.
 CONNECTIVITY_PROMPT = "Reply with the single word: pong"
 
+logger = logging.getLogger(__name__)
 
 class LLMProviderError(Exception):
     """Base error for LLM provider failures.
@@ -171,6 +174,91 @@ def _status_error(provider_name: str, exc: httpx.HTTPStatusError) -> LLMProvider
         return LLMConnectionError(f"{provider_name} provider request failed (HTTP {status})")
     return LLMProviderError(f"{provider_name} provider request failed (HTTP {status})")
 
+def _safe_log_value(value: Any, max_length: int = 1000) -> str:
+    value = str(value or "")
+    value = re.sub(
+        r"(?i)\bsk-[A-Za-z0-9_-]{8,}\b",
+        "[REDACTED]",
+        value,
+    )
+    value = re.sub(
+        r"(?i)\bBearer\s+\S+",
+        "Bearer [REDACTED]",
+        value,
+    )
+    return value[:max_length]
+
+
+def _log_upstream_http_error(
+    provider_name: str,
+    response: httpx.Response,
+) -> None:
+    try:
+        payload = response.json()
+    except ValueError:
+        logger.warning(
+            "%s provider HTTP error: status=%s, invalid JSON",
+            provider_name,
+            response.status_code,
+        )
+        return
+
+    if not isinstance(payload, dict):
+        logger.warning(
+            "%s provider HTTP error: status=%s, unexpected response",
+            provider_name,
+            response.status_code,
+        )
+        return
+
+    error = payload.get("error", {})
+    if not isinstance(error, dict):
+        error = {}
+
+    logger.warning(
+        "%s provider HTTP error: status=%s, type=%s, code=%s, "
+        "param=%s, message=%s",
+        provider_name,
+        response.status_code,
+        _safe_log_value(error.get("type", "unknown")),
+        _safe_log_value(error.get("code", "unknown")),
+        _safe_log_value(error.get("param", "unknown")),
+        _safe_log_value(error.get("message", "No error message")),
+    )
+
+def _find_missing_required(schema, path="$"):
+    if not isinstance(schema, dict):
+        return
+
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        required = schema.get("required", [])
+        missing = set(properties) - set(required)
+
+        if missing:
+            logger.error(
+                "Schema tidak valid: path=%s missing_required=%s",
+                path,
+                sorted(missing),
+            )
+
+        for name, child in properties.items():
+            _find_missing_required(
+                child,
+                f"{path}.properties.{name}",
+            )
+
+    for name, child in schema.get("$defs", {}).items():
+        _find_missing_required(child, f"{path}.$defs.{name}")
+
+    for key in ("items", "anyOf", "oneOf", "allOf"):
+        child = schema.get(key)
+
+        if isinstance(child, dict):
+            _find_missing_required(child, f"{path}.{key}")
+        elif isinstance(child, list):
+            for index, item in enumerate(child):
+                _find_missing_required(item, f"{path}.{key}[{index}]")
 
 async def post_json(
     url: str,
@@ -180,22 +268,46 @@ async def post_json(
     provider_name: str,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict:
-    """POST a JSON payload to a provider and normalize transport failures.
-
-    Every raised error is typeless about credentials: the provider URL (which
-    may carry an API key) and the upstream response body are deliberately left
-    out of the message.
-    """
+    """POST JSON to a provider and normalize transport failures."""
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, json=payload, headers=headers or {})
+            response = await client.post(
+                url,
+                json=payload,
+                headers=headers or {},
+            )
             response.raise_for_status()
             return response.json()
+
     except httpx.TimeoutException:
-        raise LLMTimeoutError(f"{provider_name} provider timed out") from None
+        raise LLMTimeoutError(
+            f"{provider_name} provider timed out"
+        ) from None
+
     except httpx.HTTPStatusError as exc:
+        # Record useful upstream details for server-side debugging.
+        _log_upstream_http_error(
+            provider_name,
+            exc.response,
+        )
+
+        # Keep the public exception contract unchanged.
         raise _status_error(provider_name, exc) from None
+
     except httpx.HTTPError as exc:
-        raise LLMConnectionError(f"{provider_name} provider is unreachable ({type(exc).__name__})") from None
+        logger.warning(
+            "%s provider transport error: %s",
+            provider_name,
+            type(exc).__name__,
+        )
+        raise LLMConnectionError(
+            f"{provider_name} provider is unreachable "
+            f"({type(exc).__name__})"
+        ) from None
+
     except ValueError:
-        raise LLMProviderError(f"{provider_name} provider returned an invalid JSON response") from None
+        raise LLMProviderError(
+            f"{provider_name} provider returned an invalid JSON response"
+        ) from None
+
+

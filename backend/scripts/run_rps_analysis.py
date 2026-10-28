@@ -1,375 +1,34 @@
-"""CLI interaktif untuk menguji prompt Ekstraksi RPS (RPS Analysis) OpenAI."""
+"""CLI interaktif untuk menguji RPS Analysis Service (BE-09.2).
+
+Memanggil `analyze_rps()` langsung, sehingga yang diuji adalah jalur yang sama
+dengan yang akan dipakai orchestrator: parse YAML, panggil LLM, validasi,
+retry dengan feedback, event progres, dan trace per percobaan.
+"""
 
 import asyncio
 import json
+import logging
 import sys
+import time
 from pathlib import Path
 
-# Memastikan root backend tersedia di sys.path
+# Memastikan root backend tersedia di sys.path.
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from src.config.settings import get_settings
-from src.services.llm import LLMService, OpenAIProvider
+from src.services.analysis.service import (  # sesuaikan path modul service
+    RPSAnalysisError,
+    analyze_rps,
+)
+from src.services.llm import OpenAIProvider
+
+EVENT_PREFIX_WIDTH = 31  # lebar "[  0.00s] EVENT_TYPE          "
 
 
-
-OUTPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "schema_version": {
-            "type": "string"
-        },
-        "course": {
-            "type": ["object", "null"],
-            "properties": {
-                "study_program": {
-                    "type": ["string", "null"]
-                },
-                "name": {
-                    "type": ["string", "null"]
-                },
-                "code": {
-                    "type": ["string", "null"]
-                },
-                "credits": {
-                    "type": ["integer", "null"]
-                },
-                "semester": {
-                    "type": ["integer", "null"]
-                },
-                "description": {
-                    "type": ["string", "null"]
-                },
-                "course_cluster": {
-                    "type": ["string", "null"]
-                },
-                "prerequisites": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "prepared_at": {
-                    "type": ["string", "null"]
-                },
-                "lecturers": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "authorization": {
-                    "type": ["string", "null"]
-                },
-            },
-            "required": [
-                "study_program",
-                "name",
-                "code",
-                "credits",
-                "semester",
-                "description",
-                "course_cluster",
-                "prerequisites",
-                "prepared_at",
-                "lecturers",
-                "authorization",
-            ],
-            "additionalProperties": False,
-        },
-        "cpl": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "code": {"type": "string"},
-                    "description": {"type": "string"},
-                },
-                "required": ["code", "description"],
-                "additionalProperties": False,
-            },
-        },
-        "cpmk": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "code": {"type": "string"},
-                    "description": {"type": "string"},
-                    "cpl_refs": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                },
-                "required": ["code", "description", "cpl_refs"],
-                "additionalProperties": False,
-            },
-        },
-        "sub_cpmk": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "code": {"type": "string"},
-                    "description": {"type": "string"},
-                    "cpmk_refs": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                },
-                "required": ["code", "description", "cpmk_refs"],
-                "additionalProperties": False,
-            },
-        },
-        "study_materials": {
-            "type": "array",
-            "items": {"type": "string"},
-        },
-        "weekly_plan": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "week": {"type": "integer"},
-                    "week_type": {
-                        "type": "string",
-                        "enum": ["regular", "uts", "uas", "kuis"],
-                    },
-                    "topics": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "cpmk": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "sub_cpmk": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "teaching_method": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "media": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "assessment": {
-                        "type": ["object", "null"],
-                        "properties": {
-                            "type": {"type": ["string", "null"]},
-                            "description": {
-                                "type": ["string", "null"]
-                            },
-                            "weight_percent": {
-                                "type": ["number", "null"]
-                            },
-                        },
-                        "required": [
-                            "type",
-                            "description",
-                            "weight_percent",
-                        ],
-                        "additionalProperties": False,
-                    },
-                },
-                "required": [
-                    "week",
-                    "week_type",
-                    "topics",
-                    "cpmk",
-                    "sub_cpmk",
-                    "teaching_method",
-                    "media",
-                    "assessment",
-                ],
-                "additionalProperties": False,
-            },
-        },
-        "assessments": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "component": {"type": "string"},
-                    "weight_percent": {
-                        "type": ["number", "null"]
-                    },
-                    "cpmk_refs": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                },
-                "required": [
-                    "component",
-                    "weight_percent",
-                    "cpmk_refs",
-                ],
-                "additionalProperties": False,
-            },
-        },
-        "references": {
-            "type": "object",
-            "properties": {
-                "main": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "supporting": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": ["main", "supporting"],
-            "additionalProperties": False,
-        },
-        "media": {
-            "type": "object",
-            "properties": {
-                "software": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "hardware": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": ["software", "hardware"],
-            "additionalProperties": False,
-        },
-        "extraction": {
-            "type": "object",
-            "properties": {
-                "sections": {
-                    "type": "object",
-                    "properties": {
-                        "course": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "cpl": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "cpmk": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "sub_cpmk": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "study_materials": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "weekly_plan": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "assessments": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "references": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                        "media": {
-                            "type": "string",
-                            "enum": ["found", "partial", "not_found"],
-                        },
-                    },
-                    "required": [
-                        "course",
-                        "cpl",
-                        "cpmk",
-                        "sub_cpmk",
-                        "study_materials",
-                        "weekly_plan",
-                        "assessments",
-                        "references",
-                        "media",
-                    ],
-                    "additionalProperties": False,
-                },
-                "warnings": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-                "source_pages": {
-                    "type": "object",
-                    "properties": {
-                        "course": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "cpl": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "cpmk": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "sub_cpmk": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "study_materials": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "weekly_plan": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "assessments": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "references": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                        "media": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                        },
-                    },
-                    "required": [
-                        "course",
-                        "cpl",
-                        "cpmk",
-                        "sub_cpmk",
-                        "study_materials",
-                        "weekly_plan",
-                        "assessments",
-                        "references",
-                        "media",
-                    ],
-                    "additionalProperties": False,
-                },
-            },
-            "required": ["sections", "warnings", "source_pages"],
-            "additionalProperties": False,
-        },
-    },
-    "required": [
-        "schema_version",
-        "course",
-        "cpl",
-        "cpmk",
-        "sub_cpmk",
-        "study_materials",
-        "weekly_plan",
-        "assessments",
-        "references",
-        "media",
-        "extraction",
-    ],
-    "additionalProperties": False,
-}
+# --------------------------------------------------------------------------
+# Input
+# --------------------------------------------------------------------------
 
 
 def read_yaml_file(label: str) -> str:
@@ -390,13 +49,19 @@ def read_yaml_file(label: str) -> str:
             continue
 
         try:
-            return path.read_text(encoding="utf-8")
-        except OSError as e:
-            print(f"[GAGAL] Tidak bisa membaca file: {e}")
+            content = path.read_text(encoding="utf-8")
+
+            if not content.strip():
+                print("[PERINGATAN] File kosong.")
+                continue
+
+            return content
+        except OSError as exc:
+            print(f"[GAGAL] Tidak bisa membaca file: {exc}")
 
 
 def ask_yes_no(question: str) -> bool:
-    """Meminta jawaban ya/tidak."""
+    """Meminta jawaban ya atau tidak."""
     while True:
         answer = input(f"{question} [y/n]: ").strip().lower()
 
@@ -408,26 +73,27 @@ def ask_yes_no(question: str) -> bool:
         print("Masukkan y atau n.")
 
 
-def ask_optional_text(label: str) -> str | None:
-    """Meminta teks opsional."""
+def read_optional_int(question: str) -> int | None:
+    """Meminta angka opsional; Enter berarti memakai nilai dari konfigurasi."""
     while True:
-        value = input(f"{label}: ").strip()
-
-        if value.lower() == "skip":
+        value = input(f"{question} (Enter = konfigurasi): ").strip()
+        if not value:
             return None
-        if value:
-            return value
-
-        print(
-            "Teks tidak boleh kosong. "
-            "Masukkan instruksi atau ketik 'skip'."
-        )
+        try:
+            number = int(value)
+        except ValueError:
+            print("[PERINGATAN] Masukkan angka bulat.")
+            continue
+        if number < 0:
+            print("[PERINGATAN] Tidak boleh negatif.")
+            continue
+        return number
 
 
 def read_task_instruction() -> str:
     """Membaca instruksi dari file Markdown atau teks manual."""
     while True:
-        value = input("Instruksi tugas / Path file: ").strip()
+        value = input("Instruksi tugas / path file: ").strip()
 
         if value.lower() == "skip":
             return ""
@@ -438,278 +104,112 @@ def read_task_instruction() -> str:
 
         path = Path(value).expanduser()
 
-        # Jika berupa path file Markdown yang tersedia, baca isinya.
+        # Jika input berupa path file Markdown, baca isi filenya.
         if path.suffix.lower() == ".md":
             if not path.is_absolute():
                 path = Path.cwd() / path
 
-            if path.is_file():
-                try:
-                    content = path.read_text(encoding="utf-8")
-                    print(f"[SUKSES] File instruksi dibaca: {path}")
-                    return content
-                except OSError as e:
-                    print(f"[GAGAL] Gagal membaca file instruksi: {e}")
+            if not path.is_file():
+                print(f"[GAGAL] File instruksi tidak ditemukan: {path}")
+                continue
+
+            try:
+                content = path.read_text(encoding="utf-8")
+
+                if not content.strip():
+                    print("[PERINGATAN] File instruksi kosong.")
                     continue
 
-            # Jangan diam-diam mengirim path yang salah sebagai instruksi.
-            print(f"[GAGAL] File instruksi tidak ditemukan: {path}")
-            print("Masukkan path yang benar atau ketik 'skip'.")
-            continue
+                print(f"[SUKSES] File instruksi dibaca: {path}")
+                return content
+            except OSError as exc:
+                print(f"[GAGAL] Tidak bisa membaca file: {exc}")
+                continue
 
-        # Selain path .md, perlakukan input sebagai teks instruksi manual.
+        # Selain path Markdown, input dianggap sebagai teks manual.
         return value
 
 
-def markdown_value(value) -> str:
-    """Mengubah nilai menjadi teks Markdown yang aman untuk tabel sederhana."""
-    if value is None or value == "":
-        return "-"
-
-    if isinstance(value, list):
-        return ", ".join(str(item) for item in value) or "-"
-
-    return str(value).replace("\n", " ").strip() or "-"
+# --------------------------------------------------------------------------
+# Pelaporan proses
+# --------------------------------------------------------------------------
 
 
-def save_result_as_markdown(data: dict) -> Path:
-    """Menyimpan seluruh bagian hasil ekstraksi RPS ke file Markdown."""
-    import datetime
+def make_reporters():
+    """Buat callback event/trace yang mencetak proses secara langsung.
 
-    output_dir = Path.cwd() / "hasil_ekstraksi_rps"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    Keduanya sama dengan yang nantinya diberikan orchestrator (BE-11):
+    `emit_event` menerima event progres, `record_trace` menerima jejak
+    tiap percobaan.
+    """
+    started = time.perf_counter()
+    traces: list[dict] = []
+    indent = " " * EVENT_PREFIX_WIDTH
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = output_dir / f"hasil_ekstraksi_rps_{timestamp}.md"
+    async def emit_event(*, event_type: str, message: str, **data) -> None:
+        elapsed = time.perf_counter() - started
+        print(f"[{elapsed:6.2f}s] {event_type:<20} {message}")
 
-    lines = [
-        "# Hasil Ekstraksi RPS",
-        "",
-        f"**Schema Version:** {markdown_value(data.get('schema_version'))}",
-        "",
-        "## 1. Informasi Mata Kuliah",
-        "",
-    ]
-
-    course = data.get("course") or {}
-    course_fields = [
-        ("Nama Mata Kuliah", course.get("name")),
-        ("Kode Mata Kuliah", course.get("code")),
-        ("SKS", course.get("credits")),
-        ("Semester", course.get("semester")),
-        ("Deskripsi", course.get("description")),
-    ]
-
-    for label, value in course_fields:
-        lines.append(f"- **{label}:** {markdown_value(value)}")
-
-    lines.extend(["", "## 2. Capaian Pembelajaran Lulusan (CPL)", ""])
-
-    cpl_items = data.get("cpl", [])
-    if cpl_items:
-        for item in cpl_items:
-            lines.append(
-                f"- **{markdown_value(item.get('id'))}:** "
-                f"{markdown_value(item.get('description'))}"
+        if event_type == "LLM_RESPONDED":
+            print(
+                f"{indent}token: {data.get('tokens_input')} masuk, "
+                f"{data.get('tokens_output')} keluar"
             )
-    else:
-        lines.append("- Tidak ada data CPL.")
 
-    lines.extend([
-        "",
-        "## 3. Capaian Pembelajaran Mata Kuliah (CPMK)",
-        "",
-    ])
+        if data.get("reason_code") and event_type in ("RETRY_FIX", "ANALYSIS_FAILED"):
+            print(f"{indent}alasan: {data['reason_code']}")
 
-    cpmk_items = data.get("cpmk", [])
-    if cpmk_items:
-        for item in cpmk_items:
-            lines.extend([
-                f"### {markdown_value(item.get('id'))}",
-                "",
-                markdown_value(item.get("description")),
-                "",
-                f"- **CPL terkait:** "
-                f"{markdown_value(item.get('cpl_ids', []))}",
-                "",
-            ])
-    else:
-        lines.append("- Tidak ada data CPMK.")
+        for detail in data.get("details") or []:
+            print(f"{indent}- {detail}")
 
-    lines.extend(["", "## 4. Sub-CPMK", ""])
+    async def record_trace(**fields) -> None:
+        traces.append(fields)
 
-    sub_cpmk_items = data.get("sub_cpmk", [])
-    if sub_cpmk_items:
-        for item in sub_cpmk_items:
-            lines.extend([
-                f"### {markdown_value(item.get('id'))}",
-                "",
-                markdown_value(item.get("description")),
-                "",
-                f"- **CPMK terkait:** "
-                f"{markdown_value(item.get('cpmk_ids', []))}",
-                "",
-            ])
-    else:
-        lines.append("- Tidak ada data Sub-CPMK.")
+    return emit_event, record_trace, traces
 
-    lines.extend(["", "## 5. Topik Pembelajaran", ""])
 
-    for item in data.get("topics", []):
-        lines.append(
-            f"- **{markdown_value(item.get('id'))}:** "
-            f"{markdown_value(item.get('name'))}"
+def print_traces(traces: list[dict]) -> None:
+    """Ringkasan jejak per percobaan."""
+    if not traces:
+        return
+
+    print("\n" + "-" * 70)
+    print("JEJAK PERCOBAAN")
+    print("-" * 70)
+    total_in = total_out = 0
+    total_ms = 0.0
+
+    for t in traces:
+        print(
+            f"#{t['attempt']} {t['prompt']} | model={t['model']} | "
+            f"token={t['tokens_input']}/{t['tokens_output']} | "
+            f"durasi={t['duration_ms']:.0f} ms | hasil={t['validation']}"
+            + (f" ({t['reason_code']})" if t.get("reason_code") else "")
         )
+        total_in += t["tokens_input"] or 0
+        total_out += t["tokens_output"] or 0
+        total_ms += t["duration_ms"] or 0
 
-    if not data.get("topics"):
-        lines.append("- Tidak ada data topik.")
+    print("-" * 70)
+    print(f"Total token   : {total_in} masuk, {total_out} keluar ({total_in + total_out})")
+    print(f"Total durasi  : {total_ms:.2f} ms")
 
-    lines.extend(["", "## 6. Media Pembelajaran", ""])
 
-    for item in data.get("media", []):
-        lines.extend([
-            f"### {markdown_value(item.get('id'))}. "
-            f"{markdown_value(item.get('name'))}",
-            "",
-            f"- **Jenis:** {markdown_value(item.get('type'))}",
-            f"- **Deskripsi:** "
-            f"{markdown_value(item.get('description'))}",
-            "",
-        ])
-
-    if not data.get("media"):
-        lines.append("- Tidak ada data media.")
-
-    lines.extend(["", "## 7. Rencana Pembelajaran Mingguan", ""])
-
-    weeks = sorted(data.get("weeks", []), key=lambda item: item["week"])
-
-    if weeks:
-        for week in weeks:
-            lines.extend([
-                f"### Minggu {week['week']} "
-                f"({markdown_value(week.get('week_type'))})",
-                "",
-                f"- **Topik:** "
-                f"{markdown_value(week.get('topics', []))}",
-                f"- **CPMK:** "
-                f"{markdown_value(week.get('cpmk', []))}",
-                f"- **Sub-CPMK:** "
-                f"{markdown_value(week.get('sub_cpmk', []))}",
-                f"- **Metode mengajar:** "
-                f"{markdown_value(week.get('teaching_method', []))}",
-                f"- **Media:** "
-                f"{markdown_value(week.get('media', []))}",
-            ])
-
-            assessment = week.get("assessment")
-            if assessment:
-                weight = assessment.get("weight_percent")
-                weight_text = (
-                    f"{weight}%"
-                    if weight is not None
-                    else "-"
-                )
-
-                lines.extend([
-                    "",
-                    "**Penilaian Mingguan**",
-                    "",
-                    f"- **Jenis:** "
-                    f"{markdown_value(assessment.get('type'))}",
-                    f"- **Deskripsi:** "
-                    f"{markdown_value(assessment.get('description'))}",
-                    f"- **Bobot:** {weight_text}",
-                ])
-
-            lines.append("")
-    else:
-        lines.append("- Tidak ada data rencana mingguan.")
-
-    lines.extend(["", "## 8. Metode Pengajaran", ""])
-
-    for method in data.get("teaching_methods", []):
-        lines.append(f"- {markdown_value(method)}")
-
-    if not data.get("teaching_methods"):
-        lines.append("- Tidak ada data metode pengajaran.")
-
-    lines.extend(["", "## 9. Penilaian", ""])
-
-    assessments = data.get("assessments", [])
-    if assessments:
-        for item in assessments:
-            weight = item.get("weight_percent")
-            weight_text = f"{weight}%" if weight is not None else "-"
-
-            lines.extend([
-                f"### {markdown_value(item.get('id'))}",
-                "",
-                f"- **Jenis:** {markdown_value(item.get('type'))}",
-                f"- **Minggu:** {markdown_value(item.get('week'))}",
-                f"- **Bobot:** {weight_text}",
-                f"- **Deskripsi:** "
-                f"{markdown_value(item.get('description'))}",
-                "",
-            ])
-    else:
-        lines.append("- Tidak ada data penilaian.")
-
-    lines.extend(["", "## 10. Referensi", ""])
-
-    references = data.get("references", [])
-    if references:
-        for item in references:
-            lines.append(
-                f"- **{markdown_value(item.get('id'))}:** "
-                f"{markdown_value(item.get('citation'))}"
-            )
-
-            authors = item.get("authors")
-            year = item.get("year")
-            source = item.get("source")
-
-            details = []
-            if authors:
-                details.append(f"Penulis: {authors}")
-            if year is not None:
-                details.append(f"Tahun: {year}")
-            if source:
-                details.append(f"Sumber: {source}")
-
-            if details:
-                lines.append(f"  - {' | '.join(details)}")
-    else:
-        lines.append("- Tidak ada data referensi.")
-
-    lines.extend(["", "## 11. Catatan Ekstraksi", ""])
-
-    extraction = data.get("extraction") or {}
-    warnings = extraction.get("warnings", [])
-
-    if warnings:
-        for warning in warnings:
-            lines.append(f"- {markdown_value(warning)}")
-    else:
-        lines.append("- Tidak ada peringatan ekstraksi.")
-
-    lines.append("")
-
-    output_path.write_text(
-        "\n".join(lines),
-        encoding="utf-8",
-    )
-
-    return output_path
+# --------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------
 
 
 async def main() -> int:
-    settings = get_settings()
-    provider = OpenAIProvider()
+    # Proses sudah ditampilkan lewat event; log WARNING service memuat detail
+    # error mentah dan akan mengacaukan tampilan CLI.
+    logging.getLogger("src.services.analysis.rps_analysis").setLevel(logging.ERROR)
 
     print("=" * 70)
-    print("CLI: MOODLE AGENTIC AI - RPS EXTRACTION TEST")
+    print("CLI: MOODLE AGENTIC AI - RPS ANALYSIS (via analyze_rps)")
     print("=" * 70)
+
+    provider = OpenAIProvider()
 
     if not provider.is_configured():
         print("[GAGAL] OPENAI_API_KEY belum dikonfigurasi di backend/.env.")
@@ -719,84 +219,79 @@ async def main() -> int:
     print(f"Model    : {provider.model}")
     print("=" * 70)
 
-    # 1. Input RPS
-    print("\n[1] INPUT DATA MENTAH")
+    # 1. Input RPS.
+    print("\n[1] INPUT DATA RPS")
     rps_yaml = read_yaml_file("RPS (YAML)")
 
-    # 2. Task instruction
-    print("\n[2] TASK INSTRUCTION")
+    # 2. Instruksi tambahan (diteruskan sebagai additional_prompt).
+    print("\n[2] INSTRUKSI TAMBAHAN")
     print(
-        "Masukkan path file instruction.md, "
-        "teks instruksi manual, atau ketik 'skip'."
+        "Hanya untuk cara memfilter/memetakan data RPS. Masukkan path file .md, "
+        "teks manual, atau ketik 'skip'."
     )
-
-    if ask_yes_no("Tambahkan task instruction?"):
-        task_instruction = read_task_instruction()
+    if ask_yes_no("Tambahkan instruksi?"):
+        additional_prompt = read_task_instruction()
     else:
-        task_instruction = ""
+        additional_prompt = ""
 
-    # 3. Siapkan variabel prompt
-    variables = {
-        "rps_yaml": rps_yaml,
-        "task_instruction": task_instruction,
-    }
+    # 3. Batas retry.
+    print("\n[3] BATAS RETRY")
+    max_fix_attempts = read_optional_int("Retry tambahan jika output tidak valid")
 
+    # 4. Konfirmasi.
     print("\n" + "=" * 70)
-    print("KONFIRMASI INPUT EKSTRAKSI")
+    print("KONFIRMASI INPUT")
     print("=" * 70)
-    print("RPS (YAML)       : berhasil dibaca")
+    print("RPS YAML         : berhasil dibaca")
+    print(f"Instruksi        : {'Ya' if additional_prompt else 'Tidak'}")
     print(
-        "Task instruction : "
-        f"{'Ya (Teks/File terlampir)' if task_instruction else 'Tidak'}"
+        "Batas retry      : "
+        f"{max_fix_attempts if max_fix_attempts is not None else 'dari konfigurasi'}"
     )
 
-    if not ask_yes_no("\nJalankan prompt ke OpenAI?"):
+    if not ask_yes_no("Jalankan RPS Analysis ke OpenAI?"):
         print("Eksekusi dibatalkan.")
         return 0
 
-    service = LLMService(provider)
+    # 5. Jalankan service dan tampilkan prosesnya.
+    emit_event, record_trace, traces = make_reporters()
+
+    print("\n" + "=" * 70)
+    print("PROSES")
+    print("=" * 70)
 
     try:
-        result = await service.execute_prompt(
-            prompt_name="rps_analysis",
-            version="v1",
-            variables=variables,
-            output_schema=OUTPUT_SCHEMA,
+        rps_data = await analyze_rps(
+            rps_yaml,
+            max_fix_attempts=max_fix_attempts,
+            emit_event=emit_event,
+            record_trace=record_trace,
+            additional_prompt=additional_prompt,
         )
-    except Exception as e:
-        print(f"\n[GAGAL] {type(e).__name__}: {e}")
+    except ValueError as exc:
+        print(f"\n[GAGAL] Input tidak valid: {exc}")
+        return 1
+    except RPSAnalysisError as exc:
+        print(f"\n[GAGAL] {exc.code} ({exc.reason_code}) setelah {exc.attempts} percobaan")
+        if exc.__cause__ is not None:  # penyebab asli, mis. TypeError atau error API
+            print(f"        Penyebab: {type(exc.__cause__).__name__}: {exc.__cause__}")
+        print_traces(traces)
+        return 1
+    except Exception as exc:
+        print(f"\n[GAGAL] {type(exc).__name__}: {exc}")
+        print_traces(traces)
         return 1
 
-    # 4. Tampilkan hasil JSON
+    # 6. Tampilkan hasil JSON tervalidasi.
+    output_data = rps_data.model_dump(mode="json")
+
     print("\n" + "=" * 70)
-    print("[SUKSES] HASIL STRUCTURED DATA (JSON)")
+    print("[SUKSES] HASIL RPS STRUCTURED DATA")
     print("=" * 70)
-    print(json.dumps(result.data, indent=2, ensure_ascii=False))
+    print(json.dumps(output_data, indent=2, ensure_ascii=False))
 
-    # 5. Simpan hasil ke Markdown jika diminta
-    print("\n" + "=" * 70)
-    print("SIMPAN HASIL EKSTRAKSI")
-    print("=" * 70)
-
-    if ask_yes_no("Simpan hasil ekstraksi sebagai file Markdown?"):
-        try:
-            output_path = save_result_as_markdown(result.data)
-            print("\n[SUKSES] File Markdown berhasil disimpan.")
-            print(f"Lokasi: {output_path.resolve()}")
-        except OSError as e:
-            print(f"\n[GAGAL] Tidak bisa menyimpan file Markdown: {e}")
-
-    # 6. Metadata pemanggilan
-    metadata = result.metadata
-
-    print("\n" + "-" * 70)
-    print("METADATA PEMANGGILAN")
-    print("-" * 70)
-    print(f"Prompt       : {metadata.prompt_name}/{metadata.prompt_version}")
-    print(f"Input Token  : {metadata.input_tokens}")
-    print(f"Output Token  : {metadata.output_tokens}")
-    print(f"Total token  : {metadata.total_tokens}")
-    print(f"Durasi       : {metadata.duration_ms:.2f} ms")
+    # 7. Jejak percobaan.
+    print_traces(traces)
     print("=" * 70)
 
     return 0

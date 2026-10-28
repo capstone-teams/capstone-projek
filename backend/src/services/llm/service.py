@@ -198,3 +198,4 @@ class LLMService:
 def get_llm_service(provider_name: Optional[str] = None) -> LLMService:
     """Build an `LLMService` bound to the configured provider."""
     return LLMService(get_llm_provider(provider_name))
+
