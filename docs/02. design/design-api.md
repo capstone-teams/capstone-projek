@@ -385,13 +385,13 @@ berstatus `ANALYZED` tidak dianalisis ulang secara implisit; satu-satunya jalan
 adalah endpoint ini. Client memantau hasilnya melalui §16/§17 lalu membaca
 §6.4.
 
-> **Status implementasi (BE-06.4).** §6.4–§6.6 sudah terbit pada OpenAPI
-> beserta contoh response. §6.6 (`POST /api/v1/rps/{rps_id}/reanalyze`) sudah
-> diimplementasikan BE-08.2: analisis berjalan di background dari
-> `source_document`, dan kegagalannya terbaca pada §6.2 sebagai
-> `processing_error_code` (`LLM_GENERATION_FAILED`) +
-> `processing_error_message`. §6.4 dan §6.5 masih berupa rute stub
-> `501 NOT_IMPLEMENTED` sampai BE-08.3 mendarat.
+> **Status implementasi.** §6.4–§6.6 sudah terbit pada OpenAPI beserta contoh
+> response dan seluruhnya sudah diimplementasikan: §6.6
+> (`POST /api/v1/rps/{rps_id}/reanalyze`) bersama penyimpanan hasil analisis di
+> `rps.structured_data` oleh BE-08.2, lalu §6.4 (`GET /rps/{rps_id}/analysis`)
+> dan §6.5 (`GET /rps`) oleh BE-08.3. Kegagalan analisis terbaca pada §6.2
+> sebagai `processing_error_code` (`LLM_GENERATION_FAILED`) +
+> `processing_error_message`.
 
 ---
 

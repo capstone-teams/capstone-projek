@@ -19,7 +19,9 @@ Operasi yang disediakan:
 - :meth:`RPSService.begin_analysis` / :meth:`RPSService.analyze` — permulaan dan
   jalannya analisis dari ``source_document`` (BE-08.2, luar siklus request);
 - :meth:`RPSService.complete_analysis` / :meth:`RPSService.fail_analysis` —
-  pencatatan hasil atau kegagalan analisis.
+  pencatatan hasil atau kegagalan analisis;
+- :meth:`RPSService.list_rps` / :meth:`RPSService.get_analysis` — operasi baca
+  yang dipakai endpoint daftar dan hasil analisis (BE-08.3).
 
 **Idempotency.** Sesuai acceptance criteria BE-05, dokumen dengan ``file_hash``
 dan ``schema_version`` yang sama tidak diproses ulang:
@@ -356,6 +358,26 @@ class RPSService:
         return RPSProcessResult(
             document=result.document, reused=False, conversion=result.conversion
         )
+
+    async def list_rps(self, *, owner_id: str) -> list[RPSDocument]:
+        """Daftar RPS milik dosen yang login (design-api §6.5).
+
+        Scoping owner dilakukan repository, sehingga daftar ini tidak pernah
+        memuat dokumen milik dosen lain.
+        """
+        return await self._repository.list_by_owner(require_owner(owner_id))
+
+    async def get_analysis(self, *, rps_id: str, owner_id: str) -> RPSDocument:
+        """Dokumen yang hasil analisisnya sudah tersedia (design-api §6.4).
+
+        RPS yang belum dianalisis menghasilkan 422 ``INVALID_REQUEST`` — lebih
+        jelas daripada response kosong yang membuat client menebak apakah data
+        memang tidak ada atau analisisnya belum berjalan.
+        """
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+        if not document.is_analyzed or document.analyzed_at is None:
+            raise RPSValidationError("status", "RPS belum dianalisis")
+        return document
 
     async def begin_analysis(
         self,

@@ -1,8 +1,8 @@
-"""DTO endpoint RPS (BE-05.1, BE-05.2 & BE-08.2).
+"""DTO endpoint RPS (BE-05, BE-08.2 & BE-08.3).
 
 Kontrak HTTP mengikuti ``docs/02. design/design-api.md`` §6.1 (upload), §6.2
-(detail), §6.3 (process), dan §6.6 (reanalyze), dengan satu catatan yang
-disengaja:
+(detail), §6.3 (process), §6.4 (hasil analisis), §6.5 (daftar), dan §6.6
+(reanalyze), dengan satu catatan yang disengaja:
 
 1. **``agent_run_id`` tidak ada pada response process.** design-api §6.3
    menyebutkannya, tetapi Agent Run pada ``agent_runs`` mensyaratkan
@@ -29,16 +29,22 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.schemas.rps_structured import RPS_SCHEMA_VERSION
+from src.schemas.rps_structured import RPS_SCHEMA_VERSION, RPSStructuredData
 from src.services.rps.enums import RPSStatus
 
 __all__ = [
+    "RPSAnalysisResponse",
     "RPSDetailResponse",
+    "RPSListItem",
+    "RPSListResponse",
     "RPSProcessRequest",
     "RPSProcessResponse",
     "RPSReanalyzeResponse",
     "RPSUploadResponse",
 ]
+
+# Contoh identifier ShortUUID pada dokumentasi OpenAPI.
+RPS_ID_EXAMPLE = "kP3nQ7vRtYx2bM8sLdWfZa"
 
 
 class RPSUploadResponse(BaseModel):
@@ -157,6 +163,94 @@ class RPSReanalyzeResponse(BaseModel):
                 "rps_id": "kP3nQ7vRtYx2bM8sLdWfZa",
                 "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
                 "status": "ANALYZING",
+            }
+        }
+    )
+
+
+class RPSListItem(BaseModel):
+    """Satu baris daftar RPS milik dosen yang login (design-api §6.5).
+
+    ``workflow_id`` terisi setelah analisis dijadwalkan (BE-08.2) atau setelah
+    orkestrator BE-11.2 menghubungkan RPS dengan workflow-nya.
+    """
+
+    id: str
+    filename: str
+    status: RPSStatus
+    schema_version: str
+    workflow_id: str | None = Field(
+        default=None,
+        description="Workflow analisis RPS ini; null bila belum ada.",
+    )
+    has_source_document: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": RPS_ID_EXAMPLE,
+                "filename": "rps-basis-data.pdf",
+                "status": "PROCESSED",
+                "schema_version": "2.0",
+                "workflow_id": None,
+                "has_source_document": True,
+                "created_at": "2026-10-21T08:00:00Z",
+                "updated_at": "2026-10-21T08:00:42Z",
+            }
+        }
+    )
+
+
+class RPSListResponse(BaseModel):
+    """Response ``GET /api/v1/rps`` (design-api §6.5)."""
+
+    items: list[RPSListItem] = Field(default_factory=list, description="RPS milik dosen.")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "id": RPS_ID_EXAMPLE,
+                        "filename": "rps-basis-data.pdf",
+                        "status": "PROCESSED",
+                        "schema_version": "2.0",
+                        "workflow_id": None,
+                        "has_source_document": True,
+                        "created_at": "2026-10-21T08:00:00Z",
+                        "updated_at": "2026-10-21T08:00:42Z",
+                    }
+                ]
+            }
+        }
+    )
+
+
+class RPSAnalysisResponse(BaseModel):
+    """Response ``GET /api/v1/rps/{rps_id}/analysis`` (design-api §6.4).
+
+    ``data`` adalah RPS Structured Data lengkap (content-schema §6.2) — identitas
+    mata kuliah, CPL, CPMK, Sub-CPMK, rencana mingguan, penilaian, dan referensi.
+    ``analyzed_at`` adalah waktu analisis yang menghasilkan data tersebut.
+    """
+
+    rps_id: str
+    analyzed_at: datetime = Field(description="Waktu analisis yang menghasilkan data ini.")
+    data: RPSStructuredData
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "rps_id": RPS_ID_EXAMPLE,
+                "analyzed_at": "2026-10-21T08:01:10Z",
+                "data": {
+                    "schema_version": "2.0",
+                    "course": {"name": "Basis Data", "code": "IF123", "credits": 3},
+                    "cpmk": [{"id": "CPMK-1", "description": "Merancang basis data relasional"}],
+                    "weeks": [{"week": 1, "topics": ["Pengenalan Basis Data"]}],
+                },
             }
         }
     )

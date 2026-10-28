@@ -42,8 +42,6 @@ RPS_ID = "kP3nQ7vRtYx2bM8sLdWfZa"
 WORKFLOW_ID = "q7RtYx2bM8sLdWfZaKp3nQ"
 
 STUB_CALLS = [
-    ("get", "/api/v1/rps", None),
-    ("get", f"/api/v1/rps/{RPS_ID}/analysis", None),
     ("get", "/api/v1/workflows", None),
     ("get", f"/api/v1/workflows/{WORKFLOW_ID}/events", None),
 ]

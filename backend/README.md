@@ -594,7 +594,7 @@ ringan dan deterministik.
 
 ---
 
-## 🧪 RPS Analysis Result & Reanalyze (BE-08.2)
+## 🧪 RPS Analysis Result & Read API (BE-08.2, BE-08.3)
 
 Analisis adalah tahap kedua alur data RPS (content-schema §54):
 `PROCESSED → ANALYZING → ANALYZED` (atau `FAILED` pada kedua tahap). Hasilnya
@@ -617,11 +617,13 @@ RPSStructuredData ──▶ rps.structured_data + rps.analyzed_at  → status AN
 | Method | Path | Role | Keterangan |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/v1/rps/{rps_id}/reanalyze` | `INSTRUCTOR` | **Menjadwalkan** analisis ulang dari `source_document`: `202` + `ANALYZING` + `workflow_id`. Tanpa body |
+| `GET` | `/api/v1/rps` | `INSTRUCTOR` | Daftar RPS milik dosen yang login: `status`, `workflow_id`, `has_source_document`, timestamp. Hanya dokumen sendiri |
+| `GET` | `/api/v1/rps/{rps_id}/analysis` | `INSTRUCTOR` | RPS Structured Data utuh + `analyzed_at` untuk RPS `ANALYZED`; `422 INVALID_REQUEST` bila belum dianalisis |
 
-Status bernilai `ANALYZING` pada response; client memantau `GET /rps/{rps_id}`
-sampai `ANALYZED`/`FAILED`, lalu membaca hasilnya lewat
-`GET /rps/{rps_id}/analysis` (BE-08.3). RPS yang sudah `ANALYZED` **tidak**
-dianalisis ulang secara implisit — satu-satunya jalan adalah endpoint ini.
+Status bernilai `ANALYZING` pada response reanalyze; client memantau
+`GET /rps/{rps_id}` sampai `ANALYZED`/`FAILED`, lalu membaca hasilnya lewat
+`GET /rps/{rps_id}/analysis`. RPS yang sudah `ANALYZED` **tidak** dianalisis
+ulang secara implisit — satu-satunya jalan adalah endpoint reanalyze.
 Pemanggil non-HTTP (orkestrator BE-11.2) memakai
 `RPSService.begin_analysis(force=False)` sehingga dokumen yang sudah dianalisis
 dilaporkan `scheduled=False` tanpa memanggil model.
@@ -648,7 +650,7 @@ dapat dipahami. Hasil analisis lama tidak dihapus saat reanalyze gagal.
 | Port analisis + adapter BE-09.2 | `src/services/rps/analyzer.py` |
 | Runner analisis background | `src/services/rps/analysis_runner.py` |
 | Error analisis (`LLM_GENERATION_FAILED`) | `src/services/rps/errors.py` |
-| DTO `RPSReanalyzeResponse` | `src/schemas/rps.py` |
+| DTO `RPSReanalyzeResponse`, `RPSListResponse`, `RPSAnalysisResponse` | `src/schemas/rps.py` |
 | Endpoint HTTP | `src/routes/rps.py` |
 | Kolom `analyzed_at`, `workflow_id`, enum `ANALYZING`/`ANALYZED` | `src/models/rps.py` + migrasi `7c2f9a41e6b3_*.py` |
 
@@ -656,6 +658,7 @@ dapat dipahami. Hasil analisis lama tidak dihapus saat reanalyze gagal.
 
 ```bash
 uv run pytest tests/test_rps_analysis_persistence.py   # domain + endpoint reanalyze (butuh PostgreSQL)
+uv run pytest tests/test_rps_list_analysis.py          # daftar RPS + hasil analisis (butuh PostgreSQL)
 ```
 
 ---
