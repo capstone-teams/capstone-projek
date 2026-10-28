@@ -1664,3 +1664,96 @@ Detail yang masih dapat berubah:
 * schema versioning implementation.
 
 Perubahan schema yang memengaruhi API, database, agent prompt, atau Moodle integration harus dievaluasi terhadap dokumen terkait.
+
+---
+
+# 56. LLM Input YAML
+
+Kontrak format YAML yang menjadi **input LLM** (DL-005, DL-006), dihasilkan
+modul `backend/src/services/rps/yaml_export.py` (BE-08.1). Ada dua sumber dan
+dua bentuk; keduanya tidak pernah memuat identitas dosen, data administratif,
+maupun metadata file.
+
+## 56.1 Hasil ekstraksi (`rps.source_document` → YAML)
+
+Dipakai sebagai input tahap *RPS Analysis*. Docling JSON disederhanakan menjadi
+`page_count` dan daftar `blocks` terurut menurut halaman; nomor halaman
+disertakan pada setiap blok karena RPS merujuk halaman (mis. "lihat lampiran
+halaman 7").
+
+```yaml
+page_count: 16
+blocks:
+- page: 1
+  heading: CAPAIAN PEMBELAJARAN MATA KULIAH
+- page: 1
+  text: 'CPMK-1: Mahasiswa mampu merancang basis data relasional.'
+- page: 2
+  table:
+    caption: Tabel 1. Distribusi Mingguan
+    rows:
+    - [Minggu, Topik, Metode]
+    - ['1', Pengenalan Basis Data, Kuliah]
+    - ['2', Model Relasional, Latihan]
+```
+
+Aturan normalisasi:
+
+| Aturan | Alasan |
+| --- | --- |
+| Blok `content_layer: furniture` dan label `page_header`/`page_footer` dibuang | Kepala/kaki halaman memuat identitas dosen dan nama program studi |
+| Teks pendek (≤ 60 karakter) yang muncul di ≥ 3 halaman dibuang | Chrome template (nomor dokumen, tanggal terbit, nomor revisi) yang tidak diberi label oleh Docling |
+| Baris tabel berkunci administratif (`No. Dok.`, `Tgl. Terbit`, `No. Revisi`, `Hal`, `Tanggal`, `Tahun Ajaran`) dibuang | Kisi template kadang terdeteksi Docling sebagai tabel 2 kolom |
+| Sel tabel berupa nomor halaman (`: 4/16`) dibuang | Bukan isi akademik |
+| Nama dosen dan NIDN/NIP/NIK diganti `[identitas dihapus]` | Identitas sering menyatu dalam sel tabel hasil deteksi Docling; teks akademik di sekitarnya tetap utuh |
+| Sel tabel disusun menurut `start_row`/`start_col` | Isi sel gabungan (`row_span`) tidak digandakan |
+| Baris/kolom kosong dan nilai `null`/string kosong dibuang | Token tidak terpakai untuk lubang data |
+
+Yang **tidak** dibuang meski berulang di banyak halaman: header tabel akademik
+(`Minggu ke-`, `Sub-CPMK`, `Bahan Kajian`, `Bentuk/Metode Pembelajaran`,
+`Penilaian`, `Durasi`). Header itu diulang pada setiap halaman tabel rencana
+mingguan dan justru dibutuhkan LLM agar kolomnya dapat dibaca.
+
+Penggantian identitas berbasis kata kunci template RPS ("Dosen Pengampu",
+"Nama Dosen", "Tanda Tangan", "Disusun oleh", "Diverifikasi oleh", "NIDN",
+"NIP", "NIK"). Nama yang tercetak tanpa kata kunci tersebut (mis. `Nama : ...`)
+belum dikenali — jaminan penuh memerlukan pemetaan field template-aware pada
+tahap analisis (BE-08.2/BE-09).
+
+## 56.2 Hasil analisis (`rps.structured_data` → YAML)
+
+Dipakai sebagai input tahap *Course Plan* (M03). Hanya field berikut yang ikut,
+urutan sesuai kontrak: `course`, `cpl`, `cpmk`, `sub_cpmk`, `topics`, `weeks`,
+`teaching_methods`, `media`, `assessments`, `references`.
+
+`schema_version` dan `extraction` **tidak** ikut: keduanya metadata proses, bukan
+informasi akademik. Nilai kosong dibuang, bukan ditulis sebagai `null`.
+
+```yaml
+course:
+  name: Basis Data
+  code: IF123
+  credits: 3
+cpmk:
+- id: CPMK-1
+  description: Merancang basis data relasional
+  cpl_ids: [CPL-1]
+weeks:
+- week: 1
+  topics: [Pengenalan Basis Data]
+  cpmk: [CPMK-1]
+- week: 8
+  week_type: uts
+```
+
+## 56.3 Ukuran
+
+Panjang YAML dicatat pemanggil sebagai perkiraan penggunaan token (BE-08.1):
+RPS 16 halaman pada `tests/fixtures/test.pdf` menghasilkan sekitar 19 ribu
+karakter YAML hasil ekstraksi (≈ 5 ribu token) — turun dari ± 26 ribu karakter
+bila seluruh teks Docling diserialisasi apa adanya, karena chrome halaman dan
+kisi administratif tidak ikut.
+
+Angka itu berasal dari konversi Docling sungguhan, bukan fixture sintetis:
+`RPS_DOCLING_LIVE_TEST=1 uv run pytest tests/test_rps_yaml_export.py -k real`.
+Nilai dapat berubah bila model Docling atau `RPS_TABLE_MODES` berubah.

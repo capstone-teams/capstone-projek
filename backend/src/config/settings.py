@@ -44,9 +44,14 @@ DEFAULT_LLM_RETRY_BACKOFF_FACTOR = 2.0
 DEFAULT_LLM_RETRY_MIN_WAIT = 0.5
 DEFAULT_LLM_RETRY_MAX_WAIT = 10.0
 
-#Nilai bawaan konfigurasi analisis RPS
+# Nilai bawaan konfigurasi analisis RPS
 DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 2
 MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 5
+
+# Batas panjang Additional Prompt dosen (BE-10.2). Prompt ini ikut dikirim ke
+# LLM bersama konteks RPS, sehingga panjangnya dibatasi agar konteks akademik
+# tidak tergeser oleh instruksi tambahan.
+DEFAULT_INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH = 2000
 
 
 class Settings(BaseSettings):
@@ -139,6 +144,11 @@ class Settings(BaseSettings):
     # Batas retry dapat diubah melalui konfigurasi dengan kode di bawah ini.
     RPS_ANALYSIS_MAX_FIX_ATTEMPTS: int | None = None
 
+    # --- Instructor Setup (BE-10.2) ---------------------------------------
+    # Batas panjang Additional Prompt (karakter). Kosong berarti nilai bawaan
+    # DEFAULT_INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH.
+    INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH: int | None = None
+
     model_config = SettingsConfigDict(
         # Urutan penting: pydantic-settings menggabungkan file-file ini secara
         # berurutan dan file TERAKHIR yang menang. ``.env.example`` diletakkan
@@ -218,6 +228,15 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator("INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH", mode="after")
+    @classmethod
+    def parse_instructor_prompt_max_length(cls, v: int | None) -> int | None:
+        """Batas 0/negatif akan menolak setiap prompt tanpa penjelasan jelas."""
+        if v is not None and v <= 0:
+            raise ValueError(
+                "INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH harus lebih besar dari 0"
+            )
+        return v
 
     @property
     def rps_storage_path(self) -> Path:
@@ -292,6 +311,15 @@ class Settings(BaseSettings):
             DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS
             if self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS is None
             else self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS
+        )
+
+    @property
+    def instructor_additional_prompt_max_length(self) -> int:
+        """Batas panjang Additional Prompt yang berlaku (karakter)."""
+        return (
+            DEFAULT_INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH
+            if self.INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH is None
+            else self.INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH
         )
 
     @property
