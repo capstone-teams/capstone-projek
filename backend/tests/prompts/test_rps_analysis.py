@@ -44,17 +44,23 @@ def llm(monkeypatch):
     state = SimpleNamespace(responses=[], calls=[])
 
     class FakeService:
+        def __init__(self, *args, **kwargs):
+            pass
+
         async def execute_prompt(self, **kwargs):
             state.calls.append(kwargs)
             item = state.responses.pop(0)
             if isinstance(item, Exception):
                 raise item
             return SimpleNamespace(
-                data=item, model="gpt-4o-mini", input_tokens=100, output_tokens=50
+                data=item,
+                metadata=SimpleNamespace(prompt_tokens=100, completion_tokens=50),
             )
 
     monkeypatch.setattr(mod, "LLMService", FakeService)
-    monkeypatch.setattr(mod, "OpenAIProvider", lambda: object())
+    monkeypatch.setattr(
+        mod, "OpenAIProvider", lambda: SimpleNamespace(model="gpt-4o-mini")
+    )
     monkeypatch.setattr(mod, "RPSStructuredData", _Stub)
     return state
 
@@ -67,7 +73,9 @@ def events():
         log.append(kwargs)
 
     emit.log = log
-    emit.types = lambda: [e["event_type"] for e in log]
+    emit.types = lambda: [
+        getattr(event["event_type"], "name", event["event_type"]) for event in log
+    ]
     return emit
 
 
@@ -121,7 +129,11 @@ async def test_invalid_output_triggers_retry_with_feedback(llm, events, traces):
     assert "count" in llm.calls[1]["variables"]["validation_feedback"]
     # event RETRY_FIX tercatat tepat sekali, di antara dua panggilan LLM
     assert events.types().count("RETRY_FIX") == 1
-    retry = next(e for e in events.log if e["event_type"] == "RETRY_FIX")
+    retry = next(
+        e
+        for e in events.log
+        if getattr(e["event_type"], "name", e["event_type"]) == "RETRY_FIX"
+    )
     assert retry["reason_code"] == "SCHEMA_VALIDATION_FAILED"
     # jejak: gagal lalu sukses
     assert [t["validation"] for t in traces.log] == ["failed", "success"]
@@ -181,7 +193,11 @@ async def test_output_not_json_is_retried(llm, events):
     result = await analyze_rps(VALID_YAML, max_fix_attempts=1, emit_event=events)
 
     assert result.name == "x"
-    retry = next(e for e in events.log if e["event_type"] == "RETRY_FIX")
+    retry = next(
+        e
+        for e in events.log
+        if getattr(e["event_type"], "name", e["event_type"]) == "RETRY_FIX"
+    )
     assert retry["reason_code"] == "OUTPUT_NOT_JSON"
 
 
@@ -252,6 +268,9 @@ async def test_valid_for_sample_rps(monkeypatch):
     payload = json.loads(sample.read_text(encoding="utf-8"))
 
     class FakeService:
+        def __init__(self, *args, **kwargs):
+            pass
+
         async def execute_prompt(self, **kwargs):
             return SimpleNamespace(
                 data=payload, model="m", input_tokens=1, output_tokens=1
