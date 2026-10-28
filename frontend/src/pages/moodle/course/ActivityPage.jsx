@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useApi } from '../../../hooks/useApi';
 import { getAssignments, getPages, listAssignParticipants } from '../../../services/moodle/moodleApi';
-import { moodleUrl, withToken } from '../../../services/moodle/moodleClient';
+import { withToken } from '../../../services/moodle/moodleClient';
 import { Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
 import ActivityIcon from '../../../components/moodle/ActivityIcon';
 import MoodleHtml from '../../../components/moodle/MoodleHtml';
@@ -48,14 +48,7 @@ function TeacherSummary({ assign }) {
   const submitted = data.filter((p) => p.submitted).length;
   const needGrading = data.filter((p) => p.requiregrading).length;
   return (
-    <Card
-      title="Ringkasan penilaian"
-      actions={
-        <a href={moodleUrl(`/mod/assign/view.php?id=${assign.cmid}&action=grading`)} target="_blank" rel="noreferrer" className="btn btn--primary btn--sm">
-          Nilai di Moodle ↗
-        </a>
-      }
-    >
+    <Card title="Ringkasan penilaian">
       <div className="stats">
         <div className="stat">
           <span className="stat__value">{data.length}</span>
@@ -143,11 +136,6 @@ function ExternalContent({ mod }) {
             </li>
           ))}
         </ul>
-      )}
-      {!['url', 'resource', 'folder'].includes(mod.modname) && (
-        <a href={moodleUrl(mod.url)} target="_blank" rel="noreferrer" className="btn btn--primary mt-4">
-          Buka aktivitas di Moodle ↗
-        </a>
       )}
     </Card>
   );

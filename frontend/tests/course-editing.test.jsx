@@ -199,12 +199,13 @@ describe('Edit mode: halaman kursus', () => {
     expect(container.textContent).not.toContain('Tambah aktivitas atau sumber');
   });
 
-  it('menu aktivitas berisi aksi edit seperti Moodle', async () => {
+  it('menu aktivitas berisi aksi edit tanpa tautan ke Moodle', async () => {
     await openEditMode();
     await click(q('[aria-label="Aksi untuk Kuis 3"]'));
-    const labels = [...container.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent.replace('(dibuka di Moodle, tab baru)', '').replace('↗', '').trim());
-    expect(labels).toEqual(['Edit pengaturan', 'Pindahkan', 'Geser ke kanan', 'Sembunyikan', 'Duplikat', 'Atur peran', 'Hapus']);
-    expect(q('a[role="menuitem"]').getAttribute('href')).toMatch(/\/course\/modedit\.php\?update=\d+$/);
+    const labels = [...container.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent.trim());
+    expect(labels).toEqual(['Pindahkan', 'Geser ke kanan', 'Sembunyikan', 'Duplikat', 'Hapus']);
+    // Semua aksi berjalan di aplikasi; tidak ada tautan keluar ke Moodle.
+    expect(container.querySelector('a[role="menuitem"]')).toBeNull();
   });
 
   async function openChooser(sectionNumber = 0) {

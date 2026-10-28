@@ -9,7 +9,7 @@ const TONE_CLASS = {
 
 /**
  * Tombol ⋮ dengan daftar aksi (pola menu ARIA: panah atas/bawah, Home/End, Escape).
- * items: [{ key, label, onSelect | href, danger, disabled }]. href dibuka di tab baru (halaman Moodle).
+ * items: [{ key, label, onSelect, danger, disabled }].
  */
 export default function ActionMenu({ label, items, disabled = false }) {
   const [open, setOpen] = useState(false);
@@ -70,26 +70,18 @@ export default function ActionMenu({ label, items, disabled = false }) {
           className="absolute top-[calc(100%+4px)] right-0 z-40 w-60 rounded-lg border border-line bg-white py-1.5 shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)]"
           onKeyDown={onKeyDown}
         >
-          {items.map((item) =>
-            item.href ? (
-              <a key={item.key} role="menuitem" href={item.href} target="_blank" rel="noreferrer" className={`${ITEM_CLASS} ${TONE_CLASS.default}`} onClick={() => close(false)}>
-                {item.label}
-                <span aria-hidden="true" className="text-xs text-muted">↗</span>
-                <span className="sr-only">(dibuka di Moodle, tab baru)</span>
-              </a>
-            ) : (
-              <button
-                key={item.key}
-                type="button"
-                role="menuitem"
-                className={`${ITEM_CLASS} ${TONE_CLASS[item.danger ? 'danger' : 'default']}`}
-                disabled={item.disabled}
-                onClick={() => select(item)}
-              >
-                {item.label}
-              </button>
-            ),
-          )}
+          {items.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="menuitem"
+              className={`${ITEM_CLASS} ${TONE_CLASS[item.danger ? 'danger' : 'default']}`}
+              disabled={item.disabled}
+              onClick={() => select(item)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       )}
     </div>

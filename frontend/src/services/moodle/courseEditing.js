@@ -16,7 +16,7 @@
  *   https://moodledev.io/docs/5.0/apis/subsystems/external/advanced/custom-services
  */
 import { USE_MOODLE_MOCK } from '../config';
-import { MoodleError, callWs, moodleUrl } from './moodleClient';
+import { MoodleError, callWs } from './moodleClient';
 
 /** Aksi aktivitas (course module) yang dikirim ke core_courseformat_update_course. */
 export const CM_ACTION = {
@@ -84,16 +84,7 @@ export const CAN_CREATE_IN_APP = USE_MOODLE_MOCK;
  */
 export async function createActivity(courseId, sectionNumber, modname, fields) {
   if (!CAN_CREATE_IN_APP) {
-    throw new MoodleError('notsupported', 'Moodle belum menyediakan layanan untuk membuat aktivitas dari aplikasi. Gunakan formulir Moodle.');
+    throw new MoodleError('notsupported', 'Pembuatan aktivitas belum tersedia di API backend.');
   }
   return callWs('mock_course_create_activity', { courseid: courseId, sectionnum: sectionNumber, modname, ...fields });
 }
-
-// ---- Halaman Moodle untuk aksi yang memerlukan formulir lengkap (dibuka di tab baru).
-
-export const moodleEditUrl = {
-  activitySettings: (cmId) => moodleUrl(`/course/modedit.php?update=${cmId}`),
-  assignRoles: (contextId) => moodleUrl(`/admin/roles/assign.php?contextid=${contextId}`),
-  sectionSettings: (sectionId) => moodleUrl(`/course/editsection.php?id=${sectionId}`),
-  addActivity: (courseId, sectionNumber, modname) => moodleUrl(`/course/modedit.php?add=${modname}&course=${courseId}&section=${sectionNumber}&return=0`),
-};

@@ -51,21 +51,13 @@ function EditorField({ id, label, required, value, onChange, error }) {
   );
 }
 
-/** Tombol bawah modedit.php; tanpa API pembuatan, simpan diganti tautan ke formulir Moodle. */
-function ModFormButtons({ canCreate, moodleHref, pending, withDisplay, onCancel, onSave }) {
+/** Tombol bawah modedit.php; tanpa API pembuatan dari backend, simpan dinonaktifkan. */
+function ModFormButtons({ canCreate, pending, withDisplay, onCancel, onSave }) {
   return (
     <div className="mt-6 grid gap-x-6 md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]">
       <div className="flex flex-wrap gap-2 md:col-start-2">
-        {canCreate ? (
-          <>
-            <button type="submit" className="btn btn--primary" disabled={pending} onClick={() => onSave(false)}>Save and return to course</button>
-            {withDisplay && <button type="submit" className="btn btn--primary" disabled={pending} onClick={() => onSave(true)}>Save and display</button>}
-          </>
-        ) : (
-          <a href={moodleHref} target="_blank" rel="noreferrer" className="btn btn--primary">
-            Lanjutkan di Moodle ↗<span className="sr-only"> (tab baru)</span>
-          </a>
-        )}
+        <button type="submit" className="btn btn--primary" disabled={pending || !canCreate} onClick={() => onSave(false)}>Save and return to course</button>
+        {withDisplay && <button type="submit" className="btn btn--primary" disabled={pending || !canCreate} onClick={() => onSave(true)}>Save and display</button>}
         <button type="button" className="btn btn--secondary" onClick={onCancel}>Cancel</button>
       </div>
     </div>
@@ -97,12 +89,11 @@ function ModForm({ sections, initiallyOpen, validate, toFields, state, props, wi
     <form onSubmit={submit} noValidate>
       <ErrorAlert error={props.error} />
       {!props.canCreate && (
-        <p className="mb-3 text-sm text-muted">Moodle belum menyediakan layanan untuk membuat aktivitas dari aplikasi; lanjutkan pengisian di Moodle.</p>
+        <p className="mb-3 text-sm text-muted">Pembuatan aktivitas belum tersedia di API backend, sehingga formulir ini belum dapat disimpan.</p>
       )}
       <FormSections ids={sections} initiallyOpen={initiallyOpen}>{children}</FormSections>
       <ModFormButtons
         canCreate={props.canCreate}
-        moodleHref={props.moodleHref}
         pending={props.pending}
         withDisplay={withDisplay}
         onCancel={props.onCancel}

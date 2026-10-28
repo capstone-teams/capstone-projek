@@ -41,7 +41,7 @@ Salin `.env.example` ke `.env.local` dan sesuaikan:
 | Variabel | Default | Fungsi |
 | --- | --- | --- |
 | VITE_MOODLE_MOCK | true | false memakai Web Service Moodle nyata |
-| VITE_MOODLE_URL | http://localhost:8080 | Instance Moodle dan tautan Buka Moodle |
+| VITE_MOODLE_URL | http://localhost:8080 | Instance Moodle untuk Web Service (bukan tautan keluar) |
 | VITE_MOODLE_SERVICE | moodle_mobile_app | Service login/token.php |
 | VITE_USE_MOCK | true | false memakai backend capstone nyata |
 | VITE_API_BASE_URL | /api/v1 | Prefix API backend; `/api/v1` memakai proxy, URL absolut memanggil backend langsung |
@@ -66,7 +66,7 @@ VITE_* tersedia di browser; jangan gunakan untuk secret deployment.
 | URL | Fungsi |
 | --- | --- |
 | /login | Login akun backend lalu Moodle |
-| /forgot-password | Pemulihan kata sandi melalui Moodle |
+| /forgot-password | Pemulihan kata sandi (belum tersedia di backend) |
 | / | Halaman awal sesuai role: DOSEN ke /my, MAHASISWA ke /my/courses |
 | /my | Dashboard dosen (khusus DOSEN; role lain melihat halaman 403) |
 | /my/courses | Kursus yang diikuti/diajar; halaman awal mahasiswa |
@@ -141,8 +141,8 @@ repository. Bila `VITE_MOODLE_MOCK=false`, akun yang sama harus ada di Moodle.
 Backend belum menyediakan endpoint course/plan/konten, sehingga
 `VITE_USE_MOCK=false` membuat tab Generator AI gagal (404).
 
-Halaman /forgot-password menampilkan feedback pada mode mock dan mengirim form ke
-halaman pemulihan Moodle pada mode nyata; alur pemulihan nyata masih perlu diuji.
+Halaman /forgot-password hanya menampilkan pemberitahuan "belum tersedia" karena
+backend belum punya endpoint pemulihan; formulir tidak dikirim ke Moodle.
 
 AppStateProvider mengelola preferensi UI, notifikasi, loading, dan error global.
 Filter Kursus saya disimpan di localStorage per pengguna. Logout atau pergantian
@@ -249,10 +249,10 @@ Kontrol yang tersedia:
 
 - ikon pensil mengganti nama section dan aktivitas (Enter atau keluar dari kolom
   menyimpan, Escape membatalkan);
-- menu ⋮ aktivitas: Edit pengaturan, Pindahkan, Geser ke kanan/kiri,
-  Sembunyikan/Tampilkan, Duplikat, Atur peran, dan Hapus (dengan konfirmasi);
-- menu ⋮ section: Edit pengaturan dan Sembunyikan/Tampilkan section (section
-  umum tidak dapat disembunyikan);
+- menu ⋮ aktivitas: Pindahkan, Geser ke kanan/kiri, Sembunyikan/Tampilkan,
+  Duplikat, dan Hapus (dengan konfirmasi);
+- menu ⋮ section: Sembunyikan/Tampilkan section (section umum tidak dapat
+  disembunyikan);
 - tombol "Tambah aktivitas atau sumber" di setiap section dan "Tambah section"
   di akhir kursus. Tombol itu membuka dialog "Add an activity or resource" seperti
   di Moodle: kolom pencarian, tab Starred/All/Activities/Resources/Recommended,
@@ -263,16 +263,17 @@ Kontrol yang tersedia:
 - badge "Disembunyikan dari mahasiswa" pada item tersembunyi.
 
 Pindahkan memakai dialog pilihan section dan posisi sehingga dapat dipakai dengan
-keyboard; drag-and-drop dan blok (Add a block) belum tersedia. Edit pengaturan
-dan Atur peran dibuka di Moodle pada tab baru.
+keyboard; drag-and-drop dan blok (Add a block) belum tersedia. Aplikasi tidak
+mengarahkan pengguna ke halaman Moodle (tanpa tautan "Buka di Moodle", Edit
+pengaturan, atau Atur peran): frontend tidak boleh mengakses Moodle langsung
+(design-api §25, moodle-integration §3.2).
 
 Moodle core belum menyediakan Web Service untuk membuat Tugas atau Teks dan media
 beserta isinya (`core_courseformat_create_module` hanya untuk modul dengan
 `FEATURE_QUICKCREATE`, yaitu `mod_subsection`). Karena itu pembuatan aktivitas
 dari formulir aplikasi baru berjalan di mock Moodle (`mock_course_create_activity`).
-Dengan `VITE_MOODLE_MOCK=false`, tombol simpan di halaman New ‹aktivitas› diganti
-"Lanjutkan di Moodle" yang membuka formulir `modedit.php`, sampai tim memutuskan jalurnya (plugin Moodle atau
-endpoint backend). Setiap
+Dengan `VITE_MOODLE_MOCK=false`, tombol simpan di halaman New ‹aktivitas›
+dinonaktifkan sampai backend menyediakan endpoint pembuatan aktivitas. Setiap
 aksi memuat ulang isi kursus agar tampilan mengikuti Moodle, termasuk saat aksi
 gagal.
 

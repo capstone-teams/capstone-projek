@@ -150,10 +150,11 @@ describe('login', () => {
 
     await waitForText('Lupa kata sandi?');
     expect(container.querySelector('#recovery-username')).not.toBeNull();
-    expect(container.querySelector('form').getAttribute('action')).toContain('/login/forgot_password.php');
+    // Tidak ada pengiriman langsung ke Moodle.
+    expect(container.querySelector('form').getAttribute('action')).toBeNull();
   });
 
-  it('menampilkan pemberitahuan saat mengirim pemulihan dalam mode demo', async () => {
+  it('menampilkan pemberitahuan saat mengirim pemulihan karena backend belum menyediakannya', async () => {
     await render('/forgot-password');
     const recoveryInput = container.querySelector('#recovery-username');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(recoveryInput, 'dosen');

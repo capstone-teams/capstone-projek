@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useCourseEditing } from '../../../hooks/useCourseEditing';
-import { CAN_CREATE_IN_APP, moodleEditUrl } from '../../../services/moodle/courseEditing';
+import { CAN_CREATE_IN_APP } from '../../../services/moodle/courseEditing';
 import { EmptyState } from '../../../components/ui';
 import ActivityIcon from '../../../components/moodle/ActivityIcon';
 import { AssignModForm, LabelModForm, QuizModForm } from '../../../components/moodle/modedit/ModForms';
@@ -55,7 +55,6 @@ export default function ModEditPage() {
       <type.Form
         key={`${modname}-${section.id}`}
         canCreate={CAN_CREATE_IN_APP}
-        moodleHref={moodleEditUrl.addActivity(course.id, section.section, modname)}
         pending={editing.pending === `create:${section.id}`}
         error={error}
         onSubmit={submit}

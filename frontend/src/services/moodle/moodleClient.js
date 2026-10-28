@@ -168,7 +168,7 @@ export function withToken(url) {
   return `${fixed}${fixed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
 }
 
-/** URL absolut ke halaman Moodle asli (untuk tombol "Buka di Moodle"). */
+/** URL absolut di Moodle (dipakai untuk URL file/tautan konten; bukan untuk mengarahkan pengguna ke Moodle). */
 export function moodleUrl(path) {
   if (!path) return MOODLE_URL;
   return /^https?:/.test(path) ? path : `${MOODLE_URL}${path.startsWith('/') ? '' : '/'}${path}`;

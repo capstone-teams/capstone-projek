@@ -2,7 +2,7 @@ import { useState } from 'react';
 import ActionMenu from './ActionMenu';
 import DeleteActivityModal from './DeleteActivityModal';
 import MoveActivityModal from './MoveActivityModal';
-import { CM_ACTION, moodleEditUrl } from '../../../services/moodle/courseEditing';
+import { CM_ACTION } from '../../../services/moodle/courseEditing';
 
 /** Menu ⋮ aktivitas di Edit mode: pengaturan, pindah, indentasi, visibilitas, duplikat, peran, hapus. */
 export default function ActivityEditMenu({ activity, sections, editing }) {
@@ -11,7 +11,6 @@ export default function ActivityEditMenu({ activity, sections, editing }) {
   const hidden = !activity.visible;
 
   const items = [
-    { key: 'settings', label: 'Edit pengaturan', href: moodleEditUrl.activitySettings(activity.id) },
     { key: 'move', label: 'Pindahkan', onSelect: () => setDialog('move') },
     { key: 'indent', label: 'Geser ke kanan', onSelect: () => editing.cmAction(activity, CM_ACTION.INDENT) },
     activity.indent > 0 && { key: 'outdent', label: 'Geser ke kiri', onSelect: () => editing.cmAction(activity, CM_ACTION.OUTDENT) },
@@ -19,7 +18,6 @@ export default function ActivityEditMenu({ activity, sections, editing }) {
       ? { key: 'show', label: 'Tampilkan', onSelect: () => editing.cmAction(activity, CM_ACTION.SHOW) }
       : { key: 'hide', label: 'Sembunyikan', onSelect: () => editing.cmAction(activity, CM_ACTION.HIDE) },
     { key: 'duplicate', label: 'Duplikat', onSelect: () => editing.cmAction(activity, CM_ACTION.DUPLICATE) },
-    activity.contextid && { key: 'roles', label: 'Atur peran', href: moodleEditUrl.assignRoles(activity.contextid) },
     { key: 'delete', label: 'Hapus', danger: true, onSelect: () => setDialog('delete') },
   ].filter(Boolean);
 

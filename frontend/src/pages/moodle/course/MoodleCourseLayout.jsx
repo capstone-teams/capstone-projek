@@ -34,12 +34,13 @@ export default function MoodleCourseLayout() {
   // Generator AI hanya untuk dosen pengampu kursus ini.
   const canUseAi = isTeacher && user.role === ROLE.DOSEN;
   if (canUseAi) tabs.push({ to: base + '/ai', label: 'Generator AI' });
-  const onAiTab = pathname.startsWith(base + '/ai');
+  // Indeks kursus hanya di tab Kursus; halaman Peserta, Nilai, aktivitas, dan Generator AI tidak memuatnya.
+  const showIndex = pathname === base;
   return <PageContainer>
     <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb"><Link to="/my/courses">Kursus saya</Link> / <span>{course.shortname}</span></nav>
     <h1 className="moodle-h1 mb-4">{course.fullname}</h1>
     <nav className="tabs" aria-label="Navigasi kursus">{tabs.map((tab) => <NavLink key={tab.to} to={tab.to} end={tab.end} className="tabs__link">{tab.label}</NavLink>)}</nav>
-    {!onAiTab && <details className="mb-4 rounded-lg border border-line bg-white p-3">
+    {showIndex && <details className="mb-4 rounded-lg border border-line bg-white p-3">
       <summary className="cursor-pointer font-semibold">Indeks kursus</summary>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{sections.map((section) => <div key={section.id}>
         <Link to={base + '#section-' + section.section} className="font-semibold">{section.name}</Link>

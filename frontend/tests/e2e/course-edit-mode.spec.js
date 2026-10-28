@@ -24,7 +24,7 @@ for (const width of [375, 1440]) {
     const menu = page.getByRole('menu', { name: 'Aksi untuk Kuis 3' });
     await expect(menu.getByRole('menuitem').first()).toBeFocused();
     await page.keyboard.press('ArrowDown');
-    await expect(menu.getByRole('menuitem', { name: 'Pindahkan' })).toBeFocused();
+    await expect(menu.getByRole('menuitem', { name: 'Geser ke kanan' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
     await expect(menuButton).toBeFocused();
