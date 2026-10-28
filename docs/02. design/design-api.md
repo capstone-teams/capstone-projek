@@ -230,9 +230,9 @@ Endpoint ini juga menjadi **endpoint polling** untuk §6.3: setelah pemrosesan
 dijadwalkan, client memantau `status` sampai bernilai `processed` atau `failed`.
 
 Ketika `status` bernilai `failed`, `processing_error_code` memuat kode error §18
-(mis. `RPS_PROCESSING_FAILED`) dan `processing_error_message` memuat alasan yang
-dapat dipahami pengguna. Detail teknisnya tidak pernah dikembalikan, hanya
-dicatat server-side.
+(mis. `RPS_PROCESSING_FAILED` untuk konversi, `LLM_GENERATION_FAILED` untuk
+analisis) dan `processing_error_message` memuat alasan yang dapat dipahami
+pengguna. Detail teknisnya tidak pernah dikembalikan, hanya dicatat server-side.
 
 `source_document` (JSON hasil konversi) tidak dikembalikan pada response ini
 karena ukurannya besar; ia tersedia bagi tahap ekstraksi (§6.4).
@@ -386,9 +386,12 @@ adalah endpoint ini. Client memantau hasilnya melalui §16/§17 lalu membaca
 §6.4.
 
 > **Status implementasi (BE-06.4).** §6.4–§6.6 sudah terbit pada OpenAPI
-> beserta contoh response, tetapi belum diimplementasikan: rute stub menjawab
-> `501 NOT_IMPLEMENTED`. Implementasinya milik BE-08.2/BE-08.3, dan stub-nya
-> dibuang saat itu.
+> beserta contoh response. §6.6 (`POST /api/v1/rps/{rps_id}/reanalyze`) sudah
+> diimplementasikan BE-08.2: analisis berjalan di background dari
+> `source_document`, dan kegagalannya terbaca pada §6.2 sebagai
+> `processing_error_code` (`LLM_GENERATION_FAILED`) +
+> `processing_error_message`. §6.4 dan §6.5 masih berupa rute stub
+> `501 NOT_IMPLEMENTED` sampai BE-08.3 mendarat.
 
 ---
 

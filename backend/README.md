@@ -19,14 +19,14 @@ backend/
 │   ├── routes/                   # Definition Endpoint API & HTTP Router (FastAPI)
 │   │   ├── admin.py              # GET /admin/users (ADMIN only)
 │   │   ├── auth.py               # POST /auth/login, GET /auth/me
-│   │   ├── rps.py                # POST /rps, GET /rps/{id}, POST /rps/{id}/process
+│   │   ├── rps.py                # POST /rps, GET /rps/{id}, POST /rps/{id}/process, POST /rps/{id}/reanalyze
 │   │   ├── instructors.py        # GET/PUT /instructors/me/setup (INSTRUCTOR only)
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
 │   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
-│   │   ├── rps/                  # Unggah, penyimpanan, & konversi dokumen RPS (BE-05)
+│   │   ├── rps/                  # Unggah, konversi (BE-05), & analisis dokumen RPS (BE-08.2)
 │   │   ├── instructor/           # Setup dosen: profil, aktivitas, konteks agent (BE-10)
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
@@ -591,6 +591,72 @@ unggah → proses.
 default `TEST_DATABASE_URL`), sehingga native enum `rps_status` dan kolom JSONB
 benar-benar terpakai. Konverter diganti konverter palsu di sana agar suite tetap
 ringan dan deterministik.
+
+---
+
+## 🧪 RPS Analysis Result & Reanalyze (BE-08.2)
+
+Analisis adalah tahap kedua alur data RPS (content-schema §54):
+`PROCESSED → ANALYZING → ANALYZED` (atau `FAILED` pada kedua tahap). Hasilnya
+disimpan pada `rps.structured_data` (DL-009) beserta `rps.analyzed_at` dan
+`rps.workflow_id`. Input analisis adalah **YAML yang dibentuk dari
+`source_document`** (BE-08.1), sehingga reanalyze tidak menjalankan Docling lagi.
+
+```text
+rps.source_document (JSON Docling)
+        │  document_to_yaml()        (BE-08.1)
+        ▼
+prompt rps_analysis/v1 ──▶ analyze_rps()  (BE-09.2)
+        │
+        ▼
+RPSStructuredData ──▶ rps.structured_data + rps.analyzed_at  → status ANALYZED
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/rps/{rps_id}/reanalyze` | `INSTRUCTOR` | **Menjadwalkan** analisis ulang dari `source_document`: `202` + `ANALYZING` + `workflow_id`. Tanpa body |
+
+Status bernilai `ANALYZING` pada response; client memantau `GET /rps/{rps_id}`
+sampai `ANALYZED`/`FAILED`, lalu membaca hasilnya lewat
+`GET /rps/{rps_id}/analysis` (BE-08.3). RPS yang sudah `ANALYZED` **tidak**
+dianalisis ulang secara implisit — satu-satunya jalan adalah endpoint ini.
+Pemanggil non-HTTP (orkestrator BE-11.2) memakai
+`RPSService.begin_analysis(force=False)` sehingga dokumen yang sudah dianalisis
+dilaporkan `scheduled=False` tanpa memanggil model.
+
+Reanalyze dijalankan `src/services/rps/analysis_runner.py` **setelah** response
+dikirim, memakai session database sendiri. Kegagalan tidak menghentikan server:
+dokumen berstatus `FAILED` dengan `processing_error_code`
+(`LLM_GENERATION_FAILED`) dan `processing_error_message` — alasan publik yang
+dapat dipahami. Hasil analisis lama tidak dihapus saat reanalyze gagal.
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Dokumen belum dikonversi (`source_document` kosong) | 422 | `INVALID_REQUEST` |
+| Dokumen sedang `PROCESSING`/`ANALYZING` | 409 | `INVALID_REQUEST` |
+| RPS tidak ada atau milik instructor lain | 404 | `RESOURCE_NOT_FOUND` |
+| Mahasiswa | 403 | `AUTHORIZATION_DENIED` |
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Transisi status analisis (`start/complete/fail_analysis`) | `src/services/rps/domain.py` |
+| Operasi aplikasi (analisis, reanalyze) | `src/services/rps/service.py` |
+| Port analisis + adapter BE-09.2 | `src/services/rps/analyzer.py` |
+| Runner analisis background | `src/services/rps/analysis_runner.py` |
+| Error analisis (`LLM_GENERATION_FAILED`) | `src/services/rps/errors.py` |
+| DTO `RPSReanalyzeResponse` | `src/schemas/rps.py` |
+| Endpoint HTTP | `src/routes/rps.py` |
+| Kolom `analyzed_at`, `workflow_id`, enum `ANALYZING`/`ANALYZED` | `src/models/rps.py` + migrasi `7c2f9a41e6b3_*.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_rps_analysis_persistence.py   # domain + endpoint reanalyze (butuh PostgreSQL)
+```
 
 ---
 

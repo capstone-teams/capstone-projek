@@ -60,6 +60,21 @@ class RPSRepository:
         entity = (await self._session.execute(statement)).scalar_one_or_none()
         return to_domain(entity) if entity is not None else None
 
+    async def list_by_owner(self, owner_id: str) -> list[RPSDocument]:
+        """Seluruh dokumen milik satu owner, terbaru lebih dulu (design-api §6.5).
+
+        Scoping owner dilakukan di query, sama seperti
+        :meth:`find_by_id_and_owner`; dokumen milik instruktur lain tidak pernah
+        termuat ke dalam proses ini.
+        """
+        statement = (
+            select(RPSEntity)
+            .where(RPSEntity.owner_id == owner_id)
+            .order_by(RPSEntity.created_at.desc())
+        )
+        entities = (await self._session.execute(statement)).scalars().all()
+        return [to_domain(entity) for entity in entities]
+
     async def find_by_hash(
         self,
         *,

@@ -1,9 +1,10 @@
-"""RPS Service — operasi aplikasi terhadap dokumen RPS (BE-05.1 & BE-05.2).
+"""RPS Service — operasi aplikasi terhadap dokumen RPS (BE-05 & BE-08.2).
 
 Service ini menjawab "operasi apa yang boleh dilakukan terhadap dokumen RPS?",
 bukan "bagaimana berkasnya disimpan?" (itu
-:mod:`src.services.rps.storage`) dan bukan "bagaimana dokumen dikonversi?" (itu
-:mod:`src.services.rps.converter` beserta adapter Docling-nya).
+:mod:`src.services.rps.storage") dan bukan "bagaimana dokumen dikonversi/dianalisis?"
+(itu :mod:`src.services.rps.converter` beserta adapter Docling-nya, dan
+:mod:`src.services.rps.analyzer` beserta service analisis BE-09.2).
 
 Operasi yang disediakan:
 
@@ -14,7 +15,11 @@ Operasi yang disediakan:
 - :meth:`RPSService.convert` — konversi dokumen yang sudah ``PROCESSING``
   (dijalankan di luar siklus request; lihat :mod:`src.services.rps.runner`);
 - :meth:`RPSService.process_rps` — jalur lengkap keduanya, dipakai pemanggil
-  non-HTTP dan pengujian.
+  non-HTTP dan pengujian;
+- :meth:`RPSService.begin_analysis` / :meth:`RPSService.analyze` — permulaan dan
+  jalannya analisis dari ``source_document`` (BE-08.2, luar siklus request);
+- :meth:`RPSService.complete_analysis` / :meth:`RPSService.fail_analysis` —
+  pencatatan hasil atau kegagalan analisis.
 
 **Idempotency.** Sesuai acceptance criteria BE-05, dokumen dengan ``file_hash``
 dan ``schema_version`` yang sama tidak diproses ulang:
@@ -28,6 +33,11 @@ dan ``schema_version`` yang sama tidak diproses ulang:
 Meminta pemrosesan dengan ``schema_version`` **berbeda** justru memproses ulang:
 hasil lama tidak berlaku lagi untuk skema baru, dan dokumen mencatat versi yang
 benar-benar dipakai.
+
+**Analisis.** Dokumen yang sudah ``ANALYZED`` tidak dianalisis ulang secara
+implisit: :meth:`begin_analysis` mengembalikan ``scheduled=False`` kecuali
+pemanggil meminta reanalyze eksplisit (``force=True``), dan hasil model selalu
+divalidasi terhadap RPS Structured Data sebelum disimpan.
 """
 
 from __future__ import annotations
@@ -36,11 +46,15 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
+import shortuuid
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.settings import get_settings
-from src.schemas.rps_structured import RPS_SCHEMA_VERSION
+from src.schemas.rps_structured import RPS_SCHEMA_VERSION, RPSStructuredData
+from src.services.rps.analyzer import RPSAnalyzer, analyze_document
 from src.services.rps.converter import (
     DocumentConversion,
     DocumentConverter,
@@ -49,8 +63,11 @@ from src.services.rps.converter import (
 from src.services.rps.domain import RPSDocument, require_owner
 from src.services.rps.errors import (
     DocumentConversionError,
+    RPSAnalysisFailedError,
     RPSDomainError,
     RPSNotFoundError,
+    RPSStateError,
+    RPSValidationError,
 )
 from src.services.rps.factory import get_document_converter, get_document_storage
 from src.services.rps.repository import RPSRepository
@@ -64,8 +81,10 @@ from src.services.rps.validation import (
     normalize_identifier,
     normalize_schema_version,
 )
+from src.services.rps.yaml_export import document_to_yaml
 
 __all__ = [
+    "RPSAnalysisStart",
     "RPSConversionResult",
     "RPSProcessResult",
     "RPSProcessStart",
@@ -103,6 +122,22 @@ class RPSProcessStart:
 
 
 @dataclass(frozen=True, slots=True)
+class RPSAnalysisStart:
+    """Hasil tahap permulaan analisis (bagian yang berjalan saat request).
+
+    ``scheduled=False`` berarti tidak ada pekerjaan yang perlu dijadwalkan:
+    dokumen sudah ``ANALYZED`` dan pemanggil tidak meminta reanalyze. Nilai itu
+    dipakai orkestrator BE-11.2 agar analisis tidak berjalan dua kali untuk
+    dokumen yang sama. ``workflow_id`` adalah workflow yang menjalankan analisis
+    (atau workflow terakhir bila tidak dijadwalkan).
+    """
+
+    document: RPSDocument
+    scheduled: bool
+    workflow_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class RPSConversionResult:
     """Hasil konversi satu dokumen."""
 
@@ -127,10 +162,12 @@ class RPSService:
         repository: RPSRepository,
         storage: DocumentStorage,
         converter: DocumentConverter,
+        analyzer: RPSAnalyzer | None = None,
     ) -> None:
         self._repository = repository
         self._storage = storage
         self._converter = converter
+        self._analyzer = analyzer or analyze_document
 
     @classmethod
     def from_session(
@@ -139,17 +176,20 @@ class RPSService:
         *,
         storage: DocumentStorage | None = None,
         converter: DocumentConverter | None = None,
+        analyzer: RPSAnalyzer | None = None,
     ) -> RPSService:
         """Bangun service dengan dependency bawaan (storage lokal + Docling).
 
-        ``storage`` dan ``converter`` dapat diganti pemanggil — dipakai
-        pengujian untuk memakai penyimpanan sementara dan konverter pengganti
-        tanpa menjalankan model ML.
+        ``storage``, ``converter``, dan ``analyzer`` dapat diganti pemanggil —
+        dipakai pengujian untuk memakai penyimpanan sementara, konverter
+        pengganti, dan analisis palsu tanpa menjalankan model ML maupun model
+        bahasa.
         """
         return cls(
             repository=RPSRepository(session),
             storage=storage or get_document_storage(),
             converter=converter or get_document_converter(),
+            analyzer=analyzer or analyze_document,
         )
 
     async def upload_rps(
@@ -316,6 +356,165 @@ class RPSService:
         return RPSProcessResult(
             document=result.document, reused=False, conversion=result.conversion
         )
+
+    async def begin_analysis(
+        self,
+        *,
+        rps_id: str,
+        owner_id: str,
+        force: bool = False,
+        workflow_id: str | None = None,
+    ) -> RPSAnalysisStart:
+        """Siapkan analisis: periksa state, tandai ``ANALYZING``, tentukan workflow.
+
+        Inilah bagian yang berjalan **saat request**; analisisnya dijalankan
+        background runner (design-api §6.6). Dokumen berstatus ``ANALYZED``
+        tidak dianalisis ulang secara implisit: ``force=False`` mengembalikan
+        ``scheduled=False`` (dipakai orkestrator BE-11.2), sedangkan endpoint
+        reanalyze mengirim ``force=True``.
+
+        ``workflow_id`` boleh diberikan orkestrator (BE-11.2) agar analisis
+        tercatat pada workflow yang sama dengan pemrosesan; tanpa itu, dokumen
+        mendapat workflow_id sendiri.
+        """
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+
+        if document.is_analyzed and not force:
+            if document.workflow_id is None:
+                raise RPSStateError(
+                    f"rps {document.id} sudah dianalisis tanpa workflow"
+                )
+            return RPSAnalysisStart(
+                document=document,
+                scheduled=False,
+                workflow_id=document.workflow_id,
+            )
+
+        identifier = workflow_id or shortuuid.uuid()
+        document.start_analysis(
+            workflow_id=identifier,
+            allow_reanalysis=force,
+            stale_after=self._processing_lease(),
+        )
+        persisted = await self._persist(document)
+        return RPSAnalysisStart(
+            document=persisted,
+            scheduled=True,
+            workflow_id=persisted.workflow_id or identifier,
+        )
+
+    async def complete_analysis(
+        self,
+        *,
+        rps_id: str,
+        owner_id: str,
+        data: RPSStructuredData | dict[str, Any],
+        analyzed_at: datetime | None = None,
+    ) -> RPSDocument:
+        """Simpan hasil analisis tervalidasi dan tandai dokumen ``ANALYZED``.
+
+        Dipanggil background runner di modul ini maupun orkestrator BE-11.2,
+        sehingga validasi schema berada di satu tempat: hasil model bahasa tidak
+        pernah masuk database tanpa melewati
+        :class:`~src.schemas.rps_structured.RPSStructuredData`.
+        """
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+        structured = self._validated_structured_data(data)
+        document.complete_analysis(
+            structured.model_dump(mode="json"), analyzed_at=analyzed_at
+        )
+        return await self._persist(document)
+
+    async def fail_analysis(
+        self,
+        *,
+        rps_id: str,
+        owner_id: str,
+        error_code: str | None = None,
+        reason: str | None = None,
+    ) -> RPSDocument:
+        """Tandai analisis gagal beserta alasan publik yang dapat dibaca client."""
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+        document.fail_analysis(error_code=error_code, reason=reason)
+        return await self._persist(document)
+
+    async def analyze(self, *, rps_id: str, owner_id: str) -> RPSDocument:
+        """Jalankan analisis dokumen ``ANALYZING`` dari ``source_document``.
+
+        Dipanggil di luar siklus request (lihat
+        :func:`src.services.rps.analysis_runner.run_rps_analysis`). YAML dibentuk
+        dari JSON Docling yang sudah tersimpan (BE-08.1), sehingga Docling tidak
+        dijalankan lagi — acceptance criteria "reanalyze tanpa Docling".
+
+        Kegagalan apa pun berakhir sebagai status ``FAILED`` beserta kode dan
+        alasan publik pada dokumen, bukan sebagai exception yang menggantung di
+        request yang sudah selesai.
+        """
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+        if not document.is_analyzing:
+            raise RPSStateError(
+                f"rps {document.id} tidak sedang dianalisis "
+                f"(status: {document.status.value})"
+            )
+
+        try:
+            if document.source_document is None:
+                raise RPSValidationError(
+                    "source_document", "RPS harus diproses sebelum dianalisis"
+                )
+            rps_yaml = document_to_yaml(document.source_document)
+            structured = self._validated_structured_data(
+                await self._analyzer(rps_yaml)
+            )
+            if not structured.has_academic_content():
+                raise RPSAnalysisFailedError(
+                    "hasil analisis tidak memuat informasi akademik",
+                    public_reason=(
+                        "Model tidak menemukan informasi akademik pada dokumen RPS."
+                    ),
+                )
+        except RPSDomainError as exc:
+            await self._mark_analysis_failed(document, error=exc)
+            raise
+        except Exception as exc:
+            failure = RPSAnalysisFailedError(
+                f"analisis RPS gagal: {type(exc).__name__}",
+                public_reason="Analisis RPS gagal karena kesalahan tak terduga.",
+            )
+            await self._mark_analysis_failed(document, error=failure)
+            raise failure from exc
+
+        document.complete_analysis(structured.model_dump(mode="json"))
+        return await self._persist(document)
+
+    def _validated_structured_data(
+        self, data: RPSStructuredData | dict[str, Any]
+    ) -> RPSStructuredData:
+        """Validasi hasil analisis terhadap kontrak RPS Structured Data."""
+        try:
+            return RPSStructuredData.model_validate(data)
+        except ValidationError as exc:
+            raise RPSValidationError(
+                "structured_data", "tidak sesuai schema RPS Structured Data"
+            ) from exc
+
+    async def _mark_analysis_failed(
+        self, document: RPSDocument, *, error: RPSDomainError
+    ) -> None:
+        """Catat kegagalan analisis tanpa menutupi error aslinya.
+
+        Kode dan alasan publik error disimpan pada dokumen supaya client yang
+        melakukan polling melihat **mengapa** analisis gagal — bukan sekadar
+        status ``FAILED``. Detail teknisnya tetap hanya di log server-side.
+        Kegagalan pencatatan status tidak boleh menggantikan penyebab sebenarnya.
+        """
+        try:
+            document.fail_analysis(
+                error_code=error.error_code, reason=error.public_reason
+            )
+            await self._persist(document)
+        except RPSDomainError:
+            pass
 
     async def _write_artifacts(
         self,

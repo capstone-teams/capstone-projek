@@ -3,13 +3,14 @@
 Endpoint pada modul ini **belum ada implementasinya**. Tujuannya satu: membuat
 bentuk request/response terlihat pada OpenAPI (``/docs``) supaya frontend dapat
 membangun halaman beserta mock sebelum endpoint-nya selesai (design-api §6.4,
-§6.5, §6.6, §16, §17). Rute stub-nya ada di :mod:`src.routes.contract`.
+§6.5, §16, §17). Rute stub-nya ada di :mod:`src.routes.contract`.
 
 Semua DTO dikumpulkan pada satu modul agar mudah dihapus: begitu BE-08.3
 (daftar & analisis RPS) dan BE-11.3 (workflow & event) mengimplementasikan
 endpoint-nya, model di sini dipindahkan ke modul schema fitur masing-masing dan
 rute stub-nya dibuang. Setup dosen (§7) sudah dipindahkan ke
-:mod:`src.schemas.instructor` oleh BE-10.2.
+:mod:`src.schemas.instructor` oleh BE-10.2; reanalyze RPS (§6.6) sudah
+dipindahkan ke :mod:`src.schemas.rps` oleh BE-08.2.
 
 Nilai ``role`` mengikuti enum kanonik backend (:class:`src.services.user.UserRole`
 — ``INSTRUCTOR``, ``STUDENT``, ``ADMIN``). Pemetaan ke istilah proposal
@@ -35,7 +36,6 @@ __all__ = [
     "RPSAnalysisResponse",
     "RPSListItem",
     "RPSListResponse",
-    "RPSReanalyzeResponse",
     "WorkflowEvent",
     "WorkflowEventListResponse",
     "WorkflowListResponse",
@@ -134,29 +134,6 @@ class RPSAnalysisResponse(BaseModel):
                     "cpmk": [{"id": "CPMK-1", "description": "Merancang basis data relasional"}],
                     "weeks": [{"week": 1, "topics": ["Pengenalan Basis Data"]}],
                 },
-            }
-        }
-    )
-
-
-class RPSReanalyzeResponse(BaseModel):
-    """Response ``POST /api/v1/rps/{rps_id}/reanalyze`` (design-api §6.6).
-
-    Analisis ulang dijalankan orchestrator (BE-11.2) dari ``source_document`` —
-    Docling tidak dijalankan lagi — sehingga response hanya membawa identitas
-    workflow yang dipantau client melalui §16/§17.
-    """
-
-    rps_id: str
-    workflow_id: str
-    status: str = Field(default="ANALYZING", description="Status RPS setelah dijadwalkan.")
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "rps_id": RPS_ID_EXAMPLE,
-                "workflow_id": WORKFLOW_ID_EXAMPLE,
-                "status": "ANALYZING",
             }
         }
     )

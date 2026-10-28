@@ -9,8 +9,11 @@ dikonsumsi client.
 Rute stub ini berumur pendek dan **harus** dibuang saat implementasi aslinya
 mendarat:
 
-- ``/rps`` (GET), ``/rps/{id}/analysis``, ``/rps/{id}/reanalyze`` → BE-08.3
+- ``/rps`` (GET), ``/rps/{id}/analysis`` → BE-08.3
 - ``/workflows``, ``/workflows/{id}/events`` → BE-11.3
+
+``POST /rps/{id}/reanalyze`` sudah diimplementasikan pada
+:mod:`src.routes.rps` oleh BE-08.2, sehingga stub-nya sudah dibuang.
 
 Otorisasi tidak dipasang di sini: stub tidak menyentuh data siapa pun. Endpoint
 aslinya wajib instructor-only seperti endpoint RPS pada :mod:`src.routes.rps`
@@ -27,7 +30,6 @@ from fastapi.responses import JSONResponse
 from src.schemas.contract import (
     RPSAnalysisResponse,
     RPSListResponse,
-    RPSReanalyzeResponse,
     WorkflowEventListResponse,
     WorkflowListResponse,
 )
@@ -102,18 +104,6 @@ async def list_rps_stub() -> RPSListResponse:
 )
 async def get_rps_analysis_stub(rps_id: RpsIdPath) -> RPSAnalysisResponse:
     """``GET /api/v1/rps/{rps_id}/analysis`` — RPS Structured Data hasil analisis."""
-    return _not_implemented()
-
-
-@router.post(
-    "/rps/{rps_id}/reanalyze",
-    status_code=202,
-    response_model=RPSReanalyzeResponse,
-    summary="Analisis ulang RPS (kontrak, BE-08.2)",
-    responses=NOT_IMPLEMENTED_RESPONSE,
-)
-async def reanalyze_rps_stub(rps_id: RpsIdPath) -> RPSReanalyzeResponse:
-    """``POST /api/v1/rps/{rps_id}/reanalyze`` — analisis ulang tanpa Docling."""
     return _not_implemented()
 
 

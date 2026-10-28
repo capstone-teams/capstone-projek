@@ -44,7 +44,6 @@ WORKFLOW_ID = "q7RtYx2bM8sLdWfZaKp3nQ"
 STUB_CALLS = [
     ("get", "/api/v1/rps", None),
     ("get", f"/api/v1/rps/{RPS_ID}/analysis", None),
-    ("post", f"/api/v1/rps/{RPS_ID}/reanalyze", None),
     ("get", "/api/v1/workflows", None),
     ("get", f"/api/v1/workflows/{WORKFLOW_ID}/events", None),
 ]
@@ -105,7 +104,14 @@ def test_the_rps_status_values_are_published_in_the_canonical_casing(openapi):
     """Status RPS memakai enum huruf besar; frontend tidak boleh mengarang casing."""
     status = openapi["components"]["schemas"]["RPSStatus"]["enum"]
 
-    assert status == ["UPLOADED", "PROCESSING", "PROCESSED", "FAILED"]
+    assert status == [
+        "UPLOADED",
+        "PROCESSING",
+        "PROCESSED",
+        "ANALYZING",
+        "ANALYZED",
+        "FAILED",
+    ]
     assert all(value == value.upper() for value in status)
 
 

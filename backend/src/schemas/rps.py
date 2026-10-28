@@ -1,7 +1,8 @@
-"""DTO endpoint RPS (BE-05.1 & BE-05.2).
+"""DTO endpoint RPS (BE-05.1, BE-05.2 & BE-08.2).
 
 Kontrak HTTP mengikuti ``docs/02. design/design-api.md`` §6.1 (upload), §6.2
-(detail), dan §6.3 (process), dengan satu catatan yang disengaja:
+(detail), §6.3 (process), dan §6.6 (reanalyze), dengan satu catatan yang
+disengaja:
 
 1. **``agent_run_id`` tidak ada pada response process.** design-api §6.3
    menyebutkannya, tetapi Agent Run pada ``agent_runs`` mensyaratkan
@@ -35,6 +36,7 @@ __all__ = [
     "RPSDetailResponse",
     "RPSProcessRequest",
     "RPSProcessResponse",
+    "RPSReanalyzeResponse",
     "RPSUploadResponse",
 ]
 
@@ -133,3 +135,28 @@ class RPSProcessResponse(BaseModel):
     status: RPSStatus
     schema_version: str
     reused: bool
+
+
+class RPSReanalyzeResponse(BaseModel):
+    """Response ``POST /api/v1/rps/{rps_id}/reanalyze`` (design-api §6.6).
+
+    ``202`` berarti analisis ulang **dijadwalkan** dari ``source_document`` yang
+    sudah tersimpan — Docling tidak dijalankan lagi. ``workflow_id`` adalah
+    workflow yang menjalankan analisis; client memantau hasilnya lewat
+    ``GET /api/v1/rps/{rps_id}`` sampai status ``ANALYZED`` atau ``FAILED``,
+    lalu membaca hasilnya lewat ``GET /api/v1/rps/{rps_id}/analysis`` (§6.4).
+    """
+
+    rps_id: str
+    workflow_id: str
+    status: RPSStatus = RPSStatus.ANALYZING
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "rps_id": "kP3nQ7vRtYx2bM8sLdWfZa",
+                "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+                "status": "ANALYZING",
+            }
+        }
+    )

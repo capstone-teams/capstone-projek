@@ -21,6 +21,7 @@ __all__ = [
     "DocumentConverterUnavailableError",
     "DocumentStorageError",
     "InvalidFileError",
+    "RPSAnalysisFailedError",
     "RPSDomainError",
     "RPSNotFoundError",
     "RPSStateError",
@@ -183,3 +184,26 @@ class DocumentConverterUnavailableError(DocumentConversionError):
 
     def __init__(self, reason: str, *, public_reason: str | None = None) -> None:
         super().__init__(reason, public_reason=public_reason)
+
+
+class RPSAnalysisFailedError(RPSDomainError):
+    """Analisis RPS (LLM) gagal menghasilkan RPS Structured Data (BE-08.2).
+
+    Berbeda dari kegagalan konversi: dokumennya sudah terkonversi, kegagalannya
+    ada pada layanan model (timeout/rate limit/output tidak valid). Karena
+    analisis berjalan di background, kontrak publiknya disimpan pada dokumen
+    (``processing_error_code`` + ``processing_error``) dan dibaca lewat polling.
+    Alasan dari service analisis sudah berupa kalimat Indonesia yang aman
+    ditampilkan; detail teknisnya tetap hanya di log server-side.
+    """
+
+    error_code = "LLM_GENERATION_FAILED"
+    status_code = 502
+    public_message = "Analisis RPS gagal."
+    default_public_reason = "Analisis RPS gagal tanpa keterangan tambahan."
+
+    def __init__(self, reason: str, *, public_reason: str | None = None) -> None:
+        self.reason = reason
+        super().__init__(
+            reason, public_reason=public_reason or self.default_public_reason
+        )
