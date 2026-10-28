@@ -1,10 +1,11 @@
 import enum
+from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.models.base import BaseModel
+from src.models.base import ID_LENGTH, BaseModel
 
 # Panjang kolom versi skema. Nilainya harus menampung versi pada
 # ``src.schemas.rps_structured.RPS_SCHEMA_VERSION``; layer ``models/`` tidak
@@ -20,9 +21,18 @@ DEFAULT_SCHEMA_VERSION = "2.0"
 
 
 class RPSStatus(str, enum.Enum):
+    """Status dokumen RPS — sumber tunggal nilai status (design-api §6.5).
+
+    Urutan normal: ``UPLOADED`` → ``PROCESSING`` → ``PROCESSED`` →
+    ``ANALYZING`` → ``ANALYZED``. ``FAILED`` dapat terjadi pada tahap konversi
+    maupun analisis; tahap yang gagal dijelaskan oleh ``processing_error_code``.
+    """
+
     UPLOADED = "UPLOADED"
     PROCESSING = "PROCESSING"
     PROCESSED = "PROCESSED"
+    ANALYZING = "ANALYZING"
+    ANALYZED = "ANALYZED"
     FAILED = "FAILED"
 
 
@@ -90,11 +100,14 @@ class RPS(BaseModel):
         nullable=True,
     )
 
-    # Kegagalan pemrosesan. Karena konversi berjalan di background, kegagalan
-    # tidak dapat muncul pada response request — client membacanya lewat polling
-    # ``GET /rps/{id}`` ketika statusnya FAILED. Nilainya sengaja hanya berisi
-    # kode error (design-api §18) dan alasan publik yang aman ditampilkan;
-    # penyebab teknisnya tetap hanya ada di log server-side.
+    # Kegagalan tahap background (konversi BE-05.2 atau analisis BE-08.2).
+    # Karena tahap itu berjalan di background, kegagalan tidak dapat muncul pada
+    # response request — client membacanya lewat polling ``GET /rps/{id}``
+    # ketika statusnya FAILED. Nilainya sengaja hanya berisi kode error
+    # (design-api §18) dan alasan publik yang aman ditampilkan; penyebab
+    # teknisnya tetap hanya ada di log server-side. Kedua tahap memakai kolom
+    # yang sama karena status ``FAILED`` juga tunggal — kolom terpisah hanya
+    # akan membuat client menebak kolom mana yang harus dibaca.
     processing_error_code: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
@@ -105,7 +118,28 @@ class RPS(BaseModel):
         nullable=True,
     )
 
+    # RPS Structured Data hasil analisis (DL-009). Bentuknya mengikuti
+    # ``src.schemas.rps_structured.RPSStructuredData`` — schema yang sama dengan
+    # kontrak endpoint analisis, sehingga database dan client tidak menyimpang.
     structured_data: Mapped[dict | None] = mapped_column(
         JSONB,
         nullable=True,
+    )
+
+    # Waktu analisis terakhir yang berhasil menghasilkan ``structured_data``.
+    # NULL berarti dokumen belum pernah selesai dianalisis. Dipakai response
+    # ``GET /rps/{id}/analysis`` (design-api §6.4).
+    analyzed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # Workflow yang menjalankan analisis dokumen ini (design-api §6.5/§6.6).
+    # BE-08.2 mengisinya saat analisis dijadwalkan; BE-11.2 memakai kolom yang
+    # sama untuk workflow orkestrasi pemrosesan + analisis, sehingga endpoint
+    # daftar/detail cukup membaca satu tempat.
+    workflow_id: Mapped[str | None] = mapped_column(
+        String(ID_LENGTH),
+        nullable=True,
+        index=True,
     )

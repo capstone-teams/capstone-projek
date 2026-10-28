@@ -28,6 +28,7 @@ from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
 from src.services.instructor.service import InstructorSetupService
+from src.services.rps.analysis_runner import run_rps_analysis
 from src.services.rps.runner import run_rps_processing
 from src.services.rps.service import RPSService
 from src.services.user.domain import User
@@ -37,12 +38,16 @@ from src.services.user.service import UserService
 #: Bentuk callable yang menjalankan pemrosesan RPS di background.
 RPSProcessingRunner = Callable[..., Awaitable[None]]
 
+#: Bentuk callable yang menjalankan analisis RPS di background.
+RPSAnalysisRunner = Callable[..., Awaitable[None]]
+
 __all__ = [
     "bearer_scheme",
     "get_auth_service",
     "get_current_user",
     "get_db_session",
     "get_instructor_service",
+    "get_rps_analysis_runner",
     "get_rps_processing_runner",
     "get_rps_service",
     "get_user_service",
@@ -108,6 +113,17 @@ def get_rps_processing_runner() -> RPSProcessingRunner:
     "request tidak menahan konversi" dapat diuji tanpa menjalankan Docling.
     """
     return run_rps_processing
+
+
+def get_rps_analysis_runner() -> RPSAnalysisRunner:
+    """Runner yang menjalankan analisis RPS di background (BE-08.2).
+
+    Berupa dependency supaya route tidak mengimpor modul runner secara langsung
+    dan pengujian dapat menggantinya dengan runner palsu — sehingga kontrak
+    "request reanalyze tidak menahan panggilan model bahasa" dapat diuji tanpa
+    memanggil LLM.
+    """
+    return run_rps_analysis
 
 
 async def get_current_user(

@@ -1,26 +1,28 @@
-"""Domain RPS: unggah, penyimpanan, dan konversi dokumen (BE-05).
+"""Domain RPS: unggah, penyimpanan, konversi, dan analisis dokumen.
 
-Paket ini melayani pemrosesan awal RPS — tahap pertama alur data aplikasi
-(content-schema §54: ``RPS File → RPS Analysis``) — dan menjadi kontrak untuk
-BE-08, yang melakukan ekstraksi terstruktur dari hasil konversi di sini.
+Paket ini melayani alur data RPS (content-schema §54:
+``RPS File → RPS Analysis``): konversi Docling (BE-05), serialisasi YAML
+(BE-08.1), serta penyimpanan hasil analisis dan reanalyze (BE-08.2).
 
 Isi paket:
 
 - :class:`RPSDocument` (+ :mod:`src.services.rps.validation`) — aturan bentuk dan
-  lifecycle dokumen RPS;
-- :class:`RPSService` — operasi aplikasi: unggah, ambil, proses;
+  lifecycle dokumen RPS, termasuk transisi ``ANALYZING``/``ANALYZED``/``FAILED``;
+- :class:`RPSService` — operasi aplikasi: unggah, ambil, proses, analisis;
 - :class:`RPSRepository` — akses tabel ``rps``; hanya dipanggil oleh service;
 - :class:`DocumentStorage` / :class:`LocalDocumentStorage` — port penyimpanan
   berkas beserta adapter filesystem lokal;
 - :class:`DocumentConverter` — port konversi dokumen, dengan
   :class:`DoclingDocumentConverter` sebagai adapter Docling (dipasang lewat
   extra opsional ``docling``);
-- :class:`RPSStructuredData``-nya ada di :mod:`src.schemas.rps_structured`,
+- :class:`RPSAnalyzer` — port analisis (BE-09.2), dengan :func:`analyze_document`
+  sebagai adapter model bahasa;
+- :class:`RPSStructuredData`-nya ada di :mod:`src.schemas.rps_structured`,
   karena ia adalah kontrak data (Pydantic), bukan logika domain.
 
-Seluruh error domain dipetakan ke HTTP oleh ``src.middlewares``. Pemrosesan
-dijalankan *synchronous* pada tahap S0 (Sprint 0); workflow asynchronous beserta Agent
-Run menyusul pada BE-08 — lihat :meth:`RPSService.process_rps`.
+Seluruh error domain dipetakan ke HTTP oleh ``src.middlewares``. Konversi dan
+analisis berjalan di background lewat :func:`run_rps_processing` dan
+:func:`run_rps_analysis`.
 """
 
 from src.schemas.rps_structured import (
@@ -28,6 +30,8 @@ from src.schemas.rps_structured import (
     RPSStructuredData,
     to_rps_analysis_payload,
 )
+from src.services.rps.analysis_runner import run_rps_analysis
+from src.services.rps.analyzer import RPSAnalyzer, analyze_document
 from src.services.rps.converter import (
     ConvertedTable,
     DocumentConversion,
@@ -41,6 +45,7 @@ from src.services.rps.errors import (
     DocumentConverterUnavailableError,
     DocumentStorageError,
     InvalidFileError,
+    RPSAnalysisFailedError,
     RPSDomainError,
     RPSNotFoundError,
     RPSStateError,
@@ -49,6 +54,7 @@ from src.services.rps.errors import (
 from src.services.rps.repository import RPSRepository
 from src.services.rps.runner import run_rps_processing
 from src.services.rps.service import (
+    RPSAnalysisStart,
     RPSConversionResult,
     RPSProcessResult,
     RPSProcessStart,
@@ -77,12 +83,17 @@ __all__ = [
     "RPSProcessStart",
     "RPSConversionResult",
     "RPSProcessResult",
+    "RPSAnalysisStart",
     "run_rps_processing",
+    "run_rps_analysis",
     # Konversi dokumen (BE-05.2)
     "DocumentConverter",
     "DocumentConversion",
     "ConvertedTable",
     "DoclingDocumentConverter",
+    # Analisis dokumen (BE-08.2)
+    "RPSAnalyzer",
+    "analyze_document",
     # Penyimpanan (BE-05.1)
     "DocumentStorage",
     "LocalDocumentStorage",
@@ -97,4 +108,5 @@ __all__ = [
     "DocumentConversionError",
     "DocumentConverterUnavailableError",
     "DocumentStorageError",
+    "RPSAnalysisFailedError",
 ]
