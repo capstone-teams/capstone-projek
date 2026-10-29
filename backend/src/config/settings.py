@@ -37,6 +37,17 @@ DEFAULT_RPS_CONVERTER_TABLE_MODE = "accurate"
 # berhenti di tengah konversi sehingga barisnya tidak pernah selesai.
 DEFAULT_RPS_PROCESSING_LEASE_SECONDS = 900
 
+# Nilai bawaan konfigurasi LLM timeout & retry
+DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
+DEFAULT_LLM_MAX_RETRIES = 3
+DEFAULT_LLM_RETRY_BACKOFF_FACTOR = 2.0
+DEFAULT_LLM_RETRY_MIN_WAIT = 0.5
+DEFAULT_LLM_RETRY_MAX_WAIT = 10.0
+
+# Nilai bawaan konfigurasi analisis RPS
+DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 2
+MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 5
+
 # Batas panjang Additional Prompt dosen (BE-10.2). Prompt ini ikut dikirim ke
 # LLM bersama konteks RPS, sehingga panjangnya dibatasi agar konteks akademik
 # tidak tergeser oleh instruksi tambahan.
@@ -89,6 +100,15 @@ class Settings(BaseSettings):
     # Ollama (http://localhost:11434/v1). Empty means the official OpenAI API.
     OPENAI_BASE_URL: str = ""
 
+    # LLM timeout & retry configuration (read from environment)
+    LLM_TIMEOUT_SECONDS: float | None = None
+    OPENAI_TIMEOUT_SECONDS: float | None = None
+    GEMINI_TIMEOUT_SECONDS: float | None = None
+    LLM_MAX_RETRIES: int | None = None
+    LLM_RETRY_BACKOFF_FACTOR: float | None = None
+    LLM_RETRY_MIN_WAIT: float | None = None
+    LLM_RETRY_MAX_WAIT: float | None = None
+
     # --- RPS upload & Docling conversion (BE-05) ---------------------------
     # Seluruh nilai default-nya kosong; nilai bawaan diterapkan oleh property
     # ``rps_*`` di bawah (lihat DEFAULT_RPS_* pada modul ini). Kosong berarti
@@ -120,6 +140,9 @@ class Settings(BaseSettings):
     # berstatus PROCESSING yang lebih tua dari ini boleh diproses ulang, sehingga
     # konversi yang terputus (server dimatikan) tidak mengunci dokumen selamanya.
     RPS_PROCESSING_LEASE_SECONDS: int | None = None
+
+    # Batas retry dapat diubah melalui konfigurasi dengan kode di bawah ini.
+    RPS_ANALYSIS_MAX_FIX_ATTEMPTS: int | None = None
 
     # --- Instructor Setup (BE-10.2) ---------------------------------------
     # Batas panjang Additional Prompt (karakter). Kosong berarti nilai bawaan
@@ -187,10 +210,21 @@ class Settings(BaseSettings):
     @field_validator("RPS_ALLOWED_EXTENSIONS", mode="after")
     @classmethod
     def parse_rps_allowed_extensions(cls, v: str) -> str:
-        """Daftar berisi pemisah saja (mis. ``",,"``) adalah salah konfigurasi."""
+        """Daftar berisi pemisah saja (mis. ``,,``) adalah salah konfigurasi."""
         if (v or "").strip() and not _split_extensions(v):
             raise ValueError(
                 "RPS_ALLOWED_EXTENSIONS tidak boleh kosong; contoh: pdf atau pdf,docx"
+            )
+        return v
+
+    @field_validator("RPS_ANALYSIS_MAX_FIX_ATTEMPTS", mode="after")
+    @classmethod
+    def parse_rps_analysis_max_fix_attempts(cls, v: int | None) -> int | None:
+        """Nilai di luar rentang gagal saat startup, bukan saat analisis berjalan."""
+        if v is not None and not 0 <= v <= MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS:
+            raise ValueError(
+                "RPS_ANALYSIS_MAX_FIX_ATTEMPTS harus antara 0 dan "
+                f"{MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS}"
             )
         return v
 
@@ -271,6 +305,15 @@ class Settings(BaseSettings):
         )
 
     @property
+    def rps_analysis_max_fix_attempts(self) -> int:
+        """Jumlah retry tambahan analisis RPS yang berlaku."""
+        return (
+            DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS
+            if self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS is None
+            else self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS
+        )
+
+    @property
     def instructor_additional_prompt_max_length(self) -> int:
         """Batas panjang Additional Prompt yang berlaku (karakter)."""
         return (
@@ -284,6 +327,43 @@ class Settings(BaseSettings):
         """Canonical name of the provider selected through LLM_PROVIDER."""
         name = (self.LLM_PROVIDER or "").strip().lower()
         return LLM_PROVIDER_ALIASES.get(name, name)
+
+    @property
+    def llm_max_retries(self) -> int:
+        return DEFAULT_LLM_MAX_RETRIES if self.LLM_MAX_RETRIES is None else self.LLM_MAX_RETRIES
+
+    @property
+    def llm_retry_backoff_factor(self) -> float:
+        return (
+            DEFAULT_LLM_RETRY_BACKOFF_FACTOR
+            if self.LLM_RETRY_BACKOFF_FACTOR is None
+            else self.LLM_RETRY_BACKOFF_FACTOR
+        )
+
+    @property
+    def llm_retry_min_wait(self) -> float:
+        return (
+            DEFAULT_LLM_RETRY_MIN_WAIT
+            if self.LLM_RETRY_MIN_WAIT is None
+            else self.LLM_RETRY_MIN_WAIT
+        )
+
+    @property
+    def llm_retry_max_wait(self) -> float:
+        return (
+            DEFAULT_LLM_RETRY_MAX_WAIT
+            if self.LLM_RETRY_MAX_WAIT is None
+            else self.LLM_RETRY_MAX_WAIT
+        )
+
+    def llm_timeout_for(self, provider: str) -> float:
+        """Resolve timeout in seconds for a provider from environment."""
+        own = getattr(self, f"{provider.upper()}_TIMEOUT_SECONDS", None)
+        if own is not None:
+            return float(own)
+        if self.LLM_TIMEOUT_SECONDS is not None:
+            return float(self.LLM_TIMEOUT_SECONDS)
+        return DEFAULT_LLM_TIMEOUT_SECONDS
 
     def _llm_setting_for(self, provider: str, suffix: str) -> str:
         """Provider-specific value, else the shared value for the active provider.

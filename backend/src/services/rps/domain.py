@@ -68,6 +68,8 @@ class RPSDocument:
     processing_error_code: str | None = None
     processing_error: str | None = None
     structured_data: dict[str, Any] | None = None
+    analyzed_at: datetime | None = None
+    workflow_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -80,6 +82,8 @@ class RPSDocument:
         self.status = normalize_status(self.status)
         self.id = normalize_identifier(self.id)
         self.owner_id = require_owner(self.owner_id)
+        self.workflow_id = normalize_identifier(self.workflow_id)
+        self.analyzed_at = _normalize_analyzed_at(self.analyzed_at)
         self.source_document = _normalize_source_document(self.source_document)
         self.processing_duration_ms = _normalize_duration(self.processing_duration_ms)
 
@@ -127,6 +131,16 @@ class RPSDocument:
     def is_processing(self) -> bool:
         """Apakah dokumen sedang dikonversi."""
         return self.status is RPSStatus.PROCESSING
+
+    @property
+    def is_analyzing(self) -> bool:
+        """Apakah dokumen sedang dianalisis (BE-08.2)."""
+        return self.status is RPSStatus.ANALYZING
+
+    @property
+    def is_analyzed(self) -> bool:
+        """Apakah analisis dokumen sudah selesai dan hasilnya tersimpan."""
+        return self.status is RPSStatus.ANALYZED and self.structured_data is not None
 
     def belongs_to(self, owner_id: str) -> bool:
         """Apakah dokumen dimiliki user tertentu (dasar scoping akses)."""
@@ -239,6 +253,95 @@ class RPSDocument:
         self.processing_error_code = _normalize_error_code(error_code)
         self.processing_error = _normalize_error_reason(reason)
 
+    def start_analysis(
+        self,
+        *,
+        workflow_id: str,
+        allow_reanalysis: bool = False,
+        stale_after: timedelta | None = None,
+        now: datetime | None = None,
+    ) -> None:
+        """Tandai dokumen sedang dianalisis menjadi RPS Structured Data.
+
+        Analisis hanya boleh dijalankan dari ``source_document`` yang sudah
+        tersimpan — itulah janji "reanalyze tanpa Docling" (design-api §6.6).
+        Dokumen yang sedang dikonversi atau sedang dianalisis ditolak supaya dua
+        pekerjaan background tidak saling menimpa hasil (``stale_after`` memberi
+        jalan keluar bila pekerjaan sebelumnya benar-benar berhenti).
+
+        RPS yang **sudah** ``ANALYZED`` tidak dianalisis ulang secara implisit;
+        hanya jalur reanalyze eksplisit yang mengirim ``allow_reanalysis=True``.
+        """
+        if self.is_processing:
+            raise RPSStateError(f"rps {self.id} sedang diproses")
+        if self.source_document is None:
+            raise RPSValidationError(
+                "source_document", "RPS harus diproses sebelum dianalisis"
+            )
+        if self.is_analyzing and not self._is_stale(stale_after=stale_after, now=now):
+            raise RPSStateError(f"rps {self.id} sedang dianalisis")
+        if self.is_analyzed and not allow_reanalysis:
+            raise RPSStateError(f"rps {self.id} sudah dianalisis")
+
+        self.workflow_id = normalize_identifier(workflow_id)
+        if self.workflow_id is None:
+            raise RPSValidationError("workflow_id", "wajib diisi")
+        self.status = RPSStatus.ANALYZING
+        # Catatan kegagalan tahap sebelumnya tidak berlaku lagi untuk percobaan
+        # ini; hasil analisis lama tetap disimpan sampai berhasil digantikan.
+        self.processing_error_code = None
+        self.processing_error = None
+
+    def complete_analysis(
+        self,
+        structured_data: dict[str, Any],
+        *,
+        analyzed_at: datetime | None = None,
+    ) -> None:
+        """Simpan hasil analisis dan tandai dokumen ``ANALYZED``.
+
+        Hasil wajib berupa RPS Structured Data yang sudah tervalidasi (pemanggil
+        di application layer memvalidasinya terhadap
+        :class:`~src.schemas.rps_structured.RPSStructuredData`). ``analyzed_at``
+        dicatat supaya client tahu kapan data ini dihasilkan (design-api §6.4);
+        nilai kosong berarti "sekarang".
+        """
+        if not self.is_analyzing:
+            raise RPSStateError(
+                f"rps {self.id} tidak sedang dianalisis (status: {self.status.value})"
+            )
+
+        data = _normalize_structured_data(structured_data)
+        if data is None:
+            raise RPSValidationError(
+                "structured_data", "wajib diisi dengan hasil analisis"
+            )
+
+        self.structured_data = data
+        self.analyzed_at = _normalize_analyzed_at(analyzed_at) or datetime.now(timezone.utc)
+        self.processing_error_code = None
+        self.processing_error = None
+        self.status = RPSStatus.ANALYZED
+
+    def fail_analysis(self, *, error_code: str | None = None, reason: str | None = None) -> None:
+        """Tandai analisis gagal beserta alasan yang dapat dibaca client.
+
+        Berlaku sama seperti :meth:`fail_processing`: status menjadi ``FAILED``,
+        kode dan alasan publik disimpan pada dokumen karena analisis berjalan di
+        background. ``structured_data`` dan ``analyzed_at`` hasil analisis
+        sebelumnya **tidak** dihapus agar kegagalan reanalyze tidak membuang
+        data baik yang terakhir; status ``FAILED`` yang menandai bahwa hasil itu
+        bukan hasil terbaru.
+        """
+        if not self.is_analyzing:
+            raise RPSStateError(
+                f"rps {self.id} tidak sedang dianalisis (status: {self.status.value})"
+            )
+
+        self.status = RPSStatus.FAILED
+        self.processing_error_code = _normalize_error_code(error_code)
+        self.processing_error = _normalize_error_reason(reason)
+
     def _is_stale(self, *, stale_after: timedelta | None, now: datetime | None) -> bool:
         """Apakah pemrosesan yang berjalan sudah melewati batas waktunya."""
         if stale_after is None or self.updated_at is None:
@@ -302,6 +405,28 @@ def _normalize_source_document(value: object) -> dict[str, Any] | None:
         raise RPSValidationError("source_document", "harus berupa object JSON atau None")
     if not value:
         raise RPSValidationError("source_document", "tidak boleh kosong")
+    return value
+
+
+def _normalize_structured_data(value: object) -> dict[str, Any] | None:
+    """Hasil analisis harus berupa object JSON berisi RPS Structured Data."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise RPSValidationError(
+            "structured_data", "harus berupa object JSON atau None"
+        )
+    if not value:
+        raise RPSValidationError("structured_data", "tidak boleh kosong")
+    return value
+
+
+def _normalize_analyzed_at(value: object) -> datetime | None:
+    """Waktu analisis adalah timestamp, bukan teks bebas."""
+    if value is None:
+        return None
+    if not isinstance(value, datetime):
+        raise RPSValidationError("analyzed_at", "harus berupa datetime atau None")
     return value
 
 

@@ -1,0 +1,330 @@
+course:
+  name: Matematika Diskrit
+  credits: null
+  semester: null
+  description: >-
+    Mata kuliah ini membahas struktur diskrit sebagai fondasi informatika,
+    meliputi logika, proposisi, ekuivalensi, predikat dan quantifier,
+    aturan penarikan kesimpulan, metode pembuktian, induksi matematika,
+    teori himpunan, relasi dan fungsi, aljabar Boolean, kombinatorial,
+    dan teori bilangan.
+
+cpmk:
+  - code: CPMK-1
+    description: >-
+      Mahasiswa mampu menerapkan konsep proposisi, ekuivalensi,
+      predikat dan quantifier pada suatu pernyataan.
+
+  - code: CPMK-2
+    description: >-
+      Mahasiswa mampu menganalisis suatu kesimpulan dari beberapa
+      pernyataan matematika.
+
+  - code: CPMK-3
+    description: >-
+      Mahasiswa mampu mengimplementasikan teknik-teknik pembuktian
+      pada sebuah pernyataan.
+
+  - code: CPMK-4
+    description: >-
+      Mahasiswa mampu menerapkan dan mengimplementasikan konsep himpunan.
+
+  - code: CPMK-5
+    description: >-
+      Mahasiswa mampu menerapkan dan mengimplementasikan relasi dan fungsi.
+
+  - code: CPMK-6
+    description: >-
+      Mahasiswa mampu menerapkan konsep induksi matematika.
+
+  - code: CPMK-7
+    description: >-
+      Mahasiswa mampu menerapkan rekursi dan relasi rekurens.
+
+  - code: CPMK-8
+    description: >-
+      Mahasiswa mampu menerapkan dan mengaplikasikan konsep aljabar Boolean.
+
+  - code: CPMK-9
+    description: >-
+      Mahasiswa mampu menganalisis dan menerapkan konsep teori bilangan.
+
+  - code: CPMK-10
+    description: >-
+      Mahasiswa mampu menerapkan dan menganalisis konsep kombinatorial
+      pada sebuah kasus.
+
+sub_cpmk: []
+
+weekly_plan:
+  - weeks: [1]
+    materials:
+      - Konsep logika proposisi
+      - Konsep ekuivalensi
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - >-
+        Ketepatan dalam menentukan proposisi dan ekuivalensi
+        dalam logika matematika.
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+    duration:
+      face_to_face_minutes: 150
+      independent_study_minutes: 180
+
+  - weeks: [2]
+    materials:
+      - Konsep predikat dan quantifier
+      - Aturan penarikan kesimpulan
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - Ketepatan dalam menentukan predikat dan menggunakan quantifier
+      - Ketepatan dalam menentukan kesimpulan dari logika matematika
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+    duration:
+      face_to_face_minutes: 150
+      independent_study_minutes: 180
+      structured_assignment_minutes: 180
+
+  - weeks: [3]
+    materials:
+      - Pembuktian secara langsung
+      - Pembuktian dengan kontraposisi
+      - Pembuktian dengan kontradiksi
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, belajar mandiri, dan Tugas 1.
+    indicators:
+      - Ketepatan melakukan pembuktian secara langsung
+      - Ketepatan melakukan pembuktian dengan kontraposisi
+      - Ketepatan melakukan pembuktian dengan kontradiksi
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [4]
+    week_type: kuis
+    name: Kuis 1
+
+  - weeks: [5]
+    materials:
+      - Definisi himpunan
+      - Cara penyajian himpunan
+      - Operasi pada himpunan
+      - Hukum-hukum himpunan
+      - Prinsip inklusi-eksklusi
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+      - Uji kompetensi
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - Ketepatan menentukan dan menyajikan himpunan
+      - Ketepatan melakukan operasi pada himpunan
+      - Ketepatan memahami hukum-hukum himpunan
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [6]
+    materials:
+      - Definisi relasi
+      - Representasi relasi
+      - Sifat-sifat relasi
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+      - Uji kompetensi
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - Ketepatan memahami relasi
+      - Ketepatan merepresentasikan relasi
+      - Ketepatan memahami sifat-sifat relasi
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [7]
+    materials:
+      - Definisi fungsi
+      - Komposisi dua fungsi
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+      - Uji kompetensi
+    learning_experience: >-
+      Kehadiran dan keaktifan mahasiswa, tanya jawab, diskusi,
+      belajar mandiri, dan Tugas 2.
+    indicators:
+      - Ketepatan memahami fungsi
+      - Ketepatan menentukan komposisi fungsi
+    assessment:
+      criteria: Ketepatan dalam menyelesaikan masalah
+      weight_percent: 100
+
+  - weeks: [8]
+    week_type: uts
+    name: Ujian Tengah Semester
+
+  - weeks: [9]
+    materials:
+      - Induksi matematika
+      - Induksi matematika kuat
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+      - Uji kompetensi
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - Ketepatan melakukan pembuktian dengan induksi matematika
+      - Ketepatan melakukan pembuktian dengan induksi matematika kuat
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [10]
+    materials:
+      - Rekursi dan fungsi rekursif
+      - Relasi rekurens
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+      - Uji kompetensi
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - Ketepatan menyelesaikan permasalahan rekursi dan relasi rekurens
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [11]
+    materials:
+      - Aljabar Boolean
+      - Peta Karnaugh
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, belajar mandiri, dan Tugas 3.
+    indicators:
+      - Ketepatan menyelesaikan permasalahan aljabar Boolean
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [12]
+    week_type: kuis
+    name: Kuis 2
+
+  - weeks: [13]
+    materials:
+      - Algoritma Euclidean
+      - Aritmatika modulo
+      - Sistem kekongruenan linier
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - Ketepatan menyelesaikan permasalahan modulo
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [14]
+    materials:
+      - Bilangan prima
+      - Teorema Fermat
+      - Aplikasi teori bilangan
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+    learning_experience: >-
+      Kehadiran, tanya jawab, diskusi, dan belajar mandiri.
+    indicators:
+      - Ketepatan menyelesaikan permasalahan teori bilangan
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [15]
+    materials:
+      - Koefisien binomial dan identitas
+      - Pigeonhole Principle
+    methods:
+      - Kuliah/ceramah
+      - Diskusi
+      - Latihan soal
+    learning_experience: >-
+      Mengerjakan uji kompetensi 15 dan belajar mandiri.
+    indicators:
+      - Ketepatan menyelesaikan permasalahan koefisien binomial dan identitas
+    assessment:
+      criteria: Ketepatan dalam menjawab
+      weight_percent: 100
+
+  - weeks: [16]
+    week_type: uas
+    name: Ujian Akhir Semester
+
+assessments:
+  - component: Kehadiran
+    weight_percent: 10
+
+  - component: Tugas
+    count: 4
+    weight_percent: 15
+
+  - component: Kuis
+    count: 2
+    weight_percent: 20
+
+  - component: UTS
+    count: 1
+    weight_percent: 25
+
+  - component: UAS
+    count: 1
+    weight_percent: 30
+
+references:
+  main:
+    - >-
+      Rosen, K. H. Discrete Mathematics and Its Applications,
+      8th ed. Boston: McGraw-Hill.
+  supporting:
+    - >-
+      Grossman, P. (2009). Discrete Mathematics for Computing.
+      Basingstoke: Palgrave Macmillan.
+    - >-
+      Epp, S. S. (2010). Discrete Mathematics with Application,
+      4th ed. Brooks/Cole.
