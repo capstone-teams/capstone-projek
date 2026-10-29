@@ -415,10 +415,23 @@ describe('Edit mode: halaman kursus', () => {
     expect(findCm(await getCourseContents(2), 'Draf')).toBeUndefined();
   });
 
-  it('halaman New activity tertutup bagi pengguna yang tidak boleh mengubah kursus', async () => {
+  it('halaman New activity hanya untuk dosen yang boleh mengubah kursus', async () => {
+    // Mahasiswa: halaman dosen ditolak (403).
     await render('/course/2/modedit?add=assign&section=1', 'mahasiswa');
-    await waitForText('Anda tidak dapat menambah aktivitas di kursus ini.');
+    await waitForText('Akses ditolak');
     expect(pageHeading()).toBeNull();
+    act(() => root.unmount());
+
+    // Non-editing teacher (kursus 3): halaman dosen, tetapi tanpa hak mengubah.
+    root = null;
+    await render('/course/3/modedit?add=assign&section=1');
+    await waitForText('Anda tidak dapat menambah aktivitas di kursus ini.');
+  });
+
+  it('halaman Edit submission hanya untuk mahasiswa', async () => {
+    await render('/course/2/mod/107/editsubmission');
+    await waitForText('Akses ditolak');
+    expect(container.textContent).not.toContain('Add submission');
   });
 
   it('menyembunyikan aktivitas dan menampilkan badge', async () => {

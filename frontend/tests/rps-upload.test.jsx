@@ -217,6 +217,32 @@ describe('FE-08.2 status pemrosesan RPS', () => {
     expect(rowFor('rps-gagal-analisis.pdf').textContent).not.toContain('Analisis RPS gagal');
   });
 
+  it('backend tanpa orkestrator: RPS PROCESSED tanpa workflow dapat dianalisis dari UI', async () => {
+    const reanalyze = vi.spyOn(rpsService, 'reanalyzeRps');
+    await upload('rps-tanpa-analisis.pdf');
+    await waitFor(() => rowFor('rps-tanpa-analisis.pdf').textContent.includes('Siap dianalisis'), 'status Siap dianalisis');
+    const row = () => rowFor('rps-tanpa-analisis.pdf');
+    expect(row().textContent).toContain('Belum dibuat');
+    const button = [...row().querySelectorAll('button')].find((b) => b.textContent === 'Analisis RPS');
+    expect(button).toBeTruthy();
+    await act(async () => button.click());
+    expect(reanalyze).toHaveBeenCalledOnce();
+    await waitFor(() => row().textContent.includes('Selesai dianalisis'), 'analisis selesai');
+    expect(row().textContent).toMatch(/workflow_\d+/);
+    expect([...row().querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Analisis RPS');
+  });
+
+  it('pesan gagal dibaca dari GET /rps/{id} untuk RPS gagal yang dimuat dari daftar', async () => {
+    await upload('rps-rusak.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal'), 'status Gagal');
+    // Muat ulang halaman: daftar GET /rps tidak memuat processing_error_message.
+    act(() => root.unmount());
+    const getRps = vi.spyOn(rpsService, 'getRps');
+    await render();
+    await waitFor(() => rowFor('rps-rusak.pdf')?.textContent.includes('Dokumen RPS gagal diproses'), 'pesan dari GET /rps/{id}');
+    expect(getRps).toHaveBeenCalledTimes(1);
+  });
+
   it('menampilkan ringkasan hasil analisis untuk RPS yang selesai dianalisis', async () => {
     await render();
     await waitFor(() => rowFor('RPS-Pemrograman-Web-2026.pdf'), 'RPS contoh');

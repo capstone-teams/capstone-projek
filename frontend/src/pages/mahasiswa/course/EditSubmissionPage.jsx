@@ -120,7 +120,7 @@ export default function EditSubmissionPage() {
   const { cmid } = useParams();
   const navigate = useNavigate();
   const [now] = useState(() => Math.floor(Date.now() / 1000));
-  const { course, sections, isTeacher } = useMoodleCourse();
+  const { course, sections } = useMoodleCourse();
   const section = sections.find((s) => s.modules.some((m) => m.id === Number(cmid)));
   const mod = section?.modules.find((m) => m.id === Number(cmid));
   const { data, error, loading } = useApi(async () => {
@@ -144,7 +144,7 @@ export default function EditSubmissionPage() {
     body = (
       <>
         <AssignIntro assign={data.assign} />
-        {isTeacher || !opened || attempt.canedit === false || !(types.onlineText || types.files) ? (
+        {!opened || attempt.canedit === false || !(types.onlineText || types.files) ? (
           <EmptyState title="You cannot edit this submission." action={<Link to={activityPath}>Kembali ke tugas</Link>} />
         ) : (
           <SubmissionForm

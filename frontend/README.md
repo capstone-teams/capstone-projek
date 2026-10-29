@@ -194,7 +194,9 @@ dan progresnya, sedangkan polling setiap 3 detik menjadi cadangan sampai status
 analisis sudah ada (`workflow_id`); karena `GET /rps/{id}` tidak memuat
 `workflow_id`, nilainya diambil dari `GET /rps`.
 
-RPS gagal menampilkan `processing_error_message`. Bila dokumen sudah terkonversi
+RPS gagal menampilkan `processing_error_message` dari `GET /rps/{id}`; karena
+`GET /rps` tidak memuat pesan itu, detailnya diambil sekali untuk setiap RPS gagal
+di daftar. Bila dokumen sudah terkonversi
 (`has_source_document`), tombol **Analisis ulang** memanggil
 `POST /api/v1/rps/{rps_id}/reanalyze`; bila konversinya yang gagal, tombol
 **Proses ulang** memanggil `POST /rps/{id}/process`. RPS yang selesai dianalisis
@@ -202,11 +204,16 @@ menampilkan **Lihat hasil analisis**: ringkasan langsung di kartu selama project
 belum dibuat. Tab RPS kursus (halaman hasil analisis yang sudah ada) menampilkan
 status RPS dan tautan **Pantau workflow** ke tab Ringkasan (Aktivitas agent).
 
-Status backend saat ini: enum belum memuat `ANALYZING`/`ANALYZED` (BE-08.2), dan
-`/rps/{id}/reanalyze`, `/rps/{id}/analysis`, `/workflows/*`, serta WebSocket
-workflow belum tersedia (stub `501`, BE-08.3/BE-11.3). Mock mengikuti kontrak;
-nama file berisi `gagal-analisis` gagal saat analisis pertama untuk mencoba
-Analisis ulang.
+Status backend saat ini: enum `ANALYZING`/`ANALYZED`, `GET /rps`,
+`/rps/{id}/analysis`, dan `/rps/{id}/reanalyze` sudah tersedia (BE-08.2/BE-08.3).
+`/workflows/*` dan WebSocket workflow masih stub `501` (BE-11.3), sehingga status
+diperbarui lewat polling. Orkestrator BE-11.2 belum ada: konversi berhenti di
+`PROCESSED` tanpa workflow dan analisis tidak berjalan otomatis. Untuk RPS itu
+daftar menampilkan tombol **Analisis RPS** yang memanggil `POST /rps/{id}/reanalyze`
+(endpoint backend yang menjadwalkan analisis), lalu status dipantau sampai
+`ANALYZED` atau `FAILED`. Mock mengikuti kontrak dan mensimulasikan orkestrator;
+nama file berisi `tanpa-analisis` meniru backend saat ini (berhenti di `PROCESSED`),
+dan `gagal-analisis` gagal saat analisis pertama untuk mencoba Analisis ulang.
 
 ### Hasil analisis RPS (FE-08.3)
 
@@ -234,9 +241,15 @@ tanpa materi/Sub-CPMK/metode, atau rujukan tanpa sasaran seperti
 
 Tombol **Lanjut ke Course Planning** membuka tab Rencana (FE-05). Dengan backend
 nyata tombol nonaktif bertuliskan "Course planning aktif pada M03"; di mode mock
-tombol aktif. `GET /rps/{id}/analysis` masih stub `501` sampai BE-08.3; di mock,
-nama file berisi `tidak-lengkap` menghasilkan analisis dengan bagian yang tidak
-ditemukan.
+tombol aktif (hanya bila RPS sudah `ANALYZED`).
+
+Halaman membaca status lewat `GET /rps/{id}` dulu dan baru meminta
+`GET /rps/{id}/analysis` (BE-08.3) bila status `ANALYZED`, karena backend menjawab
+`422 INVALID_REQUEST` untuk RPS yang belum dianalisis. Sebelum itu halaman
+menampilkan status beserta tombol **Analisis RPS**/**Analisis ulang**
+(`POST /rps/{id}/reanalyze`) atau **Proses ulang** (`POST /rps/{id}/process`), lalu
+memantau status setiap 3 detik sampai hasilnya tersedia. Di mock, nama file berisi
+`tidak-lengkap` menghasilkan analisis dengan bagian yang tidak ditemukan.
 
 ## Edit mode kursus
 
@@ -383,9 +396,24 @@ Mock mengambil CPMK/metode dari RPS.
 ## Struktur
 
 - src/main.jsx dan App.jsx: provider aplikasi dan routing.
-- src/pages/: satu folder per area — auth/ (login, lupa password), moodle/
-  (tampilan Moodle, course/ untuk halaman di dalam kursus), ai/course/ (tab
-  Generator AI di dalam kursus). StatusPage berisi halaman 403/404.
+- src/pages/: halaman dipisah per pengguna —
+  - auth/: login dan lupa password.
+  - dosen/: Dasbor, course/ (kursus dengan mode edit, rekap nilai semua
+    mahasiswa, ringkasan pengumpulan tugas, peserta dengan email, New
+    ‹aktivitas›), dan ai/ (tab Generator AI: RPS, rencana, konten, review,
+    publikasi).
+  - mahasiswa/: course/ (kursus tanpa kontrol edit dan tanpa section
+    tersembunyi, laporan nilai sendiri, status dan Edit submission tugas,
+    peserta tanpa email).
+  - moodle/: halaman bersama, yaitu Kursus saya, Profil, dan layout kursus
+    (judul, tab, indeks).
+  URL kursus sama untuk keduanya (mis. `/course/2/grades`); `ByCourseRole`
+  (components/layout) memilih halaman dosen bila pengguna pengajar kursus itu
+  atau admin, selain itu halaman mahasiswa. Halaman milik peran lain
+  (`/modedit` untuk mahasiswa, `/editsubmission` untuk dosen) menampilkan 403.
+  Bagian yang sama dipakai bersama lewat components/moodle/course
+  (CourseOutline, ActivityView, ParticipantsTable). StatusPage berisi halaman
+  403/404.
 - src/components/: dikelompokkan mengikuti pemakainya —
   - ui/: komponen dasar lintas halaman (Card, Badge, Alert, Modal, Toast, ...),
     satu file per komponen; import lewat `components/ui`.
@@ -403,7 +431,7 @@ Mock mengambil CPMK/metode dari RPS.
   - ai/: komponen generator AI (WorkflowStepper, EventLog, InstructionModal,
     ActivityConfigFields, RpsUploadForm, InstructorSetupForm, TeachingProfileForm,
     TeachingPreferencesCard); ai/course/ berisi potongan halaman
-    pages/ai/course (AiProjectStart, CoursePlanDetails, ActivityConfigForm,
+    pages/dosen/ai (AiProjectStart, CoursePlanDetails, ActivityConfigForm,
     ContentGeneratePanel, WeekContentDetail, MoodleExecutionCard,
     MoodleVerificationCard).
   Halaman di pages/ hanya merangkai komponen; form/panel/card dibuat di

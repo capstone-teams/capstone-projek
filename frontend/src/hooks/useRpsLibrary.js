@@ -1,14 +1,14 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from './useApi';
 import { usePolling } from './usePolling';
 import { useWorkflowEvents } from './useWorkflowEvents';
 import { getRps, listRps, processRps, reanalyzeRps } from '../services/rpsService';
-import { isRpsInProgress } from '../utils/rpsStatus';
+import { RPS_STATUS, isRpsInProgress } from '../utils/rpsStatus';
 
 // Polling hanya cadangan: event workflow (§17) memicu pembaruan lebih cepat bila tersedia.
 const POLL_MS = 3000;
 
-// GET /rps masih stub 501 di backend sampai BE-08.3; daftar lalu memakai RPS yang diunggah pada sesi ini.
+// Bila GET /rps menjawab 501 (backend lama sebelum BE-08.3), daftar memakai RPS yang diunggah pada sesi ini.
 const listOrUnavailable = () =>
   listRps()
     .then((data) => ({ ...data, fetchedAt: Date.now() }))
@@ -58,6 +58,17 @@ export function useRpsLibrary() {
     remember(item.id, detail);
     if (detail.status !== item.status && !unavailable) reloadList({ silent: true });
   }, [remember, unavailable, reloadList]);
+
+  // GET /rps tidak memuat processing_error_message; ambil sekali dari GET /rps/{id} untuk RPS yang gagal.
+  const failedFetched = useRef(new Set());
+  useEffect(() => {
+    items
+      .filter((item) => item.status === RPS_STATUS.FAILED && !item.processing_error_message && !failedFetched.current.has(item.id))
+      .forEach((item) => {
+        failedFetched.current.add(item.id);
+        refreshOne(item);
+      });
+  }, [items, refreshOne]);
 
   const pending = items.filter(isRpsInProgress);
   usePolling(() => Promise.all(pending.map(refreshOne)), POLL_MS, pending.length > 0);
@@ -114,7 +125,7 @@ export function useRpsLibrary() {
     addUploaded,
     /** Konversi (ulang) dokumen yang belum punya source_document: POST /rps/{id}/process. */
     process: (item) => run(item, processRps),
-    /** Analisis ulang dari source_document: POST /rps/{id}/reanalyze (§6.6). */
+    /** Analisis (ulang) dari source_document: POST /rps/{id}/reanalyze (§6.6), juga untuk PROCESSED tanpa workflow. */
     reanalyze: (item) => run(item, reanalyzeRps),
     reload: () => reloadList(),
   };

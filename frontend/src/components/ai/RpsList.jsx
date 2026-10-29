@@ -8,10 +8,17 @@ import { formatDateTime } from '../../utils/format';
 
 const STAGE_LABELS = { rps_analysis: 'Analisis RPS', document_extraction: 'Konversi dokumen' };
 
-/** Aksi pemulihan: analisis ulang bila dokumen sudah terkonversi, selain itu proses (ulang) dokumen. */
+/**
+ * Aksi lanjutan: proses dokumen yang baru diunggah, mulai analisis dokumen PROCESSED yang belum punya
+ * workflow (backend tanpa orkestrator BE-11.2 berhenti di sini), atau pulihkan RPS yang gagal.
+ * Analisis memakai POST /rps/{id}/reanalyze, satu-satunya endpoint backend yang menjadwalkan analisis.
+ */
 function RecoveryAction({ item, busy, onProcess, onReanalyze }) {
   if (item.status === RPS_STATUS.UPLOADED) {
     return <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => onProcess(item)}>{busy ? 'Memulai…' : 'Proses'}</button>;
+  }
+  if (item.status === RPS_STATUS.PROCESSED && !item.workflow_id && item.has_source_document) {
+    return <button type="button" className="btn btn--primary btn--sm" disabled={busy} onClick={() => onReanalyze(item)}>{busy ? 'Memulai…' : 'Analisis RPS'}</button>;
   }
   if (item.status !== RPS_STATUS.FAILED) return null;
   return item.has_source_document ? (

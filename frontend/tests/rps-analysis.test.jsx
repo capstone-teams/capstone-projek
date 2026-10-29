@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { MOODLE_SESSION_KEY } from '../src/services/config';
 import { login as backendLogin } from '../src/services/authService';
 import { buildRpsStructuredData } from '../src/services/mock/mockData';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
+import * as rpsService from '../src/services/rpsService';
 import { SECTION_STATUS, danglingReferences, normalizeRpsAnalysis, sectionStatuses } from '../src/utils/rpsAnalysis';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -59,6 +60,7 @@ describe('FE-08.3 tampilan hasil analisis', () => {
     act(() => root?.unmount());
     root = null;
     container.remove();
+    vi.restoreAllMocks();
   });
   const section = (title) => container.querySelector(`section[aria-label^="${title}:"]`);
   async function waitFor(check, label, timeout = 4000) {
@@ -110,6 +112,40 @@ describe('FE-08.3 tampilan hasil analisis', () => {
 
     const planning = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Lanjut ke Course Planning');
     expect(planning.getAttribute('href')).toBe('/course/2/ai/plan');
+  });
+
+  it('RPS yang belum dianalisis menampilkan status dan dapat dianalisis tanpa memanggil /analysis', async () => {
+    // Backend tanpa orkestrator BE-11.2: RPS proyek masih PROCESSED, /analysis akan menjawab 422.
+    const realGetRps = rpsService.getRps;
+    let analyzedRequested = false;
+    vi.spyOn(rpsService, 'getRps').mockImplementation(async (id) => {
+      const rps = await realGetRps(id);
+      return analyzedRequested ? rps : { ...rps, status: 'PROCESSED' };
+    });
+    const analysis = vi.spyOn(rpsService, 'getRpsAnalysis');
+    const reanalyze = vi.spyOn(rpsService, 'reanalyzeRps').mockImplementation(async (id) => {
+      analyzedRequested = true;
+      return { rps_id: id, workflow_id: 'workflow_x', status: 'ANALYZING' };
+    });
+    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
+    await backendLogin('dosen', 'dosen123');
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/course/2/ai/rps']}>
+          <AuthProvider><AppStateProvider><App /></AppStateProvider></AuthProvider>
+        </MemoryRouter>,
+      );
+    });
+    await waitFor(() => container.textContent.includes('Hasil analisis belum tersedia'), 'status belum dianalisis');
+    expect(analysis).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Siap dianalisis');
+    expect(container.textContent).toContain('Tersedia setelah RPS selesai dianalisis.');
+    const button = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Analisis RPS');
+    await act(async () => button.click());
+    expect(reanalyze).toHaveBeenCalledOnce();
+    await waitFor(() => section('CPMK'), 'hasil analisis tampil');
+    expect(analysis).toHaveBeenCalled();
   });
 
   it('menandai bagian yang tidak ditemukan dengan jelas', async () => {

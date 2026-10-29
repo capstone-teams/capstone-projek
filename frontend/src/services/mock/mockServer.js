@@ -34,6 +34,9 @@ const RPS_FAIL_MARKER = 'rusak';
 const RPS_ANALYSIS_FAIL_MARKER = 'gagal-analisis';
 // Nama file berisi 'tidak-lengkap' menghasilkan analisis dengan bagian yang tidak ditemukan.
 const RPS_INCOMPLETE_MARKER = 'tidak-lengkap';
+// Nama file berisi 'tanpa-analisis' meniru backend saat ini (tanpa orkestrator BE-11.2):
+// konversi berhenti di PROCESSED tanpa workflow, analisis hanya lewat POST /rps/{id}/reanalyze.
+const RPS_NO_ORCHESTRATOR_MARKER = 'tanpa-analisis';
 const RPS_FAILURE_MESSAGE = {
   conversion: 'Dokumen RPS gagal diproses karena kesalahan tak terduga.',
   analysis: 'Analisis RPS gagal. Coba analisis ulang.',
@@ -393,7 +396,11 @@ const handlers = {
         }
         rps.has_source_document = true;
         finishRun(run);
-        // Tahap analisis berjalan sebagai workflow (BE-08.2/BE-11.2).
+        if (rps.filename.toLowerCase().includes(RPS_NO_ORCHESTRATOR_MARKER)) {
+          updateRps(rps, 'PROCESSED');
+          return;
+        }
+        // Tahap analisis berjalan sebagai workflow (orkestrator BE-11.2).
         startRpsAnalysis(rps);
       },
     ]);
