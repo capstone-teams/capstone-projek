@@ -7,6 +7,7 @@ import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Avatar, Badge, Card, ErrorAlert, Spinner } from '../../components/ui';
 import TeachingPreferencesCard from '../../components/ai/TeachingPreferencesCard';
 import { formatUnixDateTime } from '../../utils/format';
+import { ROLE, ROLE_LABEL } from '../../types/auth';
 
 export default function ProfilePage() {
   const { user, site } = useAuth();
@@ -22,7 +23,7 @@ export default function ProfilePage() {
         <div>
           <h1 className="moodle-h1">{user.fullname}</h1>
           <div className="mt-1 flex flex-wrap gap-2">
-            <Badge tone={user.role === 'dosen' ? 'info' : 'success'}>{user.role === 'dosen' ? 'Dosen' : 'Mahasiswa'}</Badge>
+            <Badge tone={user.role === ROLE.DOSEN ? 'info' : 'success'}>{ROLE_LABEL[user.role]}</Badge>
             {user.isAdmin && <Badge tone="warning">Admin situs</Badge>}
           </div>
         </div>
@@ -31,11 +32,12 @@ export default function ProfilePage() {
       <div className="grid--2">
         <Card
           title="Detail pengguna"
-          actions={
-            <a href={moodleUrl(`/user/edit.php?id=${user.id}`)} target="_blank" rel="noreferrer" className="text-sm">
-              Edit profil di Moodle ↗
-            </a>
-          }
+// tidak perlu karena link ke edit profil Moodle
+          // actions={
+          //   <a href={moodleUrl(`/user/edit.php?id=${user.id}`)} target="_blank" rel="noreferrer" className="text-sm">
+          //     Edit profil di Moodle ↗
+          //   </a>
+          // }
         >
           <ErrorAlert error={profile.error} />
           {profile.loading && !p ? (
@@ -72,7 +74,7 @@ export default function ProfilePage() {
             </ul>
           )}
         </Card>
-        {user.role === 'dosen' && <TeachingPreferencesCard />}
+        {user.role === ROLE.DOSEN && <TeachingPreferencesCard />}
       </div>
     </PageContainer>
   );

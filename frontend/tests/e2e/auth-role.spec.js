@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test';
 // FE-06.2: login, logout & session restore terhadap kontrak auth backend (mode mock).
 // Akun uji BE-06.3; password mock = "<username>123".
 const ACCOUNTS = [
-  { label: 'instructor', username: 'dosen.demo', password: 'dosen.demo123', landing: 'Kursus yang Anda ajar', name: 'Dosen Demo', aiMenu: 1 },
-  { label: 'student', username: '11231023', password: '11231023123', landing: 'Ringkasan belajar', name: 'Mahasiswa Demo', aiMenu: 0 },
+  { label: 'instructor', username: 'dosen.demo', password: 'dosen.demo123', home: /\/my$/, landing: 'Kursus yang Anda ajar', name: 'Dosen Demo', aiMenu: 1 },
+  { label: 'student', username: '11231023', password: '11231023123', home: /\/my\/courses$/, landing: 'Kursus saya', name: 'Mahasiswa Demo', aiMenu: 0 },
 ];
 const tokens = (page) => page.evaluate(() => [localStorage.getItem('agentic-lms.token'), localStorage.getItem('agentic-lms.moodle-session')]);
 
@@ -19,8 +19,8 @@ for (const account of ACCOUNTS) {
     await page.goto('/my/courses');
     await expect(page).toHaveURL(/\/login$/);
     await login(page, account.username, account.password);
-    // Setelah login aplikasi selalu membuka dasbor (lihat runtime.spec.js).
-    await expect(page).toHaveURL(/\/my$/);
+    // Halaman awal sesuai role (FE-06.3): dosen ke dashboard, mahasiswa ke halaman course.
+    await expect(page).toHaveURL(account.home);
     await expect(page.getByText(account.landing, { exact: false }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Menu pengguna' })).toContainText(account.name);
     await page.getByRole('button', { name: 'Menu pengguna' }).click();

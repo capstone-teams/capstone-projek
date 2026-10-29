@@ -13,7 +13,7 @@ import { appStateReducer, initialAppState, MAX_NOTIFICATIONS, preferencesKey } f
 import { readJson, writeJson } from '../src/utils/storage';
 import { MOODLE_SESSION_KEY, TOKEN_STORAGE_KEY } from '../src/services/config';
 import { ApiError } from '../src/services/apiClient';
-import { AUTH_STATUS, SESSION_NOTICE } from '../src/types/auth';
+import { AUTH_STATUS, ROLE_FROM_BACKEND, SESSION_NOTICE } from '../src/types/auth';
 import AppStatus from '../src/components/layout/AppStatus';
 import MyCoursesPage from '../src/pages/moodle/MyCoursesPage';
 import LoginPage from '../src/pages/auth/LoginPage';
@@ -27,8 +27,8 @@ vi.mock('../src/services/moodle/moodleApi', () => service);
 vi.mock('../src/services/authService', () => service);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const teacher = { id: 3, fullname: 'Rina Kartika', username: 'dosen', role: 'dosen', teacherCourseIds: [2] };
-const student = { id: 5, fullname: 'Andi Saputra', username: 'mahasiswa', role: 'mahasiswa', teacherCourseIds: [] };
+const teacher = { id: 3, fullname: 'Rina Kartika', username: 'dosen', role: 'DOSEN', teacherCourseIds: [2] };
+const student = { id: 5, fullname: 'Andi Saputra', username: 'mahasiswa', role: 'MAHASISWA', teacherCourseIds: [] };
 const studentMe = { id: 'user_002', username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id', role: 'STUDENT' };
 function deferred() {
   let resolve, reject;
@@ -52,7 +52,7 @@ beforeEach(() => {
   service.login.mockResolvedValue({});
   service.hasToken.mockImplementation(() => !!localStorage.getItem(TOKEN_STORAGE_KEY));
   service.logout.mockImplementation(() => localStorage.removeItem(TOKEN_STORAGE_KEY));
-  service.toUiRole.mockImplementation((role) => ({ INSTRUCTOR: 'dosen', STUDENT: 'mahasiswa' })[role] ?? null);
+  service.toUiRole.mockImplementation((role) => ROLE_FROM_BACKEND[role] ?? null);
   localStorage.clear();
   node = document.createElement('div');
   document.body.appendChild(node);
@@ -178,7 +178,7 @@ describe('FE state: authentication and current user', () => {
 
   it('derives role helpers from the current user', async () => {
     await render(withSession(<AppProbe />, { user: teacher }));
-    expect(current).toMatchObject({ role: 'dosen', isDosen: true, isMahasiswa: false });
+    expect(current).toMatchObject({ role: 'DOSEN', isDosen: true, isMahasiswa: false });
     expect(current.isTeacherOf('2')).toBe(true);
     expect(current.isTeacherOf(7)).toBe(false);
   });

@@ -1,15 +1,7 @@
 import { useCourse } from '../../../hooks/useCourse';
 import { getVerification, startVerification } from '../../../services/courseService';
-import { MOODLE_URL } from '../../../services/config';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { Badge, Card, ErrorAlert, Spinner } from '../../ui';
-
-function moodleCourseUrl(id) {
-  if (!id) return MOODLE_URL;
-  return /^\d+$/.test(id)
-    ? `${MOODLE_URL}/course/view.php?id=${id}`
-    : `${MOODLE_URL}/course/search.php?search=${encodeURIComponent(id)}`;
-}
 
 export default function MoodleVerificationCard() {
   const { course, version, refresh } = useCourse();
@@ -23,16 +15,7 @@ export default function MoodleVerificationCard() {
   const canStart = ['EXECUTED', 'COMPLETED'].includes(course.status);
 
   return (
-    <Card
-      title="Verifikasi"
-      actions={
-        course.status === 'COMPLETED' && (
-          <a className="btn btn--primary btn--sm" href={moodleCourseUrl(course.moodle_course_id)} target="_blank" rel="noreferrer">
-            Buka di Moodle ↗
-          </a>
-        )
-      }
-    >
+    <Card title="Verifikasi">
       <ErrorAlert error={start.error || verification.error} onClose={start.clearError} />
 
       {!v && !canStart && <p className="muted">Verifikasi tersedia setelah eksekusi ke Moodle selesai.</p>}

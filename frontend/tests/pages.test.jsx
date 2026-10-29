@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { AppStateProvider } from '../src/context/AppStateProvider';
 import App from '../src/App';
-import { MOODLE_SESSION_KEY, USE_MOODLE_MOCK } from '../src/services/config';
+import { MOODLE_SESSION_KEY, TOKEN_STORAGE_KEY, USE_MOODLE_MOCK } from '../src/services/config';
 import { login as backendLogin } from '../src/services/authService';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
 
@@ -88,14 +88,15 @@ describe('login', () => {
     await act(async () => container.querySelector('form').requestSubmit());
   }
 
-  it('login mahasiswa', async () => {
+  it('login mahasiswa membuka halaman course', async () => {
     await render('/login');
     await fillAndSubmit('mahasiswa', 'mahasiswa123');
-    await waitForText('Halo, Andi!');
-    expect(container.textContent).toContain('Mahasiswa');
+    await waitForText('Kursus saya');
+    expect(container.querySelector('h1').textContent).toBe('Kursus saya');
+    expect(container.textContent).not.toContain('Halo, Andi!');
   });
 
-  it('login dosen', async () => {
+  it('login dosen membuka dashboard dosen', async () => {
     await render('/login');
     await fillAndSubmit('dosen', 'dosen123');
     await waitForText('Kursus yang Anda ajar');
@@ -117,7 +118,7 @@ describe('login', () => {
 
   it.each([
     ['dosen.demo', 'dosen.demo123', 'Kursus yang Anda ajar', 'Dosen Demo'],
-    ['11231023@student.itk.ac.id', '11231023123', 'Halo, Mahasiswa!', 'Mahasiswa Demo'],
+    ['11231023@student.itk.ac.id', '11231023123', 'Kursus saya', 'Mahasiswa Demo'],
   ])('login akun uji backend %s', async (username, password, landing, name) => {
     await render('/login');
     await fillAndSubmit(username, password);
@@ -149,10 +150,11 @@ describe('login', () => {
 
     await waitForText('Lupa kata sandi?');
     expect(container.querySelector('#recovery-username')).not.toBeNull();
-    expect(container.querySelector('form').getAttribute('action')).toContain('/login/forgot_password.php');
+    // Tidak ada pengiriman langsung ke Moodle.
+    expect(container.querySelector('form').getAttribute('action')).toBeNull();
   });
 
-  it('menampilkan pemberitahuan saat mengirim pemulihan dalam mode demo', async () => {
+  it('menampilkan pemberitahuan saat mengirim pemulihan karena backend belum menyediakannya', async () => {
     await render('/forgot-password');
     const recoveryInput = container.querySelector('#recovery-username');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(recoveryInput, 'dosen');
@@ -182,7 +184,7 @@ describe('halaman dosen', () => {
     ['/my/courses', 'Menunggu review rencana'],
     ['/course/2', 'Generator AI'],
     ['/course/2/ai', 'Aktivitas agent'],
-    ['/course/2/ai/rps', 'Komponen penilaian'],
+    ['/course/2/ai/rps', 'Hasil analisis RPS'],
     ['/course/2/ai/plan', 'Rencana course · versi 1'],
     ['/course/4/ai/plan', 'Setujui rencana'],
     ['/course/3/ai', 'Mulai generator AI'],
@@ -199,11 +201,13 @@ describe('halaman dosen', () => {
 
 describe('halaman mahasiswa', () => {
   const pages = [
-    ['/my', 'Ringkasan belajar'],
+    ['/my/courses', 'Kursus saya'],
     ['/course/3', 'Normalisasi'],
     ['/course/2/grades', 'Laporan nilai'],
-    ['/course/2/mod/107', 'Status pengumpulan'],
-    ['/course/2/ai', 'Khusus dosen'],
+    ['/course/2/mod/107', 'Submission status'],
+    // Halaman dosen lewat URL langsung → 403.
+    ['/my', 'Akses ditolak'],
+    ['/course/2/ai', 'Akses ditolak'],
   ];
 
   it.each(pages)('render %s', async (path, text) => {
@@ -212,9 +216,11 @@ describe('halaman mahasiswa', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it('tidak melihat menu Generator AI maupun kata dummy', async () => {
-    await render('/my', 'mahasiswa');
-    await waitForText('Halo, Andi!');
+  it('tidak melihat menu Dasbor, Generator AI, maupun kata dummy', async () => {
+    await render('/my/courses', 'mahasiswa');
+    await waitForText('Kursus saya');
+    const nav = container.querySelector('nav[aria-label="Navigasi situs"]');
+    expect([...nav.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Kursusku']);
     expect(container.textContent).not.toContain('Generator AI');
     expect(container.textContent.toLowerCase()).not.toContain('dummy');
   });
@@ -223,5 +229,41 @@ describe('halaman mahasiswa', () => {
     await render('/course/2', 'mahasiswa');
     await waitForText('Peserta');
     expect(container.textContent).not.toContain('Generator AI');
+  });
+});
+
+describe('FE-06.3 route guard berbasis role backend', () => {
+  it.each([
+    ['dosen', 'Kursus yang Anda ajar'],
+    ['mahasiswa', 'Kursus saya'],
+  ])('"/" membuka halaman awal sesuai role %s', async (who, text) => {
+    await render('/', who);
+    await waitForText(text);
+  });
+
+  it('halaman 403 mengarahkan mahasiswa kembali ke halaman course', async () => {
+    await render('/my', 'mahasiswa');
+    await waitForText('Akses ditolak');
+    expect(container.textContent).toContain('sebagai mahasiswa');
+    const home = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Ke halaman utama');
+    expect(home.getAttribute('href')).toBe('/my/courses');
+  });
+
+  it('response 403 AUTHORIZATION_DENIED menampilkan halaman akses ditolak', async () => {
+    await render('/course/2', 'dosen');
+    await waitForText('Generator AI');
+    // Backend kini menganggap token milik mahasiswa: endpoint dosen menjawab 403.
+    localStorage.setItem(TOKEN_STORAGE_KEY, 'mock-token:user_002');
+    const aiTab = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Generator AI');
+    await act(async () => aiTab.click());
+    await waitForText('Akses ditolak');
+    expect(container.textContent).not.toContain('Aktivitas agent');
+
+    // Berpindah halaman menutup halaman 403.
+    localStorage.setItem(TOKEN_STORAGE_KEY, 'mock-token:user_001');
+    const home = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Ke halaman utama');
+    await act(async () => home.click());
+    await waitForText('Kursus yang Anda ajar');
+    expect(container.textContent).not.toContain('Akses ditolak');
   });
 });

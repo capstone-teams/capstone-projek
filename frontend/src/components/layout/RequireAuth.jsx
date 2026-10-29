@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ForbiddenPage } from '../../pages/StatusPage';
 import { Spinner } from '../ui';
 
-/** Melindungi route: wajib login (backend + Moodle), dan opsional membatasi peran (dosen/mahasiswa). */
+/** Melindungi route: wajib login (backend + Moodle), dan opsional membatasi ROLE (dari GET /auth/me). */
 export default function RequireAuth({ roles }) {
   const { user, initializing } = useAuth();
   const location = useLocation();

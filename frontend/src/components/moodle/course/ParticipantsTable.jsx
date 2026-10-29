@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useApi } from '../../../hooks/useApi';
 import { getEnrolledUsers } from '../../../services/moodle/moodleApi';
-import { Avatar, Badge, ErrorAlert, Spinner } from '../../../components/ui';
+import { Avatar, Badge, ErrorAlert, Spinner } from '../../ui';
 import { formatRelative } from '../../../utils/format';
 
 const ROLE_LABELS = {
@@ -12,9 +11,9 @@ const ROLE_LABELS = {
   manager: 'Manager',
 };
 
-export default function ParticipantsPage() {
-  const { course, isTeacher } = useMoodleCourse();
-  const { data, error, loading } = useApi(() => getEnrolledUsers(course.id), [course.id]);
+/** Daftar peserta kursus dengan pencarian dan filter peran. `showEmail` hanya untuk dosen. */
+export default function ParticipantsTable({ courseId, showEmail = false }) {
+  const { data, error, loading } = useApi(() => getEnrolledUsers(courseId), [courseId]);
   const [query, setQuery] = useState('');
   const [role, setRole] = useState('');
 
@@ -49,7 +48,7 @@ export default function ParticipantsPage() {
             <thead>
               <tr>
                 <th>Nama</th>
-                {isTeacher && <th>Email</th>}
+                {showEmail && <th>Email</th>}
                 <th>Peran</th>
                 <th>Terakhir mengakses kursus</th>
               </tr>
@@ -63,7 +62,7 @@ export default function ParticipantsPage() {
                       <span>{u.fullname}</span>
                     </div>
                   </td>
-                  {isTeacher && <td>{u.email || '-'}</td>}
+                  {showEmail && <td>{u.email || '-'}</td>}
                   <td>
                     <div className="chips">
                       {u.roles?.map((r) => (

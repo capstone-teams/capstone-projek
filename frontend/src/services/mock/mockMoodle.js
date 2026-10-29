@@ -70,6 +70,19 @@ const COURSE_DEFS = [
 let cmSeq = 100;
 const PAGES = [];
 const ASSIGNS = [];
+
+// Jenis pengumpulan (assignsubmission_onlinetext / assignsubmission_file), bentuk `configs` Moodle.
+function assignConfigs({ onlinetext = true, wordlimit = 0, file = true, maxfiles = 20, maxbytes = 1048576 } = {}) {
+  const config = (plugin, name, value) => ({ plugin, subtype: 'assignsubmission', name, value: String(value) });
+  return [
+    config('onlinetext', 'enabled', onlinetext ? 1 : 0),
+    config('onlinetext', 'wordlimit', wordlimit),
+    config('onlinetext', 'wordlimitenabled', wordlimit > 0 ? 1 : 0),
+    config('file', 'enabled', file ? 1 : 0),
+    config('file', 'maxfilesubmissions', maxfiles),
+    config('file', 'maxsubmissionsizebytes', maxbytes),
+  ];
+}
 const MODULE_PLURAL = { forum: 'Forums', page: 'Pages', url: 'URLs', assign: 'Assignments', quiz: 'Quizzes' };
 
 function mod(course, section, modname, name, description, extra = {}) {
@@ -86,6 +99,8 @@ function mod(course, section, modname, name, description, extra = {}) {
     description,
     visible: 1,
     uservisible: true,
+    indent: 0,
+    contextid: 1000 + id,
     dates: [],
     ...extra,
     _course: course.id,
@@ -130,7 +145,7 @@ COURSE_DEFS.forEach((c) => {
           { label: 'Due:', timestamp: due },
         ],
       });
-      ASSIGNS.push({ id: a.instance, cmid: a.id, course: c.id, name: a.name, intro: a.description, duedate: due, allowsubmissionsfromdate: start + (n - 1) * 7 * DAY, grade: 100, cutoffdate: 0 });
+      ASSIGNS.push({ id: a.instance, cmid: a.id, course: c.id, name: a.name, intro: a.description, duedate: due, allowsubmissionsfromdate: start + (n - 1) * 7 * DAY, grade: 100, cutoffdate: 0, configs: assignConfigs() });
       modules.push(a);
     }
     if (n === 3) {
@@ -155,6 +170,9 @@ COURSE_DEFS.forEach((c) => {
   });
   CONTENTS[c.id] = sections;
 });
+// Salinan awal untuk resetMockMoodle(): Edit mode mengubah CONTENTS di memori.
+const INITIAL_CONTENTS = structuredClone(CONTENTS);
+const INITIAL_ASSIGNS = structuredClone(ASSIGNS);
 
 // Nilai contoh untuk tugas yang sudah lewat tenggat.
 const GRADES = {};
@@ -168,6 +186,10 @@ ASSIGNS.forEach((a, k) => {
 });
 
 const tokens = new Map();
+// Pengumpulan mahasiswa per `${assignId}:${userId}` dan draft area hasil webservice/upload.php.
+const SUBMISSIONS = new Map();
+const DRAFTS = new Map();
+let draftSeq = 5000;
 const recent = new Map();
 
 function courseImage(id) {
@@ -248,12 +270,21 @@ const handlers = {
     const contacts = Object.entries(c.enrol)
       .filter(([, r]) => r === 'editingteacher')
       .map(([id]) => ({ id: Number(id), fullname: fullname(USERS[id]) }));
-    return { courses: [{ ...courseSummary(c, user.id), categoryname: c.category, contacts }], warnings: [] };
+    return { courses: [{ ...courseSummary(c, user.id), categoryname: c.category, format: 'topics', contacts }], warnings: [] };
   },
   core_course_get_contents(user, { courseid }) {
     const c = COURSE_DEFS.find((x) => x.id === Number(courseid));
     if (!c?.enrol[user.id]) return wsError('requireloginerror', 'Course or activity not accessible. (Not enrolled)');
-    return CONTENTS[c.id].map((s) => ({ ...s, modules: s.modules.map(({ _course, _section, ...m }) => m) }));
+    // Mahasiswa tidak dapat membuka section/aktivitas yang disembunyikan (uservisible=false).
+    const student = c.enrol[user.id] === 'student';
+    return CONTENTS[c.id].map((s) => {
+      const sectionVisible = !student || s.visible === 1;
+      return {
+        ...s,
+        uservisible: sectionVisible,
+        modules: s.modules.map(({ _course, _section, ...m }) => ({ ...m, uservisible: sectionVisible && (!student || m.visible === 1) })),
+      };
+    });
   },
   core_course_view_course(user, { courseid }) {
     recent.set(`${user.id}:${courseid}`, now());
@@ -372,15 +403,61 @@ const handlers = {
   mod_assign_get_submission_status(user, { assignid }) {
     const a = ASSIGNS.find((x) => x.id === Number(assignid));
     const g = GRADES[`${a.id}:${user.id}`];
+    const saved = SUBMISSIONS.get(`${a.id}:${user.id}`);
+    const plugins = saved
+      ? [
+          { type: 'onlinetext', name: 'Online text', editorfields: [{ name: 'onlinetext', text: saved.text, format: 1 }] },
+          {
+            type: 'file',
+            name: 'File submissions',
+            fileareas: [{
+              area: 'submission_files',
+              files: saved.files.map((f) => ({ filename: f.filename, filepath: f.filepath ?? '/', filesize: f.filesize, timemodified: f.timemodified ?? saved.timemodified, fileurl: '' })),
+            }],
+          },
+        ]
+      : [];
     return {
       lastattempt: {
-        submission: { status: g != null ? 'submitted' : 'new', timemodified: g != null ? a.duedate - DAY : 0 },
+        submission: {
+          status: saved ? 'submitted' : g != null ? 'submitted' : 'new',
+          timemodified: saved?.timemodified ?? (g != null ? a.duedate - DAY : 0),
+          plugins,
+        },
         gradingstatus: g != null ? 'graded' : 'notgraded',
         caneditowner: a.duedate > now(),
+        canedit: !a.cutoffdate || a.cutoffdate > now(),
       },
       feedback: g != null ? { gradefordisplay: `${g.toFixed(2)} / 100.00` } : undefined,
       warnings: [],
     };
+  },
+  core_files_get_unused_draft_itemid() {
+    const itemid = ++draftSeq;
+    DRAFTS.set(itemid, []);
+    return { itemid, warnings: [] };
+  },
+  mod_assign_save_submission(user, { assignmentid, plugindata = {} }) {
+    const a = ASSIGNS.find((x) => x.id === Number(assignmentid));
+    if (!a) return wsError('invalidrecord', 'Can not find data record in database.');
+    if (COURSE_DEFS.find((c) => c.id === a.course)?.enrol[user.id] !== 'student') {
+      return wsError('nopermissions', 'Sorry, but you do not currently have permissions to do that (Submit assignment).');
+    }
+    if (a.allowsubmissionsfromdate > now()) return [{ item: 'assignment', itemid: a.id, warningcode: 'couldnotsavesubmission', message: 'Pengumpulan belum dibuka.' }];
+    const config = (plugin, name) => Number(a.configs.find((c) => c.plugin === plugin && c.name === name)?.value ?? 0);
+    const previous = SUBMISSIONS.get(`${a.id}:${user.id}`);
+    // Seperti file_postupdate_standard_filemanager: tanpa draft itemid, file lama tidak diubah.
+    const text = plugindata.onlinetext_editor ? plugindata.onlinetext_editor.text ?? '' : previous?.text ?? '';
+    const words = text.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
+    if (config('onlinetext', 'wordlimit') > 0 && words > config('onlinetext', 'wordlimit')) {
+      return [{ item: 'assignment', itemid: a.id, warningcode: 'couldnotsavesubmission', message: `Batas kata terlampaui (${words}/${config('onlinetext', 'wordlimit')}).` }];
+    }
+    const files = Number(plugindata.files_filemanager) ? DRAFTS.get(Number(plugindata.files_filemanager)) ?? [] : previous?.files ?? [];
+    if (files.length > config('file', 'maxfilesubmissions') || files.some((f) => f.filesize > config('file', 'maxsubmissionsizebytes'))) {
+      return [{ item: 'assignment', itemid: a.id, warningcode: 'couldnotsavesubmission', message: 'File melebihi batas jumlah atau ukuran.' }];
+    }
+    SUBMISSIONS.set(`${a.id}:${user.id}`, { text, files, timemodified: now() });
+    return [];
   },
   mod_assign_list_participants(_u, { assignid }) {
     const a = ASSIGNS.find((x) => x.id === Number(assignid));
@@ -397,6 +474,167 @@ const handlers = {
   },
 };
 
+// ---- Editor kursus (Edit mode). Mengikuti core_courseformat\stateactions dan
+// core_update_inplace_editable pada Moodle 5.x; hanya editingteacher yang boleh mengubah.
+
+function editableCourse(user, courseid) {
+  const c = COURSE_DEFS.find((x) => x.id === Number(courseid));
+  if (!c?.enrol[user.id]) return { error: wsError('requireloginerror', 'Course or activity not accessible. (Not enrolled)') };
+  if (c.enrol[user.id] !== 'editingteacher') {
+    return { error: wsError('nopermissions', 'Sorry, but you do not currently have permissions to do that (Manage activities).') };
+  }
+  return { course: c, sections: CONTENTS[c.id] };
+}
+
+function findCm(sections, cmid) {
+  for (const section of sections) {
+    const index = section.modules.findIndex((m) => m.id === Number(cmid));
+    if (index !== -1) return { section, index, cm: section.modules[index] };
+  }
+  return null;
+}
+
+const CM_ACTIONS = {
+  cm_hide: (found) => { found.cm.visible = 0; },
+  cm_show: (found) => { found.cm.visible = 1; },
+  cm_moveright: (found) => { found.cm.indent = Math.min((found.cm.indent ?? 0) + 1, 16); },
+  cm_moveleft: (found) => { found.cm.indent = Math.max((found.cm.indent ?? 0) - 1, 0); },
+  cm_delete: (found) => { found.section.modules.splice(found.index, 1); },
+  cm_duplicate: (found) => {
+    const id = ++cmSeq;
+    const copy = { ...structuredClone(found.cm), id, instance: id, name: `${found.cm.name} (copy)`, contextid: 1000 + id };
+    copy.url = `/mod/${copy.modname}/view.php?id=${id}`;
+    const page = PAGES.find((p) => p.coursemodule === found.cm.id);
+    if (page) PAGES.push({ ...page, id, coursemodule: id, name: copy.name });
+    found.section.modules.splice(found.index + 1, 0, copy);
+  },
+};
+
+function moveCm(sections, found, targetsectionid, targetcmid) {
+  const target = sections.find((s) => s.id === Number(targetsectionid))
+    ?? (targetcmid ? findCm(sections, targetcmid)?.section : null);
+  if (!target) return wsError('invalidparameter', 'Target section tidak ditemukan.');
+  found.section.modules.splice(found.index, 1);
+  const before = targetcmid ? target.modules.findIndex((m) => m.id === Number(targetcmid)) : -1;
+  target.modules.splice(before === -1 ? target.modules.length : before, 0, found.cm);
+  return null;
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+}
+
+const editingHandlers = {
+  core_courseformat_update_course(user, { action, courseid, ids = [], targetsectionid, targetcmid }) {
+    const { error, course, sections } = editableCourse(user, courseid);
+    if (error) return error;
+    const targets = Object.values(ids).map(Number);
+    if (action === 'section_add') {
+      const number = sections.length;
+      sections.push({ id: course.id * 100 + number, name: 'New section', section: number, summary: '', visible: 1, uservisible: true, modules: [] });
+      return '[]';
+    }
+    if (action === 'section_hide' || action === 'section_show') {
+      for (const id of targets) {
+        const section = sections.find((s) => s.id === id);
+        if (!section) return wsError('invalidrecord', 'Section tidak ditemukan.');
+        if (section.section === 0 && action === 'section_hide') return wsError('cannothidesection', 'Section umum tidak dapat disembunyikan.');
+        section.visible = action === 'section_hide' ? 0 : 1;
+      }
+      return '[]';
+    }
+    if (action !== 'cm_move' && !CM_ACTIONS[action]) return wsError('invalidparameter', `Aksi ${action} tidak didukung mock.`);
+    for (const id of targets) {
+      const found = findCm(sections, id);
+      if (!found) return wsError('invalidrecord', 'Aktivitas tidak ditemukan.');
+      if (action === 'cm_move') {
+        const moveError = moveCm(sections, found, targetsectionid, targetcmid);
+        if (moveError) return moveError;
+      } else {
+        CM_ACTIONS[action](found);
+      }
+    }
+    return '[]';
+  },
+  core_update_inplace_editable(user, { component, itemtype, itemid, value }) {
+    const name = String(value ?? '').trim();
+    if (!name) return wsError('invalidparameter', 'Nama tidak boleh kosong.');
+    const courseId = itemtype === 'activityname'
+      ? Object.keys(CONTENTS).find((id) => findCm(CONTENTS[id], itemid))
+      : Object.keys(CONTENTS).find((id) => CONTENTS[id].some((s) => s.id === Number(itemid)));
+    const { error, sections } = editableCourse(user, courseId);
+    if (error) return error;
+    if (component === 'core_course' && itemtype === 'activityname') {
+      findCm(sections, itemid).cm.name = name;
+    } else if (/^format_/.test(component) && itemtype === 'sectionname') {
+      sections.find((s) => s.id === Number(itemid)).name = name;
+    } else {
+      return wsError('invalidparameter', `Item ${component}/${itemtype} tidak didukung mock.`);
+    }
+    return { component, itemtype, itemid: Number(itemid), displayvalue: name, value: name, editlabel: '', edithint: '' };
+  },
+  // Bukan fungsi Moodle: Moodle core belum punya Web Service untuk membuat assign/label
+  // beserta isinya (core_courseformat_create_module hanya untuk modul FEATURE_QUICKCREATE).
+  mock_course_create_activity(user, { courseid, sectionnum, modname, name, intro = '', text = '', allowsubmissionsfromdate = 0, duedate = 0, cutoffdate = 0, grade = 100, timeopen = 0, timeclose = 0, onlinetext_enabled = 0, onlinetext_wordlimit = 0, file_enabled = 1, file_maxfiles = 20, file_maxbytes = 1048576, format = 0 }) {
+    const { error, course, sections } = editableCourse(user, courseid);
+    if (error) return error;
+    const section = sections.find((s) => s.section === Number(sectionnum));
+    if (!section) return wsError('invalidrecord', 'Section tidak ditemukan.');
+    if (modname === 'assign') {
+      if (!String(name ?? '').trim()) return wsError('invalidparameter', 'Nama tugas wajib diisi.');
+      const opens = Number(allowsubmissionsfromdate) || 0;
+      const due = Number(duedate) || 0;
+      if (opens && due && due <= opens) return wsError('invalidparameter', 'Tenggat harus setelah tanggal dibuka.');
+      const cutoff = Number(cutoffdate) || 0;
+      if (cutoff && ((due && cutoff < due) || (opens && cutoff < opens))) return wsError('invalidparameter', 'Cut-off date cannot be earlier than the due date.');
+      const dates = [...(opens ? [{ label: 'Opened:', timestamp: opens }] : []), ...(due ? [{ label: 'Due:', timestamp: due }] : [])];
+      const cm = mod(course, section.section, 'assign', name.trim(), intro, { dates });
+      const configs = assignConfigs({
+        onlinetext: !!Number(onlinetext_enabled),
+        wordlimit: Number(onlinetext_wordlimit) || 0,
+        file: !!Number(file_enabled),
+        maxfiles: Number(file_maxfiles) || 20,
+        maxbytes: Number(file_maxbytes) || 1048576,
+      });
+      ASSIGNS.push({ id: cm.instance, cmid: cm.id, course: course.id, name: cm.name, intro, duedate: due, allowsubmissionsfromdate: opens, grade: Number(grade) || 100, cutoffdate: cutoff, configs });
+      section.modules.push(cm);
+      return { cmid: cm.id };
+    }
+    if (modname === 'quiz') {
+      if (!String(name ?? '').trim()) return wsError('invalidparameter', 'Nama kuis wajib diisi.');
+      const opens = Number(timeopen) || 0;
+      const closes = Number(timeclose) || 0;
+      if (opens && closes && closes <= opens) return wsError('invalidparameter', 'Waktu ditutup harus setelah waktu dibuka.');
+      const dates = [...(opens ? [{ label: 'Opened:', timestamp: opens }] : []), ...(closes ? [{ label: 'Closes:', timestamp: closes }] : [])];
+      const cm = mod(course, section.section, 'quiz', name.trim(), intro, { dates });
+      section.modules.push(cm);
+      return { cmid: cm.id };
+    }
+    if (modname === 'label') {
+      // format 1 (FORMAT_HTML) dari editor; selain itu teks biasa yang diubah menjadi paragraf.
+      const html = Number(format) === 1
+        ? String(text ?? '')
+        : String(text ?? '').trim().split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
+      const plain = html.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
+      if (!plain) return wsError('invalidparameter', 'Isi teks wajib diisi.');
+      // Seperti Moodle: tanpa "Title in course index", nama label diambil dari awal isinya.
+      const cm = mod(course, section.section, 'label', String(name ?? '').trim() || plain.replace(/\s+/g, ' ').slice(0, 50), html);
+      section.modules.push(cm);
+      return { cmid: cm.id };
+    }
+    return wsError('invalidparameter', `Jenis aktivitas ${modname} belum didukung.`);
+  },
+};
+Object.assign(handlers, editingHandlers);
+
+/** Kembalikan isi kursus mock ke kondisi awal (untuk test). */
+export function resetMockMoodle() {
+  Object.keys(CONTENTS).forEach((id) => { CONTENTS[id] = structuredClone(INITIAL_CONTENTS[id]); });
+  ASSIGNS.splice(0, ASSIGNS.length, ...structuredClone(INITIAL_ASSIGNS));
+  SUBMISSIONS.clear();
+  DRAFTS.clear();
+}
+
 export async function mockRequestToken(username, password) {
   await sleep(200);
   const user = Object.values(USERS).find((u) => u.username === username);
@@ -407,6 +645,20 @@ export async function mockRequestToken(username, password) {
   const token = `mock-${user.id}-${Date.now()}`;
   tokens.set(token, user.id);
   return token;
+}
+
+/**
+ * Tiruan webservice/upload.php: simpan metadata file ke draft area (baru bila itemid 0) pada filepath
+ * dan kembalikan itemid-nya. files: [{ name, size }].
+ */
+export async function mockUploadDraftFiles(token, files, { itemid = 0, filepath = '/' } = {}) {
+  await sleep(150);
+  if (!USERS[tokens.get(token) ?? Number(token.split('-')[1])]) return { error: 'Invalid token - token not found', errorcode: 'invalidtoken' };
+  const id = itemid > 0 ? itemid : ++draftSeq;
+  const draft = DRAFTS.get(id) ?? [];
+  draft.push(...files.map((file) => ({ filename: file.name, filepath, filesize: file.size, timemodified: now() })));
+  DRAFTS.set(id, draft);
+  return files.map((file) => ({ itemid: id, filename: file.name, filepath, filesize: file.size, filearea: 'draft' }));
 }
 
 export async function mockCallWs(token, wsfunction, params) {
