@@ -21,6 +21,8 @@ from src.models.validation_result import (
 )
 from src.models.verification import Verification, VerificationStatus
 from src.models.category import Category
+from src.models.workflow import Workflow, WorkflowStatus
+from src.models.workflow_event import EventType, WorkflowEvent
 
 __all__ = [ "Base",
             "Activity",
@@ -41,6 +43,7 @@ __all__ = [ "Base",
             "CoursePlan",
             "CoursePlanStatus",
             "CoursePlanWeek",
+            "EventType",
             "InstructorProfile",
             "MoodleEntityMapping",
             "MoodleExecution",
@@ -59,4 +62,7 @@ __all__ = [ "Base",
             "ValidationTargetType",
             "Verification",
             "VerificationStatus",
+            "Workflow",
+            "WorkflowEvent",
+            "WorkflowStatus",
            ]
