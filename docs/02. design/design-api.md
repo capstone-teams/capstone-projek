@@ -1053,15 +1053,46 @@ Response:
 
 ```json
 {
-  "course_id": "course_project_001",
-  "status": "generating_content",
-  "stage": "week_5",
-  "progress": {
-    "completed": 4,
-    "total": 16
-  }
+  "items": [
+    {
+      "event": "WORKFLOW_STAGE_COMPLETED",
+      "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+      "stage": "rps_analysis",
+      "progress": {
+        "completed": 2,
+        "total": 2
+      },
+      "message": "Tahap analisis RPS selesai.",
+      "timestamp": "2026-10-21T08:03:30Z"
+    }
+  ]
 }
 ```
+
+`progress` pada tiap event adalah kemajuan saat kejadian itu terjadi, bukan
+kemajuan terkini workflow.
+
+## 16.4 Set Moodle Course Target
+
+```http
+PUT /api/v1/workflows/{workflow_id}/moodle-target
+```
+
+Request:
+
+```json
+{
+  "moodle_course_id": 42
+}
+```
+
+`moodle_course_id` wajib dikirim: bilangan positif untuk memilih course Moodle,
+atau `null` untuk mengosongkan target. Body `{}` ditolak `422` agar target tidak
+terhapus karena field yang terlupa. Response `200` berbentuk sama dengan §16.2,
+sehingga client tidak perlu membaca ulang setelah menyimpan.
+
+Workflow milik dosen lain menghasilkan 404 `RESOURCE_NOT_FOUND` yang sama
+seperti workflow tidak ada.
 
 ---
 
@@ -1088,22 +1119,36 @@ Satu frame event:
   "stage": "rps_analysis",
   "progress": {
     "completed": 2,
-    "total": 4
+    "total": 2
   },
-  "message": "Analisis RPS selesai.",
+  "message": "Tahap analisis RPS selesai.",
   "timestamp": "2026-10-21T08:03:30Z"
 }
 ```
 
 `event` memakai pola `WORKFLOW_*` (`WORKFLOW_STARTED`, `WORKFLOW_STAGE_STARTED`,
-`WORKFLOW_STAGE_COMPLETED`, `WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`). Bentuk
-frame ini sama dengan item pada `GET /api/v1/workflows/{workflow_id}/events`
-(§16.3) dan terbit pada OpenAPI sebagai schema `WorkflowEvent` — sehingga client
-cukup memakai satu parser.
+`WORKFLOW_STAGE_PROGRESS`, `WORKFLOW_STAGE_COMPLETED`, `WORKFLOW_RETRY`,
+`WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`). `WORKFLOW_STAGE_PROGRESS` mencatat
+aktivitas agent di dalam tahap (mis. memanggil model, memvalidasi hasil), dan
+`WORKFLOW_RETRY` mencatat percobaan ulang. Bentuk frame ini sama dengan item pada
+`GET /api/v1/workflows/{workflow_id}/events` (§16.3) dan terbit pada OpenAPI
+sebagai schema `WorkflowEvent` — sehingga client cukup memakai satu parser.
+
+Penolakan handshake memakai close code aplikasi: `4401` token tidak ada/tidak
+valid, `4403` bukan dosen, `4404` workflow tidak ditemukan atau bukan milik
+peminta. Setelah handshake diterima, klien hanya menerima event **baru**;
+keadaan awal dan riwayat diambil lewat HTTP (§16).
 
 Event **tidak** memuat credential, API key, maupun isi prompt.
 
 Frontend harus melakukan initial state fetch melalui HTTP sebelum membuka atau menggunakan event stream agar tidak bergantung pada event yang terjadi sebelum connection dibuat.
+
+> **Status implementasi.** §16–§17 tersedia sejak BE-11.3: endpoint daftar,
+> detail, riwayat, dan penyimpanan course target, serta kanal WebSocket dengan
+> autentikasi token. Seluruh response dan frame memakai schema `WorkflowEvent`
+> yang sama. Broker event berjalan in-process; deployment dengan beberapa worker
+> memerlukan pub/sub lintas proses agar event real-time sampai ke semua klien
+> (riwayat HTTP tetap lengkap).
 
 ---
 
