@@ -219,6 +219,7 @@ Response:
   "filename": "rps.pdf",
   "status": "processed",
   "created_at": "datetime",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
   "has_source_document": true,
   "processing_duration_ms": 8421,
   "processing_error_code": null,
@@ -227,7 +228,11 @@ Response:
 ```
 
 Endpoint ini juga menjadi **endpoint polling** untuk §6.3: setelah pemrosesan
-dijadwalkan, client memantau `status` sampai bernilai `processed` atau `failed`.
+dijadwalkan, client memantau `status` sampai bernilai `analyzed` atau `failed`.
+`workflow_id` adalah workflow orkestrasi yang menjalankan pemrosesan dan
+analisis dokumen ini (BE-11.2); event-nya dapat dipantau lewat §16 dan §17.
+Dokumen yang belum pernah diproses sejak workflow diperkenalkan mengembalikan
+`workflow_id` bernilai `null`.
 
 Ketika `status` bernilai `failed`, `processing_error_code` memuat kode error §18
 (mis. `RPS_PROCESSING_FAILED` untuk konversi, `LLM_GENERATION_FAILED` untuk
@@ -263,31 +268,40 @@ Response `202 Accepted`:
   "rps_id": "rps_001",
   "status": "processing",
   "schema_version": "2.0",
-  "reused": false
+  "reused": false,
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ"
 }
 ```
 
 Processing merupakan asynchronous operation: request hanya **menjadwalkan**
-konversi, lalu konversinya berjalan di background. Client memantau
-`GET /api/v1/rps/{rps_id}` (§6.2) sampai statusnya `processed` atau `failed`.
+pekerjaan, lalu pekerjaan itu berjalan di background. Sejak BE-11.2 pekerjaan
+tersebut adalah satu workflow dengan dua tahap berurutan — `PROCESSING_RPS`
+(konversi Docling, §6.3) lalu `ANALYZING_RPS` (analisis, §6.4/§6.6) — sehingga
+client memantau `GET /api/v1/rps/{rps_id}` (§6.2) sampai statusnya `analyzed`
+atau `failed`. `workflow_id` adalah workflow tersebut; status dan event-nya
+tersedia pada §16 dan §17.
 
 Bila dokumen sudah diproses untuk `file_hash` dan `schema_version` yang sama,
-tidak ada pekerjaan yang dijadwalkan dan response-nya `200 OK` dengan
-`"reused": true`.
+konversi tidak dijadwalkan ulang dan response-nya `200 OK` dengan
+`"reused": true`. Workflow baru tetap dibuat agar tahap analisis yang belum
+pernah berjalan dapat diselesaikan; `workflow_id` pada response menunjuk
+workflow tersebut.
 
 ```json
 {
   "rps_id": "rps_001",
   "status": "processed",
   "schema_version": "2.0",
-  "reused": true
+  "reused": true,
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ"
 }
 ```
 
-Kegagalan konversi tidak muncul pada response ini (tidak ada client yang
+Kegagalan tahap apa pun tidak muncul pada response ini (tidak ada client yang
 menunggu pekerjaan background); kegagalannya terlihat pada §6.2 sebagai
 `status: failed` beserta `processing_error_code` dan
-`processing_error_message`.
+`processing_error_message`, serta pada workflow (§16) sebagai `FAILED` dengan
+event `WORKFLOW_FAILED`.
 
 Field `agent_run_id` menyusul bersama Agent Run pada M03 (lihat §15) dan
 karenanya belum ada pada response ini.
@@ -384,6 +398,12 @@ dijalankan lagi — dan hanya boleh diminta dosen pemilik RPS. RPS yang sudah
 berstatus `ANALYZED` tidak dianalisis ulang secara implisit; satu-satunya jalan
 adalah endpoint ini. Client memantau hasilnya melalui §16/§17 lalu membaca
 §6.4.
+
+Sejak BE-11.2 analisis ulang dijalankan pada workflow yang sama dengan
+pemrosesan sebelumnya: `workflow_id` yang dikembalikan adalah workflow yang
+sudah tercatat pada RPS, dan event baru ditambahkan ke riwayat workflow tersebut
+(§16.3). Dokumen yang dianalisis sebelum workflow diperkenalkan mendapat baris
+workflow baru dengan id yang sudah tercatat pada RPS.
 
 > **Status implementasi.** §6.4–§6.6 sudah terbit pada OpenAPI beserta contoh
 > response dan seluruhnya sudah diimplementasikan: §6.6
