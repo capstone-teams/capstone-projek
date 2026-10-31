@@ -98,6 +98,10 @@ class RPSDetailResponse(BaseModel):
 
     Field ``structured_data`` tidak dikembalikan di sini — hasil ekstraksi
     terstruktur adalah ranah BE-08 melalui endpoint analisis.
+
+    ``workflow_id`` adalah workflow orkestrasi yang menjalankan pemrosesan RPS
+    ini (BE-11.2); ``null`` untuk dokumen yang diunggah sebelum workflow ada dan
+    belum pernah diproses.
     """
 
     id: str
@@ -108,6 +112,10 @@ class RPSDetailResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     has_source_document: bool
+    workflow_id: str | None = Field(
+        default=None,
+        description="Workflow orkestrasi RPS ini; null bila belum ada.",
+    )
     processing_duration_ms: int | None = None
     processing_error_code: str | None = None
     processing_error_message: str | None = None
@@ -128,19 +136,28 @@ class RPSProcessRequest(BaseModel):
 class RPSProcessResponse(BaseModel):
     """Response ``POST /api/v1/rps/{rps_id}/process`` (design-api §6.3).
 
-    ``202`` berarti konversi **diterima dan dijadwalkan**: ``status`` bernilai
+    ``202`` berarti pemrosesan **diterima dan dijadwalkan**: ``status`` bernilai
     ``PROCESSING`` dan client memantau perkembangannya lewat
-    ``GET /api/v1/rps/{rps_id}`` sampai ``PROCESSED`` atau ``FAILED``.
+    ``GET /api/v1/rps/{rps_id}`` sampai ``ANALYZED`` atau ``FAILED``. Sejak
+    BE-11.2 konversi dilanjutkan analisis dalam workflow yang sama, sehingga
+    status akhir pemrosesan adalah ``ANALYZED`` (bukan berhenti di
+    ``PROCESSED``).
 
-    ``200`` dengan ``reused: true`` berarti tidak ada pekerjaan yang dijadwalkan
-    karena dokumen sudah pernah diproses untuk ``file_hash`` dan
-    ``schema_version`` yang sama (acceptance criteria BE-05).
+    ``200`` dengan ``reused: true`` berarti konversi tidak dijadwalkan karena
+    dokumen sudah pernah diproses untuk ``file_hash`` dan ``schema_version``
+    yang sama (acceptance criteria BE-05); analisis yang belum ada tetap
+    dijalankan pada workflow baru.
+
+    ``workflow_id`` adalah workflow orkestrasi yang menjalankan rangkaian tahap.
+    Client memakainya untuk memantau event lewat ``GET /workflows/{id}`` dan
+    ``GET /workflows/{id}/events`` (BE-11.3).
     """
 
     rps_id: str
     status: RPSStatus
     schema_version: str
     reused: bool
+    workflow_id: str
 
 
 class RPSReanalyzeResponse(BaseModel):
