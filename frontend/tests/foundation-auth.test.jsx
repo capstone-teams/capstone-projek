@@ -66,8 +66,8 @@ afterEach(async () => {
   node.remove();
 });
 
-describe('FE-06.2 login', () => {
-  it('logs in through the backend first, then Moodle with the backend username', async () => {
+describe('FE-06.2 login (Single Gateway)', () => {
+  it('logs in through backend and attaches Moodle context gracefully when available', async () => {
     service.getCurrentUser.mockResolvedValueOnce(instructorMe);
     service.requestToken.mockResolvedValueOnce('mock-3-new');
     service.resolveSession.mockResolvedValueOnce(teacher);
@@ -99,14 +99,14 @@ describe('FE-06.2 login', () => {
     expect(storedTokens()).toEqual([null, null]);
   });
 
-  it('rolls back the backend token when the Moodle step fails', async () => {
+  it('keeps the backend login even if the Moodle connection step fails', async () => {
     service.getCurrentUser.mockResolvedValueOnce(instructorMe);
     service.requestToken.mockRejectedValueOnce(Object.assign(new Error('Invalid login'), { code: 'invalidlogin' }));
     await mount();
-    const error = await act(async () => state.login('dosen', 'dosen123').catch((e) => e));
-    expect(error).toMatchObject({ code: 'invalidlogin', source: 'moodle' });
-    expect(state.user).toBeNull();
-    expect(storedTokens()).toEqual([null, null]);
+    await act(async () => state.login('dosen', 'dosen123'));
+    expect(state.user).toMatchObject({ backendId: 'user_001', username: 'dosen', role: 'DOSEN' });
+    expect(state.isAuthenticated).toBe(true);
+    expect(storedTokens()).toEqual(['mock-token:dosen', null]);
   });
 
   it('a pending login cannot store credentials after logout', async () => {
@@ -138,6 +138,16 @@ describe('FE-06.2 session restore', () => {
     expect(storedTokens()).toEqual(['mock-token:user_001', JSON.stringify({ token: 'mock-3-test' })]);
   });
 
+  it('restores backend session even when Moodle token is absent from storage', async () => {
+    storeSession(null, 'mock-token:user_001');
+    service.getCurrentUser.mockResolvedValueOnce(instructorMe);
+    await mount();
+    expect(state.initializing).toBe(false);
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.user).toMatchObject({ backendId: 'user_001', username: 'dosen', role: 'DOSEN' });
+    expect(storedTokens()).toEqual(['mock-token:user_001', null]);
+  });
+
   it('expires the session when the backend rejects the stored token', async () => {
     storeSession();
     service.getCurrentUser.mockRejectedValueOnce(authFailed());
@@ -149,13 +159,14 @@ describe('FE-06.2 session restore', () => {
     expect(storedTokens()).toEqual([null, null]);
   });
 
-  it('discards a rejected Moodle token', async () => {
+  it('discards a rejected Moodle token but preserves backend session', async () => {
     storeSession('expired');
     service.getCurrentUser.mockResolvedValueOnce(instructorMe);
     service.resolveSession.mockRejectedValueOnce(new Error('invalidtoken'));
     await mount();
-    expect(state.user).toBeNull();
-    expect(storedTokens()).toEqual([null, null]);
+    expect(state.user).toMatchObject({ backendId: 'user_001', username: 'dosen', role: 'DOSEN' });
+    expect(state.isAuthenticated).toBe(true);
+    expect(storedTokens()).toEqual(['mock-token:user_001', null]);
   });
 
   it('keeps the tokens when the backend is unreachable during restore', async () => {
@@ -169,7 +180,7 @@ describe('FE-06.2 session restore', () => {
     expect(storedTokens()).toEqual(['mock-token:user_001', JSON.stringify({ token: 'mock-3-test' })]);
   });
 
-  it('clears an incomplete session without restoring it', async () => {
+  it('clears an incomplete session without restoring it when backend token is missing', async () => {
     storeSession('mock-3-test', null);
     await mount();
     expect(state.initializing).toBe(false);

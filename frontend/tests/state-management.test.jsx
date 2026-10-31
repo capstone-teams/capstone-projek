@@ -145,14 +145,13 @@ describe('FE state: authentication and current user', () => {
     expect(node.querySelector('button[type="submit"]').disabled).toBe(false);
   });
 
-  it('labels a Moodle failure after a valid backend login separately', async () => {
+  it('succeeds login through backend even if Moodle connection fails', async () => {
     service.getCurrentUser.mockResolvedValueOnce(studentMe);
     service.requestToken.mockRejectedValueOnce(Object.assign(new Error('Invalid login, please try again'), { code: 'invalidlogin' }));
-    await render(<AuthProvider><LoginPage /></AuthProvider>);
+    await render(<AuthProvider><AuthProbe /><LoginPage /></AuthProvider>);
     await submitLogin('mahasiswa', 'mahasiswa123');
-    const alert = node.querySelector('[role="alert"]');
-    expect(alert.textContent).toContain('Login Moodle gagal');
-    expect(alert.textContent).toContain('Moodle menolak kredensial yang sama');
+    expect(auth.isAuthenticated).toBe(true);
+    expect(auth.user).toMatchObject({ username: 'mahasiswa', role: 'MAHASISWA' });
   });
 
   it('locks the login form while the request is pending', async () => {

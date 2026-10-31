@@ -5,19 +5,8 @@ import { Alert } from '../../components/ui';
 import { AuthField, AuthLayout, AuthSubmitButton, GoogleLoginButton, PasswordField } from '../../components/auth';
 import { SESSION_NOTICE, homePathFor } from '../../types/auth';
 
-// Pesan untuk kegagalan langkah Moodle (setelah akun backend terverifikasi).
-const MOODLE_MESSAGES = {
-  invalidlogin: 'Akun backend valid, tetapi Moodle menolak kredensial yang sama. Pastikan akun Moodle memakai username dan password yang sama.',
-  enablewsdescription: 'Layanan web Moodle belum aktif.',
-  servicenotavailable: 'Layanan web Moodle belum aktif.',
-  networkerror: 'Tidak dapat terhubung ke server Moodle. Coba beberapa saat lagi.',
-};
-
-/** Error backend ditampilkan apa adanya (error.message dari kontrak §18); error Moodle diberi konteks. */
+/** Format error login dari backend API (design-api §18). */
 function describeLoginError(err) {
-  if (err?.source === 'moodle') {
-    return { title: 'Login Moodle gagal', message: MOODLE_MESSAGES[String(err.code ?? '').toLowerCase()] ?? err.message ?? 'Login Moodle gagal.' };
-  }
   return { title: 'Login gagal', message: err?.message || 'Login gagal. Silakan coba lagi.' };
 }
 

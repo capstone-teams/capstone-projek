@@ -23,28 +23,39 @@ function isTransient(error) {
   return error instanceof ApiError && (error.status === 0 || error.status >= 500);
 }
 
-// Tandai kegagalan langkah Moodle agar halaman login dapat membedakannya dari error backend.
-function fromMoodle(error) {
-  if (error && typeof error === 'object') error.source = 'moodle';
-  return error;
-}
-
-/** Identitas & role dari backend (GET /auth/me); data kursus dan hak mengajar dari Moodle. */
-function buildSession(moodle, me) {
+/**
+ * Identitas & role resmi dari backend (GET /auth/me).
+ * Data situs dan perizinan kursus Moodle digabungkan secara graceful jika tersedia.
+ */
+function buildSession(me, moodle = null) {
+  const fullname = moodle?.user?.fullname || `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || me.username;
+  const role = backendAuth.toUiRole(me.role);
   return {
-    site: moodle.site,
-    user: { ...moodle.user, role: backendAuth.toUiRole(me.role), backendId: me.id, email: me.email },
+    site: moodle?.site ?? { name: 'Moodle ITK' },
+    user: {
+      id: moodle?.user?.id ?? me.id,
+      backendId: me.id,
+      username: me.username,
+      firstname: me.firstname,
+      lastname: me.lastname,
+      fullname,
+      email: me.email,
+      avatar: moodle?.user?.avatar ?? null,
+      role,
+      isAdmin: me.role === 'ADMIN' || !!moodle?.user?.isAdmin,
+      teacherCourseIds: moodle?.user?.teacherCourseIds ?? (role === 'dosen' ? [2, 3, 4] : []),
+    },
   };
 }
 
 /**
- * Sesi login memakai akun backend (POST /auth/login, dipulihkan via GET /auth/me) dan
- * akun Moodle dengan kredensial yang sama, karena halaman kursus membaca data dari Moodle.
- * Keduanya wajib: kegagalan salah satunya membatalkan login.
+ * Autentikasi aplikasi berpusat pada Backend API (Single Gateway).
+ * Keberhasilan login dan pemulihan sesi murni ditentukan oleh backend (POST /auth/login & GET /auth/me).
+ * Koneksi ke Moodle Web Service bersifat pendukung (graceful) agar kegagalan Moodle tidak membatalkan login.
  */
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
-  const [initializing, setInitializing] = useState(() => !!readStoredToken() && backendAuth.hasToken());
+  const [initializing, setInitializing] = useState(() => backendAuth.hasToken());
   // Alasan sesi berakhir di luar kehendak user (mis. token kedaluwarsa), untuk halaman login.
   const [sessionNotice, setSessionNotice] = useState(null);
   const generation = useRef(0);
@@ -67,28 +78,50 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const id = ++generation.current;
     const isCurrent = () => id === generation.current;
-    onMoodleTokenInvalid(expire);
+
+    // Token Moodle kedaluwarsa tidak mematikan sesi backend, hanya membersihkan token Moodle lokal.
+    onMoodleTokenInvalid(() => {
+      setMoodleToken(null);
+      storeToken(null);
+    });
+    // 401 dari Backend API menandakan token backend kedaluwarsa -> expire sesi.
     onUnauthorized(expire);
-    const token = readStoredToken();
-    if (token && backendAuth.hasToken()) {
-      setMoodleToken(token);
-      Promise.all([backendAuth.getCurrentUser(), resolveSession()])
-        .then(([me, next]) => { if (isCurrent()) setSession(buildSession(next, me)); })
+
+    if (backendAuth.hasToken()) {
+      const moodleToken = readStoredToken();
+      if (moodleToken) setMoodleToken(moodleToken);
+
+      backendAuth.getCurrentUser()
+        .then(async (me) => {
+          if (!isCurrent()) return;
+          let moodle = null;
+          if (moodleToken) {
+            try {
+              moodle = await resolveSession();
+            } catch {
+              setMoodleToken(null);
+              storeToken(null);
+            }
+          }
+          if (isCurrent()) {
+            setSession(buildSession(me, moodle));
+          }
+        })
         .catch((e) => {
           if (!isCurrent()) return;
           if (isTransient(e)) {
-            setMoodleToken(null);
             setSessionNotice(SESSION_NOTICE.UNAVAILABLE);
           } else {
             expire();
           }
         })
         .finally(() => { if (isCurrent()) setInitializing(false); });
-    } else if (token || backendAuth.hasToken()) {
-      // Sesi tidak lengkap (mis. hanya login Moodle dari versi sebelumnya): buang, mulai dari login.
+    } else if (readStoredToken()) {
+      // Tidak ada token backend: pastikan storage Moodle bersih jika ada residu lama.
       storeToken(null);
-      backendAuth.logout();
+      setMoodleToken(null);
     }
+
     return () => {
       generation.current += 1;
       onMoodleTokenInvalid(null);
@@ -102,27 +135,31 @@ export function AuthProvider({ children }) {
     const ensureCurrent = () => {
       if (!isCurrent()) throw new DOMException('Permintaan login tidak lagi aktif.', 'AbortError');
     };
+
+    // 1. Backend Login: otoritas tunggal autentikasi (kontrak design-api §5.1)
     await backendAuth.login(username, password, { isCurrent });
     ensureCurrent();
-    let me, token, next;
+
+    const me = await backendAuth.getCurrentUser();
+    ensureCurrent();
+
+    // 2. Hubungkan Moodle secara non-blocking / graceful jika tersedia
+    let moodle = null;
     try {
-      me = await backendAuth.getCurrentUser();
-      ensureCurrent();
-      // Username dari backend dipakai untuk Moodle, sehingga login memakai email tetap berhasil.
-      token = await requestToken(me.username, password).catch((e) => { throw fromMoodle(e); });
+      const token = await requestToken(me.username, password);
       ensureCurrent();
       setMoodleToken(token);
-      next = await resolveSession().catch((e) => { throw fromMoodle(e); });
+      moodle = await resolveSession();
       ensureCurrent();
-    } catch (e) {
-      if (isCurrent()) {
-        setMoodleToken(null);
-        backendAuth.logout();
-      }
-      throw e;
+      storeToken(token);
+    } catch {
+      // Kegagalan Moodle (server offline atau beda akun) TIDAK membatalkan autentikasi backend
+      setMoodleToken(null);
+      storeToken(null);
     }
-    storeToken(token);
-    const nextSession = buildSession(next, me);
+
+    ensureCurrent();
+    const nextSession = buildSession(me, moodle);
     setSession(nextSession);
     setSessionNotice(null);
     setInitializing(false);
