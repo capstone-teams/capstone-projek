@@ -28,14 +28,19 @@ from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
 from src.services.instructor.service import InstructorSetupService
-from src.services.rps.analysis_runner import run_rps_analysis
-from src.services.rps.runner import run_rps_processing
 from src.services.rps.service import RPSService
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.service import UserService
+from src.services.workflow.orchestrator import (
+    run_rps_analysis_workflow,
+    run_rps_processing_workflow,
+)
+from src.services.workflow.service import WorkflowService
 
-#: Bentuk callable yang menjalankan pemrosesan RPS di background.
+#: Bentuk callable yang menjalankan pemrosesan RPS (beserta analisisnya) di
+#: background. Signature sengaja tidak berubah dari BE-05 agar pemanggil dan
+#: pengujian lama tetap bekerja: runner membaca workflow dari ``rps.workflow_id``.
 RPSProcessingRunner = Callable[..., Awaitable[None]]
 
 #: Bentuk callable yang menjalankan analisis RPS di background.
@@ -51,6 +56,7 @@ __all__ = [
     "get_rps_processing_runner",
     "get_rps_service",
     "get_user_service",
+    "get_workflow_service",
     "require_roles",
 ]
 
@@ -106,24 +112,31 @@ def get_rps_service(session: AsyncSession = Depends(get_db_session)) -> RPSServi
 
 
 def get_rps_processing_runner() -> RPSProcessingRunner:
-    """Runner yang menjalankan konversi RPS di background (BE-05.2).
+    """Runner orkestrasi pemrosesan + analisis RPS di background (BE-11.2).
 
-    Berupa dependency supaya route tidak mengimpor modul runner secara langsung
-    dan pengujian dapat menggantinya dengan runner palsu — sehingga kontrak
-    "request tidak menahan konversi" dapat diuji tanpa menjalankan Docling.
+    Nama dependency dan signature-nya dipertahankan dari BE-05.2 supaya
+    pengujian yang mengganti runner tidak perlu berubah: runner membaca workflow
+    yang sudah ditautkan route pada ``rps.workflow_id``. Sejak BE-11.2 pekerjaan
+    yang dijalankan bukan hanya konversi, melainkan seluruh tahap
+    ``PROCESSING_RPS`` → ``ANALYZING_RPS``.
     """
-    return run_rps_processing
+    return run_rps_processing_workflow
 
 
 def get_rps_analysis_runner() -> RPSAnalysisRunner:
-    """Runner yang menjalankan analisis RPS di background (BE-08.2).
+    """Runner analisis (ulang) pada workflow yang sama di background (BE-11.2).
 
-    Berupa dependency supaya route tidak mengimpor modul runner secara langsung
-    dan pengujian dapat menggantinya dengan runner palsu — sehingga kontrak
-    "request reanalyze tidak menahan panggilan model bahasa" dapat diuji tanpa
-    memanggil LLM.
+    Endpoint reanalyze memakai workflow yang sudah tercatat pada RPS, sehingga
+    event baru ditambahkan ke riwayat workflow yang sama (issue BE-11.2).
     """
-    return run_rps_analysis
+    return run_rps_analysis_workflow
+
+
+def get_workflow_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> WorkflowService:
+    """Workflow Service untuk endpoint monitoring dan orkestrasi (BE-11.2/11.3)."""
+    return WorkflowService.from_session(session)
 
 
 async def get_current_user(
