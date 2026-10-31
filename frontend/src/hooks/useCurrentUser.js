@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAuth } from './useAuth';
+import { ROLE } from '../types/auth';
 
 /** Data user login beserta turunan peran yang sering dipakai halaman. */
 export function useCurrentUser() {
@@ -10,8 +11,8 @@ export function useCurrentUser() {
       user,
       site,
       role: user?.role ?? null,
-      isDosen: user?.role === 'dosen',
-      isMahasiswa: user?.role === 'mahasiswa',
+      isDosen: user?.role === ROLE.DOSEN,
+      isMahasiswa: user?.role === ROLE.MAHASISWA,
       isTeacherOf: (courseId) => teacherIds.has(Number(courseId)),
     };
   }, [user, site]);

@@ -7,6 +7,7 @@ import { Card, EmptyState, ErrorAlert, Spinner } from '../../components/ui';
 import ActivityIcon from '../../components/moodle/ActivityIcon';
 import CourseCard from '../../components/moodle/CourseCard';
 import { cmidFromUrl, formatUnixDay, formatUnixTime } from '../../utils/format';
+import { ROLE } from '../../types/auth';
 
 
 function Timeline() {
@@ -106,7 +107,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-5">
-          {user.role === 'dosen' ? (
+          {user.role === ROLE.DOSEN ? (
             <>
               <Card title="Kursus yang Anda ajar">
                 {teaching.length ? (

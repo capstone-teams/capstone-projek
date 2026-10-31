@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
     testDir: './tests/e2e',
-    testMatch: ['**/runtime.spec.js', '**/foundation-71.spec.js', '**/course-plan-74.spec.js', '**/auth-06-2.spec.js'],
+    testMatch: ['**/runtime.spec.js', '**/foundation-71.spec.js', '**/course-plan-74.spec.js', '**/auth-role.spec.js', '**/course-edit-mode.spec.js', '**/role-guard.spec.js', '**/rps-upload.spec.js', '**/rps-analysis.spec.js'],
     forbidOnly: Boolean(process.env.CI),
     workers: 1,
     retries: 0,

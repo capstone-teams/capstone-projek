@@ -1,12 +1,13 @@
-"""Endpoint RPS: unggah, detail, dan pemrosesan (BE-05).
+"""Endpoint RPS: unggah, detail, pemrosesan (BE-05), analisis (BE-08.2), serta
+daftar dan hasil analisis (BE-08.3).
 
 Router ini hanya menangani urusan HTTP: kontrak endpoint, dependency, validasi
 bentuk input (path parameter), dan response DTO. Validasi berkas, penyimpanan,
-serta konversi dokumen berada di :mod:`src.services.rps`.
+konversi, serta analisis dokumen berada di :mod:`src.services.rps`.
 
 Authorization mengikuti design-api §22: seluruh operasi RPS adalah
 instructor-only (``Upload RPS``, ``Process RPS``, ``View RPS Analysis`` — Student
-``No``). Guard-nya satu policy yang dipakai ulang oleh ketiga endpoint, sama
+``No``). Guard-nya satu policy yang dipakai ulang oleh seluruh endpoint, sama
 seperti pola ``admin_only`` pada :mod:`src.routes.admin`.
 
 Kontrak pemrosesan mengikuti design-api §6.3: ``POST /rps/{id}/process``
@@ -16,6 +17,19 @@ dikirim, sehingga request tidak tertahan selama model Docling bekerja; client
 memantau ``GET /rps/{id}`` sampai statusnya ``PROCESSED`` atau ``FAILED``.
 Dokumen yang sudah diproses untuk versi skema yang sama tidak dijadwalkan ulang
 dan dijawab ``200`` + ``reused: true``.
+
+Kontrak reanalyze mengikuti design-api §6.6: ``POST /rps/{id}/reanalyze``
+menjadwalkan analisis ulang dari ``source_document`` (Docling tidak dijalankan
+lagi) dan langsung menjawab ``202`` dengan status ``ANALYZING`` beserta
+``workflow_id``. Analisisnya dijalankan
+:mod:`src.services.rps.analysis_runner`; kegagalannya terbaca lewat polling
+sebagai ``FAILED`` + ``processing_error_code``/``processing_error_message``.
+
+Endpoint baca analisis mengikuti design-api §6.4/§6.5: ``GET /rps`` hanya
+memuat dokumen milik dosen yang login, dan ``GET /rps/{id}/analysis``
+mengembalikan RPS Structured Data utuh untuk RPS ``ANALYZED``. Keduanya
+instructor-only; dokumen milik dosen lain menghasilkan 404 yang sama seperti
+dokumen tidak ada.
 """
 
 from __future__ import annotations
@@ -35,13 +49,20 @@ from fastapi import (
 
 from src.config.settings import get_settings
 from src.schemas.rps import (
+    RPSAnalysisResponse,
     RPSDetailResponse,
+    RPSListItem,
+    RPSListResponse,
     RPSProcessRequest,
     RPSProcessResponse,
+    RPSReanalyzeResponse,
     RPSUploadResponse,
 )
+from src.schemas.rps_structured import RPSStructuredData
 from src.services.dependencies import (
+    RPSAnalysisRunner,
     RPSProcessingRunner,
+    get_rps_analysis_runner,
     get_rps_processing_runner,
     get_rps_service,
     require_roles,
@@ -85,6 +106,20 @@ def _to_detail(document: RPSDocument) -> RPSDetailResponse:
     )
 
 
+def _to_list_item(document: RPSDocument) -> RPSListItem:
+    """Petakan domain RPS ke satu baris daftar (design-api §6.5)."""
+    return RPSListItem(
+        id=document.id or "",
+        filename=document.file_name,
+        status=document.status,
+        schema_version=document.schema_version,
+        workflow_id=document.workflow_id,
+        has_source_document=bool(document.source_document),
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )
+
+
 @router.post("", response_model=RPSUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_rps(
     response: Response,
@@ -121,6 +156,23 @@ async def upload_rps(
     )
 
 
+@router.get("", response_model=RPSListResponse)
+async def list_rps(
+    current_user: User = Depends(instructor_only),
+    service: RPSService = Depends(get_rps_service),
+) -> RPSListResponse:
+    """Daftar RPS milik dosen yang login (design-api §6.5).
+
+    Hanya dokumen milik peminta yang dikembalikan — scoping owner dilakukan
+    query repository, bukan dengan memfilter hasil di layer HTTP. Item memuat
+    ``status`` kanonik (termasuk ``ANALYZING``/``ANALYZED``), ``workflow_id``
+    bila analisis pernah dijadwalkan, dan ``has_source_document`` sebagai
+    indikator ringan tanpa mengirim JSON Docling yang besar.
+    """
+    documents = await service.list_rps(owner_id=current_user.id)
+    return RPSListResponse(items=[_to_list_item(document) for document in documents])
+
+
 @router.get("/{rps_id}", response_model=RPSDetailResponse)
 async def read_rps(
     rps_id: RpsIdPath,
@@ -138,6 +190,30 @@ async def read_rps(
     """
     document = await service.get_rps(rps_id=rps_id, owner_id=current_user.id)
     return _to_detail(document)
+
+
+@router.get("/{rps_id}/analysis", response_model=RPSAnalysisResponse)
+async def read_rps_analysis(
+    rps_id: RpsIdPath,
+    current_user: User = Depends(instructor_only),
+    service: RPSService = Depends(get_rps_service),
+) -> RPSAnalysisResponse:
+    """Hasil analisis RPS milik instructor yang meminta (design-api §6.4).
+
+    ``data`` adalah RPS Structured Data utuh yang tersimpan pada
+    ``rps.structured_data`` — bukan ringkasan terpisah — sehingga client dan
+    database memakai kontrak yang sama. RPS yang belum dianalisis menghasilkan
+    422 ``INVALID_REQUEST``; RPS milik dosen lain menghasilkan 404 yang sama
+    seperti dokumen yang tidak ada.
+    """
+    document = await service.get_analysis(
+        rps_id=rps_id, owner_id=current_user.id
+    )
+    return RPSAnalysisResponse(
+        rps_id=document.id or "",
+        analyzed_at=document.analyzed_at,
+        data=RPSStructuredData.model_validate(document.structured_data),
+    )
 
 
 @router.post(
@@ -190,4 +266,46 @@ async def process_rps(
         status=RPSStatus.PROCESSING,
         schema_version=start.document.schema_version,
         reused=False,
+    )
+
+
+@router.post(
+    "/{rps_id}/reanalyze",
+    response_model=RPSReanalyzeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def reanalyze_rps(
+    rps_id: RpsIdPath,
+    background: BackgroundTasks,
+    current_user: User = Depends(instructor_only),
+    service: RPSService = Depends(get_rps_service),
+    runner: RPSAnalysisRunner = Depends(get_rps_analysis_runner),
+) -> RPSReanalyzeResponse:
+    """Jadwalkan analisis ulang RPS dari ``source_document`` (design-api §6.6).
+
+    ``202`` + status ``ANALYZING`` berarti analisis diterima dan berjalan di
+    background; Docling **tidak** dijalankan lagi karena inputnya YAML yang
+    dibentuk dari JSON konversi yang tersimpan. Client memantau
+    ``GET /rps/{id}`` sampai ``ANALYZED`` atau ``FAILED``, lalu membaca hasilnya
+    lewat ``GET /rps/{id}/analysis``.
+
+    Dokumen yang belum dikonversi (``source_document`` kosong) ditolak ``422
+    INVALID_REQUEST``; dokumen yang sedang diproses/dianalisis ``409
+    INVALID_REQUEST``. Hanya dosen pemilik RPS yang boleh meminta — dokumen
+    milik dosen lain menghasilkan 404 yang sama seperti dokumen tidak ada.
+    """
+    start = await service.begin_analysis(
+        rps_id=rps_id,
+        owner_id=current_user.id,
+        force=True,
+    )
+    background.add_task(
+        runner,
+        rps_id=start.document.id or "",
+        owner_id=current_user.id,
+    )
+    return RPSReanalyzeResponse(
+        rps_id=start.document.id or "",
+        workflow_id=start.workflow_id,
+        status=RPSStatus.ANALYZING,
     )

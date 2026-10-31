@@ -50,14 +50,6 @@ export function currentStepIndex(status) {
   return i === -1 ? 0 : i;
 }
 
-export const RPS_STATUS_LABELS = {
-  uploaded: 'Diunggah',
-  processing: 'Diproses',
-  analyzing: 'Dianalisis',
-  processed: 'Siap',
-  failed: 'Gagal',
-};
-
 export const RUN_TYPE_LABELS = {
   rps_processing: 'Pemrosesan RPS',
   course_planning: 'Perencanaan course',

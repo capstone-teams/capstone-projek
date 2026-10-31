@@ -66,6 +66,97 @@ export function buildRpsAnalysis(rpsId) {
   };
 }
 
+// ---- RPS Structured Data (content-schema §6.2/§7) untuk GET /rps/{id}/analysis (design-api §6.4).
+
+const RPS_CPL = [
+  { id: 'CPL-1', description: 'Mampu menerapkan pemikiran logis, kritis, dan sistematis dalam pengembangan perangkat lunak.' },
+  { id: 'CPL-2', description: 'Mampu merancang dan membangun aplikasi berbasis web sesuai kebutuhan pengguna.' },
+];
+const RPS_CPMK = [
+  { id: 'CPMK-1', description: 'Mahasiswa mampu menjelaskan arsitektur aplikasi web dan protokol HTTP.', cpl_ids: ['CPL-1'] },
+  { id: 'CPMK-2', description: 'Mahasiswa mampu membangun antarmuka web yang responsif dan aksesibel.', cpl_ids: ['CPL-2'] },
+  { id: 'CPMK-3', description: 'Mahasiswa mampu mengembangkan aplikasi web full-stack sederhana yang aman.', cpl_ids: ['CPL-1', 'CPL-2'] },
+];
+const RPS_SUB_CPMK = [
+  { id: 'SUB-1', description: 'Menjelaskan cara kerja client-server dan HTTP.', cpmk_ids: ['CPMK-1'] },
+  { id: 'SUB-2', description: 'Menyusun dokumen HTML semantik dan tata letak CSS.', cpmk_ids: ['CPMK-2'] },
+  { id: 'SUB-3', description: 'Menulis interaksi JavaScript dan memanggil API.', cpmk_ids: ['CPMK-2'] },
+  { id: 'SUB-4', description: 'Membangun REST API dan menghubungkannya dengan basis data.', cpmk_ids: ['CPMK-3'] },
+  // Rujukan ke CPMK yang tidak dideklarasikan RPS (temuan traceability, content-schema §6.2.2).
+  { id: 'SUB-5', description: 'Menerapkan praktik keamanan dasar aplikasi web.', cpmk_ids: ['CPMK-3', 'CPMK-4'] },
+];
+const SUB_BY_WEEK = (week) => (week <= 3 ? 'SUB-1' : week <= 7 ? (week <= 5 ? 'SUB-2' : 'SUB-3') : week <= 13 ? 'SUB-4' : 'SUB-5');
+const CPMK_BY_SUB = { 'SUB-1': 'CPMK-1', 'SUB-2': 'CPMK-2', 'SUB-3': 'CPMK-2', 'SUB-4': 'CPMK-3', 'SUB-5': 'CPMK-3' };
+const ASSESSED_WEEKS = { 2: 5, 4: 5, 6: 5, 10: 5, 12: 5, 14: 5 };
+
+/**
+ * Hasil analisis RPS contoh (Pemrograman Web). incomplete: RPS yang sebagian bagiannya tidak
+ * ditemukan (CPL, Sub-CPMK, penilaian, dan referensi kosong) untuk menguji penanda not_found.
+ */
+export function buildRpsStructuredData({ incomplete = false } = {}) {
+  const weeks = SAMPLE_TOPICS.map((topic, i) => {
+    const week = i + 1;
+    if (week === 8) return { week, week_type: 'uts', topics: [], cpmk: [], sub_cpmk: [], teaching_method: [], media: [], assessment: { type: 'exam', description: 'Ujian tertulis materi minggu 1–7.', weight_percent: 25 } };
+    if (week === 16) return { week, week_type: 'uas', topics: [], cpmk: [], sub_cpmk: [], teaching_method: [], media: [], assessment: { type: 'exam', description: 'Ujian proyek akhir aplikasi web.', weight_percent: 35 } };
+    const sub = SUB_BY_WEEK(week);
+    const weight = ASSESSED_WEEKS[week];
+    return {
+      week,
+      week_type: 'regular',
+      topics: [topic],
+      cpmk: incomplete ? [] : [CPMK_BY_SUB[sub]],
+      sub_cpmk: incomplete ? [] : [sub],
+      teaching_method: week === 5 ? [] : ['Ceramah', 'Diskusi', 'Praktikum'],
+      media: ['Slide presentasi', 'LMS'],
+      assessment: weight
+        ? { type: 'assignment', description: `Ketepatan dan kelengkapan tugas ${topic.split(':')[0].toLowerCase()}.`, weight_percent: weight }
+        : null,
+    };
+  });
+  return {
+    schema_version: '2.0',
+    // Semester tidak tercantum pada RPS contoh: identitas ditandai sebagian.
+    course: { name: 'Pemrograman Web', code: 'IF2105', credits: 3, semester: null, description: 'Mata kuliah tentang pengembangan aplikasi web modern dari antarmuka hingga REST API.' },
+    cpl: incomplete ? [] : RPS_CPL,
+    cpmk: RPS_CPMK,
+    sub_cpmk: incomplete ? [] : RPS_SUB_CPMK,
+    topics: SAMPLE_TOPICS.filter((_, i) => !EXAM_WEEKS.includes(i + 1)).map((name, i) => ({ id: `TOP-${i + 1}`, name })),
+    media: [
+      { id: 'MED-1', name: 'Slide presentasi', type: 'presentation', description: null },
+      { id: 'MED-2', name: 'LMS', type: 'platform', description: 'Moodle ITK' },
+    ],
+    weeks,
+    teaching_methods: ['Ceramah', 'Diskusi', 'Praktikum'],
+    assessments: incomplete
+      ? []
+      : [
+          { id: 'A-1', type: 'assignment', description: 'Tugas mingguan', week: null, weight_percent: 30 },
+          { id: 'A-2', type: 'quiz', description: 'Kuis', week: 3, weight_percent: 10 },
+          { id: 'A-3', type: 'exam', description: 'Ujian Tengah Semester', week: 8, weight_percent: 25 },
+          { id: 'A-4', type: 'exam', description: 'Ujian Akhir Semester', week: 16, weight_percent: 35 },
+        ],
+    references: incomplete
+      ? []
+      : [
+          { id: 'R-1', citation: 'HTML and CSS: Design and Build Websites', authors: 'Jon Duckett', year: 2014, source: 'Wiley' },
+          { id: 'R-2', citation: 'Eloquent JavaScript (3rd ed.)', authors: 'Marijn Haverbeke', year: 2018, source: 'No Starch Press' },
+          { id: 'R-3', citation: 'MDN Web Docs', authors: null, year: null, source: 'https://developer.mozilla.org' },
+        ],
+    extraction: {
+      extracted_at: new Date().toISOString(),
+      extractor: 'docling',
+      extractor_version: '2.140.0',
+      model_name: null,
+      model_provider: null,
+      source_pages: [1, 2, 3],
+      confidence: incomplete ? 0.42 : 0.86,
+      warnings: incomplete
+        ? ['Tabel capaian pembelajaran (CPL/Sub-CPMK) tidak terbaca.', 'Tabel penilaian tidak ditemukan pada dokumen.']
+        : ['Metode pembelajaran minggu 5 tidak terbaca pada tabel rencana mingguan.'],
+    },
+  };
+}
+
 export function buildPlanWeeks(instruction, analysis = buildRpsAnalysis()) {
   return SAMPLE_TOPICS.map((topic, i) => {
     const week = i + 1;

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 
-export function Modal({ open, title, onClose, children, footer }) {
+export function Modal({ open, title, onClose, children, footer, wide = false }) {
   const ref = useRef(null);
   const titleId = useId();
 
@@ -14,7 +14,7 @@ export function Modal({ open, title, onClose, children, footer }) {
   return (
     <dialog
       ref={ref}
-      className="m-auto w-[min(520px,calc(100vw-32px))] rounded-lg border border-line bg-white p-0 text-ink shadow-xl"
+      className={`m-auto ${wide ? 'w-[min(680px,calc(100vw-32px))]' : 'w-[min(520px,calc(100vw-32px))]'} rounded-lg border border-line bg-white p-0 text-ink shadow-xl`}
       aria-labelledby={titleId}
       onCancel={onClose}
       onClose={onClose}

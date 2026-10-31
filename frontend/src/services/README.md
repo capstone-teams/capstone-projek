@@ -6,12 +6,14 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | --- | --- |
 | moodle/moodleClient.js | Token Moodle, REST/form transport, invalid-token handler, dan URL file |
 | moodle/moodleApi.js | Pemulihan sesi/peran, kursus, peserta, nilai, aktivitas, dan profil |
-| mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true |
+| moodle/courseEditing.js | Mode edit kursus: aksi `core_courseformat_update_course`, ubah nama `core_update_inplace_editable`, dan URL halaman edit Moodle |
+| mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true, termasuk aksi Mode edit (hanya editingteacher) dan `resetMockMoodle()` untuk test |
 | apiClient.js | HTTP/mock backend, Bearer token, ApiError, handler 401 bila token ditolak, dan pemeriksaan respons |
 | authService.js | Login (`POST /auth/login`), current user (`GET /auth/me`), pemetaan role backend → UI, dan logout client |
-| rpsService.js, instructorService.js, courseService.js | RPS, preferensi/setup dosen, dan workflow backend |
+| rpsService.js | RPS: validasi file di klien (PDF/DOCX, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
+| instructorService.js, courseService.js | Setup/preferensi dosen (BE-10) dan workflow backend |
 | coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
-| monitoringSocket.js | Event workflow dan reconnect WebSocket |
+| monitoringSocket.js | WebSocket dengan reconnect: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
 | mock/ | State machine backend ketika VITE_USE_MOCK=true; auth mengikuti kontrak backend (role huruf besar, pesan error identik, kata sandi `<username>123`) |
 | config.js | URL, mode mock, dan kunci penyimpanan dari environment |
 

@@ -18,7 +18,7 @@ vi.mock('../src/services/moodle/moodleApi', () => services);
 vi.mock('../src/services/instructorService', () => services);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let node, root, state;
-const user = { id: 3, fullname: 'Rina Kartika', username: 'dosen', teacherCourseIds: [2], role: 'dosen' };
+const user = { id: 3, fullname: 'Rina Kartika', username: 'dosen', teacherCourseIds: [2], role: 'DOSEN' };
 const course = { id: 2, fullname: 'Pemrograman Web', shortname: 'IF2105' };
 function deferred() {
   let resolve, reject;

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Alert } from '../../components/ui';
 import { AuthField, AuthLayout, AuthSubmitButton, GoogleLoginButton, PasswordField } from '../../components/auth';
-import { SESSION_NOTICE } from '../../types/auth';
+import { SESSION_NOTICE, homePathFor } from '../../types/auth';
 
 // Pesan untuk kegagalan langkah Moodle (setelah akun backend terverifikasi).
 const MOODLE_MESSAGES = {
@@ -24,13 +24,13 @@ function describeLoginError(err) {
 export default function LoginPage() {
   const { user, login, sessionNotice } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [form, setForm] = useState({ username: '', password: '' });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const [info, setInfo] = useState('');
 
-  if (user) return <Navigate to="/my" replace />;
+  // Setelah login: dosen ke dashboard, mahasiswa ke halaman course (role dari GET /auth/me).
+  if (user) return <Navigate to={homePathFor(user.role)} replace />;
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -40,8 +40,8 @@ export default function LoginPage() {
     setError(null);
     setInfo('');
     try {
-      await login(form.username.trim(), form.password);
-      navigate(location.state?.from?.pathname || '/my', { replace: true });
+      const session = await login(form.username.trim(), form.password);
+      navigate(homePathFor(session.user.role), { replace: true });
     } catch (err) {
       if (err?.name !== 'AbortError') setError(describeLoginError(err));
       setPending(false);

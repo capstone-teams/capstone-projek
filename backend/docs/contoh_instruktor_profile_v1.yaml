@@ -1,0 +1,14 @@
+instructor:
+  courses_taught:
+    - "Matematika Diskrit"
+    - "Algoritma dan Pemrograman"
+
+  expertise:
+    - "Logika Matematika"
+    - "Algoritma dan Pemrograman"
+
+  teaching_style:
+    - "Penjelasan konsep secara bertahap"
+    - "Menggunakan contoh konkret"
+    - "Memberikan latihan soal dan pembahasan"
+

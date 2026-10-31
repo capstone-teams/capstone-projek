@@ -12,7 +12,7 @@ test('Moodle session restores the same account after reload', async ({ page }) =
   await page.getByLabel('Username', { exact: true }).fill('mahasiswa');
   await page.getByLabel('Kata sandi', { exact: true }).fill('mahasiswa123');
   await page.getByRole('button', { name: 'Masuk', exact: true }).click();
-  await expect(page.getByText('Ringkasan belajar', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Kursus saya', exact: true })).toBeVisible();
   const token = await page.evaluate(() => localStorage.getItem('agentic-lms.moodle-session'));
   await page.reload();
   await expect(page.getByRole('button', { name: 'Menu pengguna' })).toContainText('Andi Saputra');

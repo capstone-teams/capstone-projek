@@ -39,6 +39,8 @@ def to_domain(entity: RPSEntity) -> RPSDocument:
         processing_error_code=entity.processing_error_code,
         processing_error=entity.processing_error,
         structured_data=entity.structured_data,
+        analyzed_at=entity.analyzed_at,
+        workflow_id=entity.workflow_id,
         created_at=entity.created_at,
         updated_at=entity.updated_at,
     )
@@ -64,4 +66,6 @@ def apply_to_entity(document: RPSDocument, entity: RPSEntity) -> RPSEntity:
     entity.processing_error_code = document.processing_error_code
     entity.processing_error = document.processing_error
     entity.structured_data = document.structured_data
+    entity.analyzed_at = document.analyzed_at
+    entity.workflow_id = document.workflow_id
     return entity

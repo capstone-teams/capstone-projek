@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Alert } from '../../components/ui';
 import { AuthField, AuthLayout, AuthSubmitButton } from '../../components/auth';
-import { MOODLE_URL, USE_MOODLE_MOCK } from '../../services/config';
 
 export default function ForgotPasswordPage() {
   const [info, setInfo] = useState('');
 
+  // Backend belum menyediakan endpoint pemulihan kata sandi; formulir tidak dikirim ke Moodle.
   const handleSubmit = (event) => {
-    if (!USE_MOODLE_MOCK) return;
     event.preventDefault();
     setInfo('Pemulihan kata sandi belum tersedia');
   };
@@ -19,11 +18,7 @@ export default function ForgotPasswordPage() {
         Masukkan username atau alamat email yang terdaftar.
       </p>
       {info && <Alert tone="info">{info}</Alert>}
-      <form
-        method="post"
-        action={`${MOODLE_URL}/login/forgot_password.php`}
-        onSubmit={handleSubmit}
-      >
+      <form onSubmit={handleSubmit}>
         <AuthField
           id="recovery-username"
           name="username"

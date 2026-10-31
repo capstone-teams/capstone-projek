@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import CoursePlanPage from '../src/pages/ai/course/CoursePlanPage';
+import CoursePlanPage from '../src/pages/dosen/ai/CoursePlanPage';
 import { ApiError } from '../src/services/apiClient';
 import { normalizeCoursePlan } from '../src/services/coursePlanAdapter';
 
