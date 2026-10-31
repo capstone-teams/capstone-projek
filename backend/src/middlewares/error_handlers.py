@@ -9,6 +9,7 @@ from src.services.instructor.errors import InstructorSetupError
 from src.services.llm.base import LLMProviderError
 from src.services.rps.errors import RPSDomainError
 from src.services.user.errors import UserNotFoundError
+from src.services.workflow.errors import WorkflowDomainError
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,24 @@ async def instructor_setup_error_handler(
     )
 
 
+async def workflow_error_handler(
+    request: Request, exc: WorkflowDomainError
+) -> JSONResponse:
+    """Translate a workflow domain failure into the standard API error format (BE-11.2).
+
+    Workflow yang tidak ada atau milik dosen lain menjadi 404
+    ``RESOURCE_NOT_FOUND``, nilai yang tidak valid 422 ``INVALID_REQUEST``, dan
+    konflik state 409 ``INVALID_REQUEST``. Pesan internal (mis. identifier yang
+    dicari) hanya dicatat server-side.
+    """
+    logger.warning("Workflow failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+    )
+
+
 ERROR_RESPONSE_SCHEMA_REF = "#/components/schemas/ErrorResponse"
 
 
@@ -223,4 +242,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(UserNotFoundError, user_not_found_error_handler)
     app.add_exception_handler(RPSDomainError, rps_error_handler)
     app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
+    app.add_exception_handler(WorkflowDomainError, workflow_error_handler)
     _document_standard_validation_error(app)
