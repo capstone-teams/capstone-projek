@@ -90,6 +90,7 @@ DETAIL_RESPONSE_FIELDS = {
     "created_at",
     "updated_at",
     "has_source_document",
+    "workflow_id",
     "processing_duration_ms",
     "processing_error_code",
     "processing_error_message",
@@ -295,6 +296,7 @@ async def test_uploaded_document_can_be_read_back(client, instructor_headers):
     assert body["file_hash"] == uploaded["file_hash"]
     assert body["status"] == "UPLOADED"
     assert body["has_source_document"] is False
+    assert body["workflow_id"] is None
     assert body["processing_duration_ms"] is None
     assert body["processing_error_code"] is None
     assert body["processing_error_message"] is None
@@ -430,18 +432,26 @@ async def test_process_schedules_the_conversion_and_answers_202(
     response = await schedule_processing(client, instructor_headers, uploaded["id"])
 
     assert response.status_code == 202
-    assert response.json() == {
-        "rps_id": uploaded["id"],
-        "status": "PROCESSING",
-        "schema_version": RPS_SCHEMA_VERSION,
-        "reused": False,
+    body = response.json()
+    assert set(body) == {
+        "rps_id",
+        "status",
+        "schema_version",
+        "reused",
+        "workflow_id",
     }
+    assert body["rps_id"] == uploaded["id"]
+    assert body["status"] == "PROCESSING"
+    assert body["schema_version"] == RPS_SCHEMA_VERSION
+    assert body["reused"] is False
+    assert len(body["workflow_id"]) == 22
     assert [call["rps_id"] for call in runner.calls] == [uploaded["id"]]
     # Konversi belum berjalan sama sekali ketika response diterima.
     assert converter.calls == 0
 
     detail = await read_detail(client, instructor_headers, uploaded["id"])
     assert detail["status"] == "PROCESSING"
+    assert detail["workflow_id"] == body["workflow_id"]
 
 
 @pytest.mark.asyncio
@@ -496,8 +506,10 @@ async def test_processing_twice_does_not_convert_again(
     assert second.status_code == 200
     assert second.json()["reused"] is True
     assert second.json()["status"] == "PROCESSED"
-    assert len(runner.calls) == 1
+    # Konversi tidak dijalankan ulang (acceptance criteria BE-05); runner tetap
+    # dijadwalkan karena workflow baru masih harus menjalankan tahap analisis.
     assert converter.calls == 1
+    assert first.json()["workflow_id"] != second.json()["workflow_id"]
 
 
 @pytest.mark.asyncio
