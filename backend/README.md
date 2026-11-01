@@ -21,6 +21,7 @@ backend/
 │   │   ├── auth.py               # POST /auth/login, GET /auth/me
 │   │   ├── rps.py                # POST /rps, GET /rps/{id}, POST /rps/{id}/process, POST /rps/{id}/reanalyze
 │   │   ├── instructors.py        # GET/PUT /instructors/me/setup (INSTRUCTOR only)
+│   │   ├── workflows.py          # Workflow monitoring + WS /ws/workflows/{id} (BE-11.3)
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
@@ -28,6 +29,7 @@ backend/
 │   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
 │   │   ├── rps/                  # Unggah, konversi (BE-05), & analisis dokumen RPS (BE-08.2)
 │   │   ├── instructor/           # Setup dosen: profil, aktivitas, konteks agent (BE-10)
+│   │   ├── workflow/             # State machine, event, & orkestrator RPS (BE-11)
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
 │   │   └── dependencies.py       # Dependency provider untuk routes (+ require_roles)
@@ -37,6 +39,7 @@ backend/
 │   │   ├── auth.py
 │   │   ├── rps.py                # DTO endpoint RPS
 │   │   ├── instructor.py         # DTO setup dosen (BE-10)
+│   │   ├── workflow.py           # DTO monitoring workflow & event (BE-11.3)
 │   │   └── rps_structured.py     # Kontrak RPS Structured Data (BE-05.3)
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
 │   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
@@ -725,6 +728,88 @@ Respons kegagalan (design-api §7.2):
    `context_role: supporting` + `academic_source_of_truth: rps`.
 5. **Seed tidak menimpa setup dosen.** `scripts/seed_test_accounts.py` hanya
    membuat setup default untuk akun dosen uji bila belum ada.
+
+---
+
+## 🔁 Workflow Orchestrator & Monitoring (BE-11)
+
+Setiap pemrosesan RPS adalah satu **workflow** yang status dan event-nya
+tersimpan. Orchestrator mengendalikan urutan tahap dan transisi status; LLM
+tidak dapat mengubah status workflow. Pada sprint ini rangkaiannya:
+
+```text
+POST /rps/{id}/process ──▶ workflow QUEUED
+                              │
+                              ▼
+                     PROCESSING_RPS  (Docling, BE-05.2)
+                              │
+                              ▼
+                     ANALYZING_RPS   (BE-08.1 → BE-09.2 → BE-08.2)
+                              │
+                              ▼
+                       COMPLETED / FAILED
+```
+
+Endpoint `POST /rps/{id}/process` membuat workflow, menautkannya ke
+`rps.workflow_id`, lalu menjalankan kedua tahap di background. `POST
+/rps/{id}/reanalyze` memakai **workflow yang sama** mulai dari `ANALYZING_RPS`,
+sehingga event baru menempel pada riwayat workflow tersebut.
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/workflows` | `INSTRUCTOR` | Workflow milik dosen login; status lifecycle + tahap + progress |
+| `GET` | `/api/v1/workflows/{workflow_id}` | `INSTRUCTOR` | Detail beserta `moodle_course_id` |
+| `GET` | `/api/v1/workflows/{workflow_id}/events` | `INSTRUCTOR` | Riwayat event, dari yang paling lama |
+| `PUT` | `/api/v1/workflows/{workflow_id}/moodle-target` | `INSTRUCTOR` | Simpan course target Moodle (`null` mengosongkan) |
+| `WS` | `/api/v1/ws/workflows/{workflow_id}` | `INSTRUCTOR` | Frame event real-time; token lewat query `?token=` |
+
+`status` pada API adalah enum lifecycle `QUEUED`/`RUNNING`/`COMPLETED`/`FAILED`;
+tahap yang sedang berjalan dibaca dari `stage` (`rps_processing`,
+`rps_analysis`, ...). Status tahap internal tidak bocor ke kontrak.
+
+### Event
+
+Setiap perubahan tahap, aktivitas agent, retry, dan kegagalan tercatat pada
+`workflow_events` sebagai kategori (`PERUBAHAN_TAHAP`, `AKTIVITAS_AGENT`,
+`OPERASI_MOODLE`, `RETRY_FIX`, `ERROR_FAILURE`) sekaligus nama event publik
+`WORKFLOW_*` (`WORKFLOW_STARTED`, `WORKFLOW_STAGE_STARTED`,
+`WORKFLOW_STAGE_PROGRESS`, `WORKFLOW_STAGE_COMPLETED`, `WORKFLOW_RETRY`,
+`WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`). Bentuk frame WebSocket sama dengan
+item riwayat HTTP, dan event tidak pernah memuat credential, API key, atau isi
+prompt.
+
+WebSocket hanya mengirim event **baru**; client mengambil keadaan awal dan
+riwayat lewat HTTP sebelum/ketika berlangganan. Penolakan handshake memakai
+close code `4401` (token), `4403` (bukan dosen), dan `4404` (bukan workflow
+peminta).
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Tabel `workflows`, `workflow_events` | `src/models/workflow.py`, `src/models/workflow_event.py` |
+| State machine + aturan bentuk | `src/services/workflow/domain.py`, `src/services/workflow/validation.py` |
+| Transisi status + penulisan event | `src/services/workflow/service.py` |
+| Urutan tahap + entry point background | `src/services/workflow/orchestrator.py` |
+| Fan-out event ke WebSocket | `src/services/workflow/broker.py` |
+| Akses data | `src/services/workflow/repository.py` |
+| DTO monitoring | `src/schemas/workflow.py` |
+| Endpoint REST + WebSocket | `src/routes/workflows.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_workflow_repository.py   # model + repository (butuh PostgreSQL)
+uv run pytest tests/test_workflow_orchestrator.py # tahap, event, retry, reanalyze
+uv run pytest tests/test_workflow_api.py          # REST, course target, WebSocket
+```
+
+> **Batas deployment.** Broker event berjalan di dalam satu proses. Beberapa
+> worker uvicorn atau restart server memutus langganan dan event dari worker
+> lain tidak terkirim ke klien; riwayat HTTP tetap lengkap dan menjadi sumber
+> kebenaran. Ganti dengan Redis pub/sub bila deployment horizontal dibutuhkan.
 
 ---
 

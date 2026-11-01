@@ -253,6 +253,18 @@ class RPSDocument:
         self.processing_error_code = _normalize_error_code(error_code)
         self.processing_error = _normalize_error_reason(reason)
 
+    def link_workflow(self, workflow_id: str) -> None:
+        """Tautkan dokumen ke workflow orkestrasi (BE-11.2).
+
+        Dipakai ``POST /rps/{id}/process``: workflow dibuat sebelum pekerjaan
+        background dijadwalkan, sehingga pemantauan lewat daftar/detail RPS
+        sudah menunjuk workflow yang benar sejak response pertama.
+        """
+        identifier = normalize_identifier(workflow_id)
+        if identifier is None:
+            raise RPSValidationError("workflow_id", "wajib diisi")
+        self.workflow_id = identifier
+
     def start_analysis(
         self,
         *,

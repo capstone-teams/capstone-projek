@@ -219,6 +219,7 @@ Response:
   "filename": "rps.pdf",
   "status": "processed",
   "created_at": "datetime",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
   "has_source_document": true,
   "processing_duration_ms": 8421,
   "processing_error_code": null,
@@ -227,7 +228,11 @@ Response:
 ```
 
 Endpoint ini juga menjadi **endpoint polling** untuk §6.3: setelah pemrosesan
-dijadwalkan, client memantau `status` sampai bernilai `processed` atau `failed`.
+dijadwalkan, client memantau `status` sampai bernilai `analyzed` atau `failed`.
+`workflow_id` adalah workflow orkestrasi yang menjalankan pemrosesan dan
+analisis dokumen ini (BE-11.2); event-nya dapat dipantau lewat §16 dan §17.
+Dokumen yang belum pernah diproses sejak workflow diperkenalkan mengembalikan
+`workflow_id` bernilai `null`.
 
 Ketika `status` bernilai `failed`, `processing_error_code` memuat kode error §18
 (mis. `RPS_PROCESSING_FAILED` untuk konversi, `LLM_GENERATION_FAILED` untuk
@@ -263,31 +268,40 @@ Response `202 Accepted`:
   "rps_id": "rps_001",
   "status": "processing",
   "schema_version": "2.0",
-  "reused": false
+  "reused": false,
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ"
 }
 ```
 
 Processing merupakan asynchronous operation: request hanya **menjadwalkan**
-konversi, lalu konversinya berjalan di background. Client memantau
-`GET /api/v1/rps/{rps_id}` (§6.2) sampai statusnya `processed` atau `failed`.
+pekerjaan, lalu pekerjaan itu berjalan di background. Sejak BE-11.2 pekerjaan
+tersebut adalah satu workflow dengan dua tahap berurutan — `PROCESSING_RPS`
+(konversi Docling, §6.3) lalu `ANALYZING_RPS` (analisis, §6.4/§6.6) — sehingga
+client memantau `GET /api/v1/rps/{rps_id}` (§6.2) sampai statusnya `analyzed`
+atau `failed`. `workflow_id` adalah workflow tersebut; status dan event-nya
+tersedia pada §16 dan §17.
 
 Bila dokumen sudah diproses untuk `file_hash` dan `schema_version` yang sama,
-tidak ada pekerjaan yang dijadwalkan dan response-nya `200 OK` dengan
-`"reused": true`.
+konversi tidak dijadwalkan ulang dan response-nya `200 OK` dengan
+`"reused": true`. Workflow baru tetap dibuat agar tahap analisis yang belum
+pernah berjalan dapat diselesaikan; `workflow_id` pada response menunjuk
+workflow tersebut.
 
 ```json
 {
   "rps_id": "rps_001",
   "status": "processed",
   "schema_version": "2.0",
-  "reused": true
+  "reused": true,
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ"
 }
 ```
 
-Kegagalan konversi tidak muncul pada response ini (tidak ada client yang
+Kegagalan tahap apa pun tidak muncul pada response ini (tidak ada client yang
 menunggu pekerjaan background); kegagalannya terlihat pada §6.2 sebagai
 `status: failed` beserta `processing_error_code` dan
-`processing_error_message`.
+`processing_error_message`, serta pada workflow (§16) sebagai `FAILED` dengan
+event `WORKFLOW_FAILED`.
 
 Field `agent_run_id` menyusul bersama Agent Run pada M03 (lihat §15) dan
 karenanya belum ada pada response ini.
@@ -384,6 +398,12 @@ dijalankan lagi — dan hanya boleh diminta dosen pemilik RPS. RPS yang sudah
 berstatus `ANALYZED` tidak dianalisis ulang secara implisit; satu-satunya jalan
 adalah endpoint ini. Client memantau hasilnya melalui §16/§17 lalu membaca
 §6.4.
+
+Sejak BE-11.2 analisis ulang dijalankan pada workflow yang sama dengan
+pemrosesan sebelumnya: `workflow_id` yang dikembalikan adalah workflow yang
+sudah tercatat pada RPS, dan event baru ditambahkan ke riwayat workflow tersebut
+(§16.3). Dokumen yang dianalisis sebelum workflow diperkenalkan mendapat baris
+workflow baru dengan id yang sudah tercatat pada RPS.
 
 > **Status implementasi.** §6.4–§6.6 sudah terbit pada OpenAPI beserta contoh
 > response dan seluruhnya sudah diimplementasikan: §6.6
@@ -1033,15 +1053,46 @@ Response:
 
 ```json
 {
-  "course_id": "course_project_001",
-  "status": "generating_content",
-  "stage": "week_5",
-  "progress": {
-    "completed": 4,
-    "total": 16
-  }
+  "items": [
+    {
+      "event": "WORKFLOW_STAGE_COMPLETED",
+      "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+      "stage": "rps_analysis",
+      "progress": {
+        "completed": 2,
+        "total": 2
+      },
+      "message": "Tahap analisis RPS selesai.",
+      "timestamp": "2026-10-21T08:03:30Z"
+    }
+  ]
 }
 ```
+
+`progress` pada tiap event adalah kemajuan saat kejadian itu terjadi, bukan
+kemajuan terkini workflow.
+
+## 16.4 Set Moodle Course Target
+
+```http
+PUT /api/v1/workflows/{workflow_id}/moodle-target
+```
+
+Request:
+
+```json
+{
+  "moodle_course_id": 42
+}
+```
+
+`moodle_course_id` wajib dikirim: bilangan positif untuk memilih course Moodle,
+atau `null` untuk mengosongkan target. Body `{}` ditolak `422` agar target tidak
+terhapus karena field yang terlupa. Response `200` berbentuk sama dengan §16.2,
+sehingga client tidak perlu membaca ulang setelah menyimpan.
+
+Workflow milik dosen lain menghasilkan 404 `RESOURCE_NOT_FOUND` yang sama
+seperti workflow tidak ada.
 
 ---
 
@@ -1068,22 +1119,36 @@ Satu frame event:
   "stage": "rps_analysis",
   "progress": {
     "completed": 2,
-    "total": 4
+    "total": 2
   },
-  "message": "Analisis RPS selesai.",
+  "message": "Tahap analisis RPS selesai.",
   "timestamp": "2026-10-21T08:03:30Z"
 }
 ```
 
 `event` memakai pola `WORKFLOW_*` (`WORKFLOW_STARTED`, `WORKFLOW_STAGE_STARTED`,
-`WORKFLOW_STAGE_COMPLETED`, `WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`). Bentuk
-frame ini sama dengan item pada `GET /api/v1/workflows/{workflow_id}/events`
-(§16.3) dan terbit pada OpenAPI sebagai schema `WorkflowEvent` — sehingga client
-cukup memakai satu parser.
+`WORKFLOW_STAGE_PROGRESS`, `WORKFLOW_STAGE_COMPLETED`, `WORKFLOW_RETRY`,
+`WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`). `WORKFLOW_STAGE_PROGRESS` mencatat
+aktivitas agent di dalam tahap (mis. memanggil model, memvalidasi hasil), dan
+`WORKFLOW_RETRY` mencatat percobaan ulang. Bentuk frame ini sama dengan item pada
+`GET /api/v1/workflows/{workflow_id}/events` (§16.3) dan terbit pada OpenAPI
+sebagai schema `WorkflowEvent` — sehingga client cukup memakai satu parser.
+
+Penolakan handshake memakai close code aplikasi: `4401` token tidak ada/tidak
+valid, `4403` bukan dosen, `4404` workflow tidak ditemukan atau bukan milik
+peminta. Setelah handshake diterima, klien hanya menerima event **baru**;
+keadaan awal dan riwayat diambil lewat HTTP (§16).
 
 Event **tidak** memuat credential, API key, maupun isi prompt.
 
 Frontend harus melakukan initial state fetch melalui HTTP sebelum membuka atau menggunakan event stream agar tidak bergantung pada event yang terjadi sebelum connection dibuat.
+
+> **Status implementasi.** §16–§17 tersedia sejak BE-11.3: endpoint daftar,
+> detail, riwayat, dan penyimpanan course target, serta kanal WebSocket dengan
+> autentikasi token. Seluruh response dan frame memakai schema `WorkflowEvent`
+> yang sama. Broker event berjalan in-process; deployment dengan beberapa worker
+> memerlukan pub/sub lintas proses agar event real-time sampai ke semua klien
+> (riwayat HTTP tetap lengkap).
 
 ---
 
