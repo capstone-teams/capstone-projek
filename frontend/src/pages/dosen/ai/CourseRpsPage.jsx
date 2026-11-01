@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { getRps, getRpsAnalysis, processRps, reanalyzeRps } from '../../../services/rpsService';
-import { USE_MOCK } from '../../../services/config';
+import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { useApi } from '../../../hooks/useApi';
 import { usePolling } from '../../../hooks/usePolling';
 import { Card, ErrorAlert, Spinner } from '../../../components/ui';
@@ -13,7 +13,7 @@ import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsSt
 import { formatDateTime } from '../../../utils/format';
 
 // Course planning (FE-05) baru tersedia di backend pada M03; di mode mock sudah dapat dicoba.
-const COURSE_PLANNING_AVAILABLE = USE_MOCK;
+const COURSE_PLANNING_AVAILABLE = COURSE_API_AVAILABLE;
 const POLL_MS = 3000;
 
 /**

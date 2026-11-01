@@ -29,8 +29,9 @@ function openSocket(path, onEvent) {
         // Abaikan pesan yang bukan JSON.
       }
     };
-    socket.onclose = () => {
-      if (closed) return;
+    socket.onclose = (event) => {
+      // 4401/4403/4404: ditolak saat handshake; mencoba lagi tidak akan berhasil.
+      if (closed || [4401, 4403, 4404].includes(event.code)) return;
       timer = setTimeout(connect, Math.min(1000 * 2 ** retry++, 15000));
     };
   };

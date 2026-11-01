@@ -65,7 +65,7 @@ VITE_* tersedia di browser; jangan gunakan untuk secret deployment.
 
 | URL | Fungsi |
 | --- | --- |
-| /login | Login akun backend lalu Moodle |
+| /login | Login akun backend; token Moodle diambil setelahnya |
 | /forgot-password | Pemulihan kata sandi (belum tersedia di backend) |
 | / | Halaman awal sesuai role: DOSEN ke /my, MAHASISWA ke /my/courses |
 | /my | Dashboard dosen (khusus DOSEN; role lain melihat halaman 403) |
@@ -204,16 +204,24 @@ menampilkan **Lihat hasil analisis**: ringkasan langsung di kartu selama project
 belum dibuat. Tab RPS kursus (halaman hasil analisis yang sudah ada) menampilkan
 status RPS dan tautan **Pantau workflow** ke tab Ringkasan (Aktivitas agent).
 
-Status backend saat ini: enum `ANALYZING`/`ANALYZED`, `GET /rps`,
-`/rps/{id}/analysis`, dan `/rps/{id}/reanalyze` sudah tersedia (BE-08.2/BE-08.3).
-`/workflows/*` dan WebSocket workflow masih stub `501` (BE-11.3), sehingga status
-diperbarui lewat polling. Orkestrator BE-11.2 belum ada: konversi berhenti di
-`PROCESSED` tanpa workflow dan analisis tidak berjalan otomatis. Untuk RPS itu
-daftar menampilkan tombol **Analisis RPS** yang memanggil `POST /rps/{id}/reanalyze`
-(endpoint backend yang menjadwalkan analisis), lalu status dipantau sampai
-`ANALYZED` atau `FAILED`. Mock mengikuti kontrak dan mensimulasikan orkestrator;
-nama file berisi `tanpa-analisis` meniru backend saat ini (berhenti di `PROCESSED`),
-dan `gagal-analisis` gagal saat analisis pertama untuk mencoba Analisis ulang.
+Status backend saat ini: RPS (BE-08.2/BE-08.3) serta orkestrator, `/workflows/*`,
+dan WebSocket `/ws/workflows/{id}` (BE-11.2/BE-11.3) tersedia. `POST /rps/{id}/process`
+membuat workflow dan melanjutkan konversi ke analisis, sehingga status berjalan
+otomatis sampai `ANALYZED` atau `FAILED`; event WebSocket memicu pembaruan segera dan
+polling menjadi cadangan. Penutupan WebSocket 4401/4403/4404 tidak dicoba ulang.
+Dokumen `PROCESSED` lama tanpa workflow menampilkan tombol **Analisis RPS**
+(`POST /rps/{id}/reanalyze`). Di mock, nama file berisi `tanpa-analisis` meniru dokumen
+lama itu dan `gagal-analisis` gagal saat analisis pertama untuk mencoba Analisis ulang.
+
+### Tanpa API /courses
+
+Backend belum punya `/courses`, jadi `COURSE_API_AVAILABLE` (services/config.js) hanya
+benar di mode mock. Dengan `VITE_USE_MOCK=false`, project kursus adalah workflow RPS:
+`WorkflowLayout` membaca `GET /workflows` dan detailnya, mencari `moodle_course_id` yang
+sama dengan kursus. Bila belum ada, dosen mengunggah RPS lalu **Hubungkan RPS**
+(`PUT /workflows/{id}/moodle-target`). Setelah terhubung, Generator AI hanya memuat tab
+Ringkasan (status dan riwayat event) dan RPS; Rencana, Konten, Review, dan Publikasi
+disembunyikan sampai API-nya tersedia.
 
 ### Hasil analisis RPS (FE-08.3)
 

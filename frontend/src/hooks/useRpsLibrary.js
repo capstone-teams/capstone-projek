@@ -8,14 +8,7 @@ import { RPS_STATUS, isRpsInProgress } from '../utils/rpsStatus';
 // Polling hanya cadangan: event workflow (§17) memicu pembaruan lebih cepat bila tersedia.
 const POLL_MS = 3000;
 
-// Bila GET /rps menjawab 501 (backend lama sebelum BE-08.3), daftar memakai RPS yang diunggah pada sesi ini.
-const listOrUnavailable = () =>
-  listRps()
-    .then((data) => ({ ...data, fetchedAt: Date.now() }))
-    .catch((error) => {
-      if (error?.status === 501) return { items: [], unavailable: true, fetchedAt: Date.now() };
-      throw error;
-    });
+const listWithTime = () => listRps().then((data) => ({ ...data, fetchedAt: Date.now() }));
 
 const byNewest = (a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
 
@@ -25,14 +18,13 @@ const byNewest = (a, b) => String(b.created_at ?? '').localeCompare(String(a.cre
  * sampai setiap RPS ANALYZED atau FAILED. `progress` menyimpan tahap workflow terakhir per RPS.
  */
 export function useRpsLibrary() {
-  const list = useApi(listOrUnavailable);
+  const list = useApi(listWithTime);
   // Data terbaru per RPS (dari upload, GET /rps/{id}, atau aksi) yang menimpa item daftar.
   const [local, setLocal] = useState({});
   const [progress, setProgress] = useState({});
   const [highlightId, setHighlightId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState(null);
-  const unavailable = !!list.data?.unavailable;
   const reloadList = list.reload;
 
   const items = useMemo(() => {
@@ -51,13 +43,11 @@ export function useRpsLibrary() {
     setLocal((current) => ({ ...current, [id]: { ...current[id], ...patch, id, updatedAt: Date.now() } }));
   }, []);
 
-  /** Ambil status dokumen dari GET /rps/{id} (§6.2). Perubahan status memuat ulang daftar untuk workflow_id. */
+  /** Ambil status dokumen dan workflow_id dari GET /rps/{id} (§6.2). */
   const refreshOne = useCallback(async (item) => {
     const detail = await getRps(item.id).catch(() => null);
-    if (!detail) return;
-    remember(item.id, detail);
-    if (detail.status !== item.status && !unavailable) reloadList({ silent: true });
-  }, [remember, unavailable, reloadList]);
+    if (detail) remember(item.id, detail);
+  }, [remember]);
 
   // GET /rps tidak memuat processing_error_message; ambil sekali dari GET /rps/{id} untuk RPS yang gagal.
   const failedFetched = useRef(new Set());
@@ -117,7 +107,6 @@ export function useRpsLibrary() {
     progress,
     loading: list.loading && !list.data,
     error: list.error,
-    unavailable,
     highlightId,
     busyId,
     actionError,

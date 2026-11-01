@@ -143,19 +143,6 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     expect(labels).not.toContain('Analisis ulang');
   });
 
-  it('tetap menampilkan RPS sesi ini bila GET /rps belum tersedia (501)', async () => {
-    const { ApiError } = await import('../src/services/apiClient');
-    vi.spyOn(rpsService, 'listRps').mockRejectedValue(new ApiError(501, 'NOT_IMPLEMENTED', 'Belum diimplementasikan.'));
-    await render();
-    await waitFor(() => container.textContent.includes('Daftar RPS dari server belum tersedia'), 'info 501');
-    expect(container.textContent).toContain('Belum ada RPS.');
-    await pick(new File(['%PDF'], 'RPS-Sesi.pdf', { type: 'application/pdf' }));
-    await act(async () => q('form.upload').requestSubmit());
-    await waitFor(() => rowFor('RPS-Sesi.pdf'), 'RPS sesi di daftar');
-    // Tanpa GET /rps tidak ada workflow_id; status terakhir dari GET /rps/{id} bisa PROCESSED atau ANALYZED.
-    await waitFor(() => /Siap dianalisis|Selesai dianalisis/.test(rowFor('RPS-Sesi.pdf').textContent), 'dipantau lewat GET /rps/{id}');
-  });
-
   it('RPS yang selesai diproses dapat dipilih untuk kursus', async () => {
     await render();
     await waitFor(() => submitButton(), 'form');

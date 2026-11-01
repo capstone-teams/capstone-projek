@@ -9,7 +9,7 @@
  *
  * Kedua endpoint mengirim header Access-Control-Allow-Origin: *, jadi bisa dipanggil dari browser.
  */
-import { MOODLE_SERVICE, MOODLE_URL, USE_MOODLE_MOCK } from '../config';
+import { MOODLE_SERVICE, MOODLE_URL, USE_MOCK, USE_MOODLE_MOCK } from '../config';
 import { mockCallWs, mockRequestToken, mockUploadDraftFiles } from '../mock/mockMoodle';
 
 export class MoodleError extends Error {
@@ -72,7 +72,8 @@ async function postForm(url, body) {
 
 /** Login dengan username/password Moodle dan dapatkan token layanan mobile. */
 export async function requestToken(username, password) {
-  if (USE_MOODLE_MOCK) return mockRequestToken(username, password);
+  // Backend nyata sudah memverifikasi kata sandi; fixture Moodle tidak memegang kata sandi akun itu.
+  if (USE_MOODLE_MOCK) return mockRequestToken(username, password, { trusted: !USE_MOCK });
 
   const data = await postForm(`${MOODLE_URL}/login/token.php`, encodeParams({ username, password, service: MOODLE_SERVICE }));
   if (data.error || !data.token) {

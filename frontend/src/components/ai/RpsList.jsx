@@ -9,9 +9,8 @@ import { formatDateTime } from '../../utils/format';
 const STAGE_LABELS = { rps_analysis: 'Analisis RPS', document_extraction: 'Konversi dokumen' };
 
 /**
- * Aksi lanjutan: proses dokumen yang baru diunggah, mulai analisis dokumen PROCESSED yang belum punya
- * workflow (backend tanpa orkestrator BE-11.2 berhenti di sini), atau pulihkan RPS yang gagal.
- * Analisis memakai POST /rps/{id}/reanalyze, satu-satunya endpoint backend yang menjadwalkan analisis.
+ * Aksi lanjutan: proses dokumen yang baru diunggah, mulai analisis dokumen PROCESSED lama yang belum
+ * punya workflow, atau pulihkan RPS yang gagal.
  */
 function RecoveryAction({ item, busy, onProcess, onReanalyze }) {
   if (item.status === RPS_STATUS.UPLOADED) {
