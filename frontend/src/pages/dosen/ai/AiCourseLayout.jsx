@@ -12,6 +12,7 @@ import { ForbiddenPage } from '../../StatusPage';
 const TABS = [
   { to: '', label: 'Ringkasan', end: true },
   { to: 'rps', label: 'RPS' },
+  { to: 'target', label: 'Course Target' },
   { to: 'plan', label: 'Rencana' },
   { to: 'content', label: 'Konten' },
   { to: 'review', label: 'Review' },

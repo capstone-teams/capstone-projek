@@ -22,6 +22,7 @@ import ModEditPage from './pages/dosen/course/ModEditPage';
 import AiCourseLayout from './pages/dosen/ai/AiCourseLayout';
 import CourseOverviewPage from './pages/dosen/ai/CourseOverviewPage';
 import CourseRpsPage from './pages/dosen/ai/CourseRpsPage';
+import CourseTargetSelectionPage from './pages/dosen/ai/CourseTargetSelectionPage';
 import CoursePlanPage from './pages/dosen/ai/CoursePlanPage';
 import CourseContentPage from './pages/dosen/ai/CourseContentPage';
 import CourseReviewPage from './pages/dosen/ai/CourseReviewPage';
@@ -68,6 +69,7 @@ export default function App() {
               <Route path="ai" element={<AiCourseLayout />}>
                 <Route index element={<CourseOverviewPage />} />
                 <Route path="rps" element={<CourseRpsPage />} />
+                <Route path="target" element={<CourseTargetSelectionPage />} />
                 <Route path="plan" element={<CoursePlanPage />} />
                 <Route path="content" element={<CourseContentPage />} />
                 <Route path="review" element={<CourseReviewPage />} />

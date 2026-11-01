@@ -11,6 +11,7 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | apiClient.js | HTTP/mock backend, Bearer token, ApiError, handler 401 bila token ditolak, dan pemeriksaan respons |
 | authService.js | Login (`POST /auth/login`), current user (`GET /auth/me`), pemetaan role backend → UI, dan logout client |
 | rpsService.js | RPS: validasi file di klien (PDF/DOCX, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
+| moodleIntegrationService.js | Status koneksi Moodle (`GET /integrations/moodle/status`) dan daftar kursus Moodle (`GET /integrations/moodle/courses`) via backend gateway (FE-09.1) |
 | instructorService.js, courseService.js | Setup/preferensi dosen (BE-10) dan workflow backend |
 | coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
 | monitoringSocket.js | WebSocket dengan reconnect: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |

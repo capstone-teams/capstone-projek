@@ -237,3 +237,27 @@ export function buildWeekContent(week, topic, config, revision = 0) {
     },
   };
 }
+
+export const MOCK_MOODLE_COURSES = [
+  {
+    id: 2,
+    fullname: 'Pemrograman Web',
+    shortname: 'IF2105',
+    category: 'Teknik Informatika',
+    summary: 'Pengembangan aplikasi web modern: HTML, CSS, JavaScript, HTTP, REST API, dan framework berbasis komponen.',
+  },
+  {
+    id: 3,
+    fullname: 'Basis Data',
+    shortname: 'IF2203',
+    category: 'Teknik Informatika',
+    summary: 'Konsep basis data relasional, pemodelan ER, normalisasi, dan SQL.',
+  },
+  {
+    id: 4,
+    fullname: 'Pemrograman Web (Kelas B)',
+    shortname: 'IF2105-B',
+    category: 'Teknik Informatika',
+    summary: 'Kelas paralel Pemrograman Web. Materi mingguan disiapkan dengan generator AI.',
+  },
+];

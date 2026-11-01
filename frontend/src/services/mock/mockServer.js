@@ -7,6 +7,7 @@
  */
 import {
   MOCK_USERS,
+  MOCK_MOODLE_COURSES,
   mockPassword,
   SAMPLE_TOPICS,
   buildPlanWeeks,
@@ -807,6 +808,10 @@ const handlers = {
       recent_events: course.events.slice(-50),
     });
   },
+
+  getMoodleStatus: () => ok(db.moodleStatus),
+
+  getMoodleCourses: () => ok({ courses: db.moodleCourses }),
 };
 
 // ---------------------------------------------------------------- routing
@@ -814,6 +819,8 @@ const handlers = {
 const ROUTES = [
   ['POST', '/auth/login', 'login', { public: true }],
   ['GET', '/auth/me', 'me', { anyRole: true }],
+  ['GET', '/integrations/moodle/status', 'getMoodleStatus', { anyRole: true }],
+  ['GET', '/integrations/moodle/courses', 'getMoodleCourses', { anyRole: true }],
   ['GET', '/rps', 'listRps'],
   ['POST', '/rps', 'uploadRps'],
   ['GET', '/rps/:rpsId', 'getRps'],
@@ -955,6 +962,12 @@ export function resetMockDb() {
     workflows: [],
     executions: {},
     verifications: {},
+    moodleCourses: [...MOCK_MOODLE_COURSES],
+    moodleStatus: {
+      status: 'CONNECTED',
+      moodle_url: 'http://localhost:8080',
+      message: 'Terhubung ke Moodle LMS ITK.',
+    },
     instructorSetup: {
       instructor_profile: {
         teaching_style: 'Interaktif dengan studi kasus dan praktikum',
@@ -1016,6 +1029,21 @@ export function resetMockDb() {
   pending.status = 'WAITING_PLAN_REVIEW';
   pending.stage = 'plan_review';
   emit(pending, 'PLANNING_COMPLETED', { version: 1 });
+
+  if (typeof window !== 'undefined') {
+    window.__setMoodleStatus = (status = 'CONNECTED', message = null) => {
+      db.moodleStatus.status = status;
+      if (message !== null) {
+        db.moodleStatus.message = message;
+      } else {
+        db.moodleStatus.message =
+          status === 'CONNECTED'
+            ? 'Terhubung ke Moodle LMS ITK.'
+            : 'Koneksi ke instance Moodle LMS ITK terputus.';
+      }
+      return db.moodleStatus;
+    };
+  }
 }
 
 resetMockDb();
