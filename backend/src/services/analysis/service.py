@@ -32,7 +32,7 @@ from src.services.llm import LLMService, OpenAIProvider
 logger = logging.getLogger(__name__)
 
 PROMPT_NAME = "rps_analysis"
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 MAX_ERROR_CHARS = 2000
 MAX_PREVIOUS_OUTPUT_CHARS = 6000
@@ -46,8 +46,8 @@ class RPSEvent(StrEnum):
     """Tahap analisis RPS. Nilainya sudah berupa teks manusiawi."""
 
     ANALYSIS_STARTED = "Memulai analisis"
-    YAML_PARSING = "Membaca struktur YAML"
-    YAML_PARSED = "YAML terbaca"
+    YAML_PARSING = "Membaca struktur RPS"
+    YAML_PARSED = "RPS terbaca"
     LLM_CALLING = "Mengirim ke model"
     LLM_RESPONDED = "Respons model diterima"
     VALIDATING = "Memvalidasi hasil"
@@ -88,15 +88,14 @@ def _default_max_fix_attempts() -> int:
 async def _emit(
     emit_event: EmitEvent | None,
     event_type: RPSEvent,
-    message: str,
     **data: Any,
 ) -> None:
     """Kirim event progres. Kegagalan emit tidak boleh menggagalkan analisis."""
-    logger.info("RPS analysis event=%s message=%s", event_type.value, message)
+    logger.info("RPS analysis event=%s", event_type.value)
     if emit_event is None:
         return
     try:
-        await emit_event(event_type=event_type, message=message, **data)
+        await emit_event(event_type=event_type, message=event_type.value, **data)
     except Exception:
         logger.exception("Gagal mengirim event %s", event_type.value)
 
@@ -117,27 +116,41 @@ async def _trace(record_trace: RecordTrace | None, **fields: Any) -> None:
 # Helper: YAML
 # --------------------------------------------------------------------------
 
-
 def _summarize_yaml(rps_yaml: str) -> str:
     """Parse YAML dan buat ringkasan struktur. Murni kode, tanpa LLM."""
     try:
         data = yaml.safe_load(rps_yaml)
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)
-        lokasi = f" (baris {mark.line + 1}, kolom {mark.column + 1})" if mark else ""
+        lokasi = (
+            f" (baris {mark.line + 1}, kolom {mark.column + 1})"
+            if mark else ""
+        )
         raise ValueError(f"Struktur YAML tidak valid{lokasi}.") from exc
 
     if not isinstance(data, dict):
-        raise ValueError("Struktur YAML tidak valid: isi harus berupa pasangan key-value.")
+        raise ValueError(
+            "Struktur YAML tidak valid: isi harus berupa pasangan key-value."
+        )
 
-    weeks = sum(
-        len(item.get("weeks") or [])
-        for item in (data.get("weekly_plan") or [])
-        if isinstance(item, dict)
+    cpmk_count = 1 if data.get("cpmk") else 0
+
+    sub_cpmk = data.get("sub_cpmk") or []
+    sub_cpmk_count = len(sub_cpmk) if isinstance(sub_cpmk, list) else 0
+
+    weekly_plan = data.get("weeks") or []
+    weeks = len(weekly_plan)
+
+    assessments = data.get("assessments") or []
+    assessment_count = (
+        len(assessments) if isinstance(assessments, list) else 0
     )
+
     return (
-        f"{weeks} minggu, {len(data.get('cpmk') or [])} CPMK, "
-        f"{len(data.get('assessments') or [])} komponen penilaian"
+        f"{weeks} minggu, "
+        f"{cpmk_count} CPMK, "
+        f"{sub_cpmk_count} Sub-CPMK, "
+        f"{assessment_count} komponen penilaian"
     )
 
 
@@ -219,12 +232,11 @@ async def analyze_rps(
 
     total = max_fix_attempts + 1
 
-    await _emit(emit_event, RPSEvent.ANALYSIS_STARTED, "Memulai analisis RPS")
+    await _emit(emit_event, RPSEvent.ANALYSIS_STARTED,)
 
     await _emit(
         emit_event,
         RPSEvent.YAML_PARSING,
-        "Membaca dan memeriksa struktur YAML",
     )
     try:
         summary = _summarize_yaml(rps_yaml)
@@ -237,7 +249,7 @@ async def analyze_rps(
             details=[],
         )
         raise
-    await _emit(emit_event, RPSEvent.YAML_PARSED, f"YAML terbaca: {summary}")
+    await _emit(emit_event, RPSEvent.YAML_PARSED,)
 
     provider = OpenAIProvider()
     service = LLMService(provider)
@@ -255,7 +267,6 @@ async def analyze_rps(
         await _emit(
             emit_event,
             RPSEvent.LLM_CALLING,
-            f"Mengirim RPS ke model (percobaan {attempt}/{total})",
             attempt=attempt,
         )
 
@@ -288,7 +299,6 @@ async def analyze_rps(
             await _emit(
                 emit_event,
                 RPSEvent.ANALYSIS_FAILED,
-                message,
                 attempt=attempt,
                 reason_code=code,
                 details=[],
@@ -304,7 +314,6 @@ async def analyze_rps(
         await _emit(
             emit_event,
             RPSEvent.LLM_RESPONDED,
-            "Respons model diterima",
             attempt=attempt,
             tokens_input=tokens_in,
             tokens_output=tokens_out,
@@ -315,7 +324,6 @@ async def analyze_rps(
         await _emit(
             emit_event,
             RPSEvent.VALIDATING,
-            "Memvalidasi hasil terhadap schema",
             attempt=attempt,
         )
 
@@ -355,7 +363,6 @@ async def analyze_rps(
             await _emit(
                 emit_event,
                 RPSEvent.ANALYSIS_COMPLETED,
-                "Analisis selesai",
                 attempt=attempt,
             )
             return rps_data
@@ -380,23 +387,22 @@ async def analyze_rps(
             await _emit(
                 emit_event,
                 RPSEvent.RETRY_FIX,
-                f"{message} Memperbaiki (percobaan {attempt}/{total}).",
                 attempt=attempt,
                 reason_code=code,
                 details=details,
             )
 
-    failure_message = f"Analisis RPS gagal setelah {total} percobaan."
+    # failure_message = f"Analisis RPS gagal setelah {total} percobaan."
     await _emit(
         emit_event,
         RPSEvent.ANALYSIS_FAILED,
-        failure_message,
+        # failure_message,
         attempt=total,
         reason_code=last_code,
         details=last_details,
     )
     raise RPSAnalysisError(
-        failure_message,
+        # failure_message,
         reason_code=last_code,
         details=last_details,
         attempts=total,
