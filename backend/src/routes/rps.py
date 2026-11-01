@@ -65,6 +65,7 @@ from src.services.dependencies import (
     get_rps_analysis_runner,
     get_rps_processing_runner,
     get_rps_service,
+    get_workflow_service,
     require_roles,
 )
 from src.services.rps.domain import RPSDocument
@@ -73,6 +74,11 @@ from src.services.rps.service import RPSService
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.validation import ID_LENGTH, SHORTUUID_PATTERN
+from src.services.workflow.orchestrator import (
+    RPS_ANALYSIS_STAGES,
+    RPS_PROCESSING_STAGES,
+)
+from src.services.workflow.service import WorkflowService
 
 router = APIRouter(prefix="/rps", tags=["RPS"])
 
@@ -100,6 +106,7 @@ def _to_detail(document: RPSDocument) -> RPSDetailResponse:
         created_at=document.created_at,
         updated_at=document.updated_at,
         has_source_document=bool(document.source_document),
+        workflow_id=document.workflow_id,
         processing_duration_ms=document.processing_duration_ms,
         processing_error_code=document.processing_error_code,
         processing_error_message=document.processing_error,
@@ -227,24 +234,45 @@ async def process_rps(
     background: BackgroundTasks,
     current_user: User = Depends(instructor_only),
     service: RPSService = Depends(get_rps_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
     runner: RPSProcessingRunner = Depends(get_rps_processing_runner),
     payload: RPSProcessRequest | None = None,
 ) -> RPSProcessResponse:
-    """Jadwalkan konversi dokumen RPS menjadi ``source_document`` (JSON Docling).
+    """Jadwalkan pemrosesan RPS dan buat workflow orkestrasinya (BE-11.2).
 
-    ``202`` + ``status: PROCESSING`` berarti konversi diterima dan berjalan di
-    background. ``200`` + ``reused: true`` berarti tidak ada yang dijadwalkan
-    karena dokumen sudah diproses untuk ``file_hash`` + ``schema_version`` yang
-    sama (idempotency BE-05).
+    ``202`` + ``status: PROCESSING`` berarti pemrosesan diterima dan berjalan di
+    background. Sejak BE-11.2 workflow melanjutkan konversi dengan tahap
+    analisis, sehingga client memantau sampai ``ANALYZED`` atau ``FAILED``.
+    ``200`` + ``reused: true`` berarti konversi tidak dijadwalkan karena dokumen
+    sudah diproses untuk ``file_hash`` + ``schema_version`` yang sama
+    (idempotency BE-05); analisis yang belum ada tetap dijalankan.
 
-    Kegagalan konversi tidak muncul pada response ini — tidak ada client yang
-    menunggu pekerjaan background. Hasilnya terlihat pada ``GET /rps/{id}``:
-    status ``FAILED``, dengan penyebab sebenarnya hanya tercatat server-side.
+    Workflow dibuat **sebelum** response dikirim agar ``workflow_id`` dapat
+    dipakai client untuk memantau event (BE-11.3). Kegagalan tahap apa pun tidak
+    muncul pada response ini — hasilnya terlihat pada status RPS dan workflow.
     """
     start = await service.begin_processing(
         rps_id=rps_id,
         owner_id=current_user.id,
         schema_version=payload.schema_version if payload is not None else None,
+    )
+
+    workflow = await workflow_service.create_for_rps(
+        owner_id=current_user.id,
+        rps_id=start.document.id or "",
+        total=len(RPS_PROCESSING_STAGES),
+    )
+    workflow_id = workflow.id or ""
+    await service.attach_workflow(
+        rps_id=start.document.id or "",
+        owner_id=current_user.id,
+        workflow_id=workflow_id,
+    )
+
+    background.add_task(
+        runner,
+        rps_id=start.document.id or "",
+        owner_id=current_user.id,
     )
 
     if start.reused:
@@ -254,18 +282,15 @@ async def process_rps(
             status=start.document.status,
             schema_version=start.document.schema_version,
             reused=True,
+            workflow_id=workflow_id,
         )
 
-    background.add_task(
-        runner,
-        rps_id=start.document.id or "",
-        owner_id=current_user.id,
-    )
     return RPSProcessResponse(
         rps_id=start.document.id or "",
         status=RPSStatus.PROCESSING,
         schema_version=start.document.schema_version,
         reused=False,
+        workflow_id=workflow_id,
     )
 
 
@@ -279,13 +304,16 @@ async def reanalyze_rps(
     background: BackgroundTasks,
     current_user: User = Depends(instructor_only),
     service: RPSService = Depends(get_rps_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
     runner: RPSAnalysisRunner = Depends(get_rps_analysis_runner),
 ) -> RPSReanalyzeResponse:
-    """Jadwalkan analisis ulang RPS dari ``source_document`` (design-api §6.6).
+    """Jadwalkan analisis ulang pada workflow yang sama (design-api §6.6).
 
     ``202`` + status ``ANALYZING`` berarti analisis diterima dan berjalan di
     background; Docling **tidak** dijalankan lagi karena inputnya YAML yang
-    dibentuk dari JSON konversi yang tersimpan. Client memantau
+    dibentuk dari JSON konversi yang tersimpan. ``workflow_id`` yang dikembalikan
+    adalah workflow yang sama dengan pemrosesan sebelumnya (issue BE-11.2), jadi
+    event baru ditambahkan ke riwayat workflow tersebut. Client memantau
     ``GET /rps/{id}`` sampai ``ANALYZED`` atau ``FAILED``, lalu membaca hasilnya
     lewat ``GET /rps/{id}/analysis``.
 
@@ -294,10 +322,20 @@ async def reanalyze_rps(
     INVALID_REQUEST``. Hanya dosen pemilik RPS yang boleh meminta — dokumen
     milik dosen lain menghasilkan 404 yang sama seperti dokumen tidak ada.
     """
+    document = await service.get_rps(rps_id=rps_id, owner_id=current_user.id)
     start = await service.begin_analysis(
         rps_id=rps_id,
         owner_id=current_user.id,
         force=True,
+        # Workflow yang sama dengan pemrosesan sebelumnya; dokumen lama yang
+        # belum punya baris workflow mendapat id baru yang langsung dibentuk.
+        workflow_id=document.workflow_id or workflow_service.new_id(),
+    )
+    await workflow_service.ensure_for_rps(
+        owner_id=current_user.id,
+        rps_id=start.document.id or "",
+        workflow_id=start.workflow_id,
+        total=len(RPS_ANALYSIS_STAGES),
     )
     background.add_task(
         runner,

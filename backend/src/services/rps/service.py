@@ -12,6 +12,8 @@ Operasi yang disediakan:
   berkas asli, lalu catat dokumennya (BE-05.1);
 - :meth:`RPSService.begin_processing` — bagian pemrosesan yang dijalankan **saat
   request**: periksa idempotency lalu tandai dokumen ``PROCESSING``;
+- :meth:`RPSService.attach_workflow` — tautkan dokumen ke workflow orkestrasi
+  (BE-11.2) sebelum pekerjaan background dijadwalkan;
 - :meth:`RPSService.convert` — konversi dokumen yang sudah ``PROCESSING``
   (dijalankan di luar siklus request; lihat :mod:`src.services.rps.runner`);
 - :meth:`RPSService.process_rps` — jalur lengkap keduanya, dipakai pemanggil
@@ -56,7 +58,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.settings import get_settings
 from src.schemas.rps_structured import RPS_SCHEMA_VERSION, RPSStructuredData
-from src.services.rps.analyzer import RPSAnalyzer, analyze_document
+from src.services.rps.analyzer import EmitEvent, RPSAnalyzer, analyze_document
 from src.services.rps.converter import (
     DocumentConversion,
     DocumentConverter,
@@ -291,6 +293,21 @@ class RPSService:
         persisted = await self._persist(document)
         return RPSProcessStart(document=persisted, reused=False)
 
+    async def attach_workflow(
+        self, *, rps_id: str, owner_id: str, workflow_id: str
+    ) -> RPSDocument:
+        """Tautkan dokumen RPS ke workflow yang menjalankan pemrosesannya.
+
+        BE-11.2 membuat workflow saat request ``POST /rps/{id}/process`` dan
+        menautkannya sebelum orkestrator dijadwalkan, sehingga ``GET /rps/{id}``
+        dan daftar RPS menampilkan ``workflow_id`` sejak awal. Kolom yang sama
+        dipakai analisis (BE-08.2), jadi reanalyze tetap menunjuk workflow yang
+        sama.
+        """
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+        document.link_workflow(workflow_id)
+        return await self._persist(document)
+
     async def convert(self, *, rps_id: str, owner_id: str) -> RPSConversionResult:
         """Konversi dokumen yang sudah berstatus ``PROCESSING``.
 
@@ -460,13 +477,24 @@ class RPSService:
         document.fail_analysis(error_code=error_code, reason=reason)
         return await self._persist(document)
 
-    async def analyze(self, *, rps_id: str, owner_id: str) -> RPSDocument:
+    async def analyze(
+        self,
+        *,
+        rps_id: str,
+        owner_id: str,
+        emit_event: EmitEvent | None = None,
+    ) -> RPSDocument:
         """Jalankan analisis dokumen ``ANALYZING`` dari ``source_document``.
 
         Dipanggil di luar siklus request (lihat
-        :func:`src.services.rps.analysis_runner.run_rps_analysis`). YAML dibentuk
-        dari JSON Docling yang sudah tersimpan (BE-08.1), sehingga Docling tidak
-        dijalankan lagi — acceptance criteria "reanalyze tanpa Docling".
+        :func:`src.services.rps.analysis_runner.run_rps_analysis` dan orkestrator
+        workflow BE-11.2). YAML dibentuk dari JSON Docling yang sudah tersimpan
+        (BE-08.1), sehingga Docling tidak dijalankan lagi — acceptance criteria
+        "reanalyze tanpa Docling".
+
+        ``emit_event`` diteruskan ke analyzer (BE-09.2) supaya aktivitas agent
+        dan retry tercatat sebagai event workflow (BE-11.2). Pemanggil non-HTTP
+        yang tidak membutuhkannya boleh mengosongkannya.
 
         Kegagalan apa pun berakhir sebagai status ``FAILED`` beserta kode dan
         alasan publik pada dokumen, bukan sebagai exception yang menggantung di
@@ -485,9 +513,11 @@ class RPSService:
                     "source_document", "RPS harus diproses sebelum dianalisis"
                 )
             rps_yaml = document_to_yaml(document.source_document)
-            structured = self._validated_structured_data(
-                await self._analyzer(rps_yaml)
-            )
+            if emit_event is None:
+                analyzed = await self._analyzer(rps_yaml)
+            else:
+                analyzed = await self._analyzer(rps_yaml, emit_event=emit_event)
+            structured = self._validated_structured_data(analyzed)
             if not structured.has_academic_content():
                 raise RPSAnalysisFailedError(
                     "hasil analisis tidak memuat informasi akademik",
