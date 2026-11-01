@@ -1,9 +1,6 @@
-import { Alert, Badge } from '../ui';
-
 /**
  * Banner status koneksi ke Moodle LMS (FE-09.1).
- * Menampilkan indikator status koneksi backend ke instance Moodle dan penanganan gracefully
- * jika Moodle tidak dapat dijangkau tanpa merusak tampilan halaman.
+ * Menampilkan indikator status koneksi backend ke instance Moodle.
  */
 export default function MoodleConnectionBanner({
   status,
@@ -41,7 +38,6 @@ export default function MoodleConnectionBanner({
     );
   }
 
-  // DISCONNECTED atau terjadi Error
   return (
     <div
       className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"

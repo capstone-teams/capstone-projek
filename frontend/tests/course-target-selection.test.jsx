@@ -5,18 +5,31 @@ import MoodleConnectionBanner from '../src/components/moodle/MoodleConnectionBan
 import CourseTargetCard from '../src/components/ai/course/CourseTargetCard';
 import CourseTargetSelectionPage from '../src/pages/dosen/ai/CourseTargetSelectionPage';
 
-// Mock service dan hook useCourse
 const moodleService = vi.hoisted(() => ({
   getMoodleStatus: vi.fn(),
   getMoodleCourses: vi.fn(),
 }));
 
+const workflowService = vi.hoisted(() => ({
+  listWorkflows: vi.fn(),
+  getWorkflow: vi.fn(),
+  setWorkflowMoodleTarget: vi.fn(),
+  getWorkflowEvents: vi.fn(),
+}));
+
+const rpsService = vi.hoisted(() => ({
+  getRps: vi.fn(),
+  listRps: vi.fn(),
+}));
+
 const courseContext = vi.hoisted(() => ({
-  course: { id: 'course_001', moodle_course_id: '2', name: 'Pemrograman Web', code: 'IF2105' },
+  course: { id: 'course_001', workflow_id: 'workflow_001', moodle_course_id: '2', name: 'Pemrograman Web', code: 'IF2105', rps_id: 'rps_001' },
   refresh: vi.fn(),
 }));
 
 vi.mock('../src/services/moodleIntegrationService', () => moodleService);
+vi.mock('../src/services/workflowService', () => workflowService);
+vi.mock('../src/services/rpsService', () => rpsService);
 vi.mock('../src/hooks/useCourse', () => ({ useCourse: () => courseContext }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -45,12 +58,46 @@ const SAMPLE_COURSES = [
   },
 ];
 
+const SAMPLE_WORKFLOW = {
+  id: 'workflow_001',
+  status: 'COMPLETED',
+  stage: 'FINAL_REVIEW',
+  progress: { completed: 4, total: 4 },
+  rps_id: 'rps_001',
+  moodle_course_id: 2,
+  created_at: '2026-11-01T00:00:00Z',
+  updated_at: '2026-11-01T00:00:00Z',
+};
+
 let node;
 let root;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  courseContext.course = { id: 'course_001', moodle_course_id: '2', name: 'Pemrograman Web', code: 'IF2105' };
+  courseContext.course = { id: 'course_001', workflow_id: 'workflow_001', moodle_course_id: '2', name: 'Pemrograman Web', code: 'IF2105', rps_id: 'rps_001' };
+  courseContext.refresh.mockReset();
+
+  moodleService.getMoodleStatus.mockResolvedValue({
+    status: 'CONNECTED',
+    moodle_url: 'http://localhost:8080',
+    message: 'Terhubung ke Moodle LMS ITK.',
+  });
+  moodleService.getMoodleCourses.mockResolvedValue({
+    courses: SAMPLE_COURSES,
+  });
+  workflowService.listWorkflows.mockResolvedValue({
+    items: [SAMPLE_WORKFLOW],
+  });
+  workflowService.getWorkflow.mockResolvedValue(SAMPLE_WORKFLOW);
+  workflowService.setWorkflowMoodleTarget.mockImplementation(async (id, moodleId) => {
+    return { id, moodle_course_id: moodleId };
+  });
+  rpsService.getRps.mockResolvedValue({
+    id: 'rps_001',
+    filename: 'RPS_Pemrograman_Web.pdf',
+    workflow_id: 'workflow_001',
+  });
+
   node = document.createElement('div');
   document.body.appendChild(node);
 });
@@ -154,37 +201,22 @@ describe('FE-09.1 CourseTargetCard', () => {
   });
 });
 
-describe('FE-09.1 CourseTargetSelectionPage', () => {
-  it('loads status and courses list and renders them into the grid', async () => {
-    moodleService.getMoodleStatus.mockResolvedValue({
-      status: 'CONNECTED',
-      moodle_url: 'http://localhost:8080',
-      message: 'Terhubung ke Moodle LMS ITK.',
-    });
-    moodleService.getMoodleCourses.mockResolvedValue({
-      courses: SAMPLE_COURSES,
-    });
-
+describe('FE-09.2 CourseTargetSelectionPage (Workflow Integration & Modal Confirmation)', () => {
+  it('loads status, courses, and marks saved target from GET /api/v1/workflows/{id}', async () => {
     await renderComponent(<CourseTargetSelectionPage />);
 
     expect(node.textContent).toContain('Pilih Target Course Moodle');
     expect(node.textContent).toContain('Moodle LMS Terhubung');
-    expect(node.textContent).toContain('Pemrograman Web');
-    expect(node.textContent).toContain('Basis Data');
-    expect(node.textContent).toContain('Pemrograman Web (Kelas B)');
-    expect(node.textContent).toContain('Menampilkan 3 dari 3 kursus');
+    expect(workflowService.getWorkflow).toHaveBeenCalledWith('workflow_001');
+    expect(node.textContent).toContain('Target Terpilih');
   });
 
   it('filters courses by search query and resets search', async () => {
-    moodleService.getMoodleStatus.mockResolvedValue({ status: 'CONNECTED', moodle_url: 'http://localhost:8080' });
-    moodleService.getMoodleCourses.mockResolvedValue({ courses: SAMPLE_COURSES });
-
     await renderComponent(<CourseTargetSelectionPage />);
 
     const searchInput = node.querySelector('input[type="text"]');
     expect(searchInput).not.toBeNull();
 
-    // Cari "Basis"
     await act(async () => {
       typeInput(searchInput, 'Basis');
     });
@@ -193,7 +225,6 @@ describe('FE-09.1 CourseTargetSelectionPage', () => {
     expect(node.textContent).not.toContain('Pemrograman Web (Kelas B)');
     expect(node.textContent).toContain('Menampilkan 1 dari 3 kursus');
 
-    // Cari string yang tidak ada
     await act(async () => {
       typeInput(searchInput, 'Kalkulus');
     });
@@ -201,7 +232,6 @@ describe('FE-09.1 CourseTargetSelectionPage', () => {
     expect(node.textContent).toContain('Kursus tidak ditemukan');
     expect(node.textContent).toContain('Reset Pencarian');
 
-    // Klik tombol reset pencarian
     const resetBtn = Array.from(node.querySelectorAll('button')).find((b) =>
       b.textContent.includes('Reset Pencarian')
     );
@@ -212,16 +242,9 @@ describe('FE-09.1 CourseTargetSelectionPage', () => {
     expect(node.textContent).toContain('Menampilkan 3 dari 3 kursus');
   });
 
-  it('allows user to select a course target and updates selected status and feedback message', async () => {
-    moodleService.getMoodleStatus.mockResolvedValue({ status: 'CONNECTED', moodle_url: 'http://localhost:8080' });
-    moodleService.getMoodleCourses.mockResolvedValue({ courses: SAMPLE_COURSES });
-
+  it('opens confirmation modal dialog when user clicks "Pilih Course Target"', async () => {
     await renderComponent(<CourseTargetSelectionPage />);
 
-    // Awalnya course ID 2 adalah terpilih dari context
-    expect(node.textContent).toContain('Target Terpilih');
-
-    // Cari tombol "Pilih Course Target" untuk Basis Data (ID: 3)
     const selectButtons = Array.from(node.querySelectorAll('button')).filter((b) =>
       b.textContent.includes('Pilih Course Target')
     );
@@ -231,12 +254,76 @@ describe('FE-09.1 CourseTargetSelectionPage', () => {
       selectButtons[0].click();
     });
 
-    // Cek pesan sukses dan status terpilih berpindah
-    expect(node.textContent).toContain('dipilih sebagai target sinkronisasi Moodle');
+    expect(node.textContent).toContain('Konfirmasi Target Course Moodle');
+    expect(node.textContent).toContain('Basis Data');
+    expect(node.textContent).toContain('IF2203');
+    expect(node.textContent).toContain('Konfirmasi & Simpan');
+    expect(node.textContent).toContain('Batal');
+
+    expect(workflowService.setWorkflowMoodleTarget).not.toHaveBeenCalled();
+  });
+
+  it('cancels confirmation modal when Batal is clicked without calling API', async () => {
+    await renderComponent(<CourseTargetSelectionPage />);
+
+    const selectButtons = Array.from(node.querySelectorAll('button')).filter((b) =>
+      b.textContent.includes('Pilih Course Target')
+    );
+    await act(async () => {
+      selectButtons[0].click();
+    });
+
+    expect(node.textContent).toContain('Konfirmasi Target Course Moodle');
+
+    const cancelBtn = Array.from(node.querySelectorAll('dialog button, .btn--ghost')).find((b) =>
+      b.textContent.trim() === 'Batal'
+    );
+    expect(cancelBtn).not.toBeNull();
+
+    await act(async () => {
+      cancelBtn.click();
+    });
+
+    expect(workflowService.setWorkflowMoodleTarget).not.toHaveBeenCalled();
+  });
+
+  it('calls setWorkflowMoodleTarget and persists target when Konfirmasi & Simpan is clicked', async () => {
+    await renderComponent(<CourseTargetSelectionPage />);
+
+    const selectButtons = Array.from(node.querySelectorAll('button')).filter((b) =>
+      b.textContent.includes('Pilih Course Target')
+    );
+    await act(async () => {
+      selectButtons[0].click();
+    });
+
+    const confirmBtn = Array.from(node.querySelectorAll('button')).find((b) =>
+      b.textContent.includes('Konfirmasi & Simpan')
+    );
+    expect(confirmBtn).not.toBeNull();
+
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    expect(workflowService.setWorkflowMoodleTarget).toHaveBeenCalledWith('workflow_001', 3);
+    expect(node.textContent).toContain('berhasil disimpan sebagai target Moodle');
+  });
+
+  it('displays warning and disables course target selection when workflow is not active', async () => {
+    courseContext.course = { id: 'course_002', workflow_id: null, rps_id: null, name: 'Kalkulus' };
+    workflowService.listWorkflows.mockResolvedValue({ items: [] });
+    await renderComponent(<CourseTargetSelectionPage />);
+
+    expect(node.textContent).toContain('Dokumen RPS belum selesai dianalisis');
+
+    const selectButtons = Array.from(node.querySelectorAll('button')).filter((b) =>
+      b.textContent.includes('Pilih Course Target')
+    );
+    expect(selectButtons.every((b) => b.disabled)).toBe(true);
   });
 
   it('handles empty courses list from Moodle', async () => {
-    moodleService.getMoodleStatus.mockResolvedValue({ status: 'CONNECTED', moodle_url: 'http://localhost:8080' });
     moodleService.getMoodleCourses.mockResolvedValue({ courses: [] });
 
     await renderComponent(<CourseTargetSelectionPage />);

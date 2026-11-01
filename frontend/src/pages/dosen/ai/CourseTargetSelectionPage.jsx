@@ -1,25 +1,33 @@
 import { useMemo, useState } from 'react';
 import { useCourse } from '../../../hooks/useCourse';
 import { getMoodleCourses, getMoodleStatus } from '../../../services/moodleIntegrationService';
-import { useApi } from '../../../hooks/useApi';
-import { Alert, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
+import { getWorkflow, listWorkflows, setWorkflowMoodleTarget } from '../../../services/workflowService';
+import { getRps } from '../../../services/rpsService';
+import { useAction, useApi } from '../../../hooks/useApi';
+import {
+  Alert,
+  Card,
+  EmptyState,
+  ErrorAlert,
+  Modal,
+  Spinner,
+} from '../../../components/ui';
 import MoodleConnectionBanner from '../../../components/moodle/MoodleConnectionBanner';
 import CourseTargetCard from '../../../components/ai/course/CourseTargetCard';
 
 /**
- * Halaman Pemilihan Target Course Moodle (FE-09.1).
- * Memungkinkan dosen pengampu memilih kursus di Moodle LMS yang menjadi target
- * pengiriman materi, aktivitas, dan struktur mingguan yang dihasilkan AI.
+ * Halaman Pemilihan Target Course Moodle.
+ * Menghubungkan kursus target Moodle dengan alur kerja aktif di backend.
  */
 export default function CourseTargetSelectionPage() {
-  const { course } = useCourse();
+  const courseContext = useCourse?.() ?? {};
+  const { course, refresh } = courseContext;
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCourseId, setSelectedCourseId] = useState(
-    course?.moodle_course_id ? String(course.moodle_course_id) : ''
-  );
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [pendingTargetCourse, setPendingTargetCourse] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  // Ambil status koneksi Moodle dan daftar kursus dari Backend Integration Gateway
   const {
     data: statusData,
     loading: statusLoading,
@@ -34,14 +42,62 @@ export default function CourseTargetSelectionPage() {
     reload: reloadCourses,
   } = useApi(getMoodleCourses, []);
 
+  const {
+    data: rpsData,
+    loading: rpsLoading,
+  } = useApi(async () => {
+    if (!course?.rps_id) return null;
+    return getRps(course.rps_id);
+  }, [course?.rps_id]);
+
+  const {
+    data: workflowsData,
+    loading: workflowsLoading,
+  } = useApi(async () => {
+    if (course?.workflow_id) return null;
+    return listWorkflows();
+  }, [course?.workflow_id]);
+
+  const activeWorkflowId = useMemo(() => {
+    if (course?.workflow_id) return course.workflow_id;
+    if (rpsData?.workflow_id) return rpsData.workflow_id;
+    if (workflowsData?.items?.length) return workflowsData.items[0].id;
+    return null;
+  }, [course?.workflow_id, rpsData?.workflow_id, workflowsData]);
+
+  const {
+    data: workflowDetail,
+    loading: workflowDetailLoading,
+    error: workflowDetailError,
+    reload: reloadWorkflowDetail,
+  } = useApi(async () => {
+    if (!activeWorkflowId) return null;
+    return getWorkflow(activeWorkflowId);
+  }, [activeWorkflowId]);
+
+  const savedMoodleCourseId = useMemo(() => {
+    if (workflowDetail?.moodle_course_id != null) {
+      return String(workflowDetail.moodle_course_id);
+    }
+    if (course?.workflow_id === activeWorkflowId && course?.moodle_course_id != null) {
+      return String(course.moodle_course_id);
+    }
+    return '';
+  }, [workflowDetail, activeWorkflowId, course]);
+
+  const saveTargetAction = useAction(
+    (wfId, moodleId) => setWorkflowMoodleTarget(wfId, moodleId),
+    { loadingLabel: 'Menyimpan target kursus Moodle…' }
+  );
+
   const handleRetryAll = () => {
     reloadStatus();
     reloadCourses();
+    if (activeWorkflowId) reloadWorkflowDetail();
   };
 
   const courses = useMemo(() => coursesData?.courses ?? [], [coursesData]);
 
-  // Filter kursus berdasarkan fullname atau shortname
   const filteredCourses = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return courses;
@@ -53,22 +109,42 @@ export default function CourseTargetSelectionPage() {
     );
   }, [courses, searchQuery]);
 
-  const handleSelectCourse = (targetCourse) => {
-    setSelectedCourseId(String(targetCourse.id));
-    setSuccessMessage(
-      `Kursus "${targetCourse.shortname} — ${targetCourse.fullname}" (ID: ${targetCourse.id}) dipilih sebagai target sinkronisasi Moodle.`
-    );
+  const handleRequestSelectCourse = (targetCourse) => {
+    setPendingTargetCourse(targetCourse);
+    setIsConfirmModalOpen(true);
   };
+
+  const handleCancelModal = () => {
+    setIsConfirmModalOpen(false);
+    setPendingTargetCourse(null);
+  };
+
+  const handleConfirmTarget = async () => {
+    if (!activeWorkflowId || !pendingTargetCourse) return;
+    try {
+      await saveTargetAction.run(activeWorkflowId, pendingTargetCourse.id);
+      setSuccessMessage(
+        `Kursus "${pendingTargetCourse.shortname} — ${pendingTargetCourse.fullname}" (ID: ${pendingTargetCourse.id}) berhasil disimpan sebagai target Moodle.`
+      );
+      setIsConfirmModalOpen(false);
+      setPendingTargetCourse(null);
+      await reloadWorkflowDetail({ silent: true });
+      refresh?.();
+    } catch {
+      // Error tercatat otomatis oleh saveTargetAction.error
+    }
+  };
+
+  const isWorkflowChecking = workflowDetailLoading || rpsLoading || workflowsLoading;
 
   return (
     <div className="stack">
       <Card title="Pilih Target Course Moodle">
         <p className="mb-4 text-sm text-muted">
           Pilih kursus di Moodle LMS ITK yang menjadi tujuan publikasi konten dan aktivitas pembelajaran.
-          Hasil rancangan generator AI akan disinkronisasikan ke kursus target ini.
+          Hasil rancangan generator AI akan disinkronisasikan ke kursus target yang Anda pilih.
         </p>
 
-        {/* Banner Status Koneksi Moodle */}
         <MoodleConnectionBanner
           status={statusData?.status}
           moodleUrl={statusData?.moodle_url}
@@ -78,15 +154,22 @@ export default function CourseTargetSelectionPage() {
           onRetry={handleRetryAll}
         />
 
+        {!isWorkflowChecking && !activeWorkflowId && (
+          <div className="my-3 rounded-lg border border-warning/40 bg-warning-light p-3 text-sm text-warning">
+            <strong>Dokumen RPS belum selesai dianalisis.</strong> Silakan selesaikan analisis RPS terlebih dahulu di tab <strong>RPS</strong> agar target kursus dapat dikaitkan.
+          </div>
+        )}
+
         {successMessage && (
           <Alert tone="success" onClose={() => setSuccessMessage(null)}>
             {successMessage}
           </Alert>
         )}
 
+        <ErrorAlert error={workflowDetailError} onClose={reloadWorkflowDetail} />
+        <ErrorAlert error={saveTargetAction.error} onClose={saveTargetAction.clearError} />
         <ErrorAlert error={coursesError} onClose={reloadCourses} />
 
-        {/* Input Pencarian */}
         <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-3">
           <div className="relative w-full max-w-md">
             <input
@@ -113,7 +196,6 @@ export default function CourseTargetSelectionPage() {
           </span>
         </div>
 
-        {/* Grid Kursus */}
         {coursesLoading ? (
           <Spinner label="Memuat daftar kursus dari Moodle…" />
         ) : courses.length === 0 ? (
@@ -148,13 +230,71 @@ export default function CourseTargetSelectionPage() {
               <CourseTargetCard
                 key={c.id}
                 course={c}
-                isSelected={String(c.id) === String(selectedCourseId)}
-                onSelect={handleSelectCourse}
+                isSelected={Boolean(savedMoodleCourseId && String(c.id) === String(savedMoodleCourseId))}
+                onSelect={handleRequestSelectCourse}
+                disabled={!activeWorkflowId || saveTargetAction.pending}
               />
             ))}
           </div>
         )}
       </Card>
+
+      <Modal
+        open={isConfirmModalOpen}
+        title="Konfirmasi Target Course Moodle"
+        onClose={handleCancelModal}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={handleCancelModal}
+              disabled={saveTargetAction.pending}
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={saveTargetAction.pending}
+              onClick={handleConfirmTarget}
+            >
+              {saveTargetAction.pending ? 'Menyimpan…' : 'Konfirmasi & Simpan'}
+            </button>
+          </>
+        }
+      >
+        {pendingTargetCourse && (
+          <div className="space-y-4 text-sm text-ink">
+            <p>
+              Apakah Anda yakin ingin menetapkan kursus Moodle berikut sebagai target publikasi untuk mata kuliah{' '}
+              <strong>{course?.name || 'ini'}</strong>?
+            </p>
+
+            <div className="rounded-lg border border-line bg-surface-subtle p-3.5 space-y-2">
+              <div className="text-base font-bold text-primary">
+                {pendingTargetCourse.fullname}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span>Kode: <strong>{pendingTargetCourse.shortname}</strong></span>
+                <span>•</span>
+                <span>Moodle ID: <strong>{pendingTargetCourse.id}</strong></span>
+                {pendingTargetCourse.category && (
+                  <>
+                    <span>•</span>
+                    <span>Kategori: <strong>{pendingTargetCourse.category}</strong></span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <p className="text-xs leading-relaxed text-muted">
+              Materi pembelajaran, tugas, kuis, dan struktur modul mingguan yang dihasilkan generator AI
+              akan dikirimkan dan disinkronisasikan ke kursus Moodle di atas setelah disetujui.
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

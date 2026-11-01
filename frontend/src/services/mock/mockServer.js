@@ -812,6 +812,26 @@ const handlers = {
   getMoodleStatus: () => ok(db.moodleStatus),
 
   getMoodleCourses: () => ok({ courses: db.moodleCourses }),
+
+  listWorkflows: () => ok({ items: db.workflows }),
+
+  getWorkflow({ workflowId }) {
+    const wf = db.workflows.find((w) => w.id === workflowId);
+    return wf ? ok(wf) : notFound('Workflow');
+  },
+
+  updateWorkflowMoodleTarget({ workflowId }, { body }) {
+    const wf = db.workflows.find((w) => w.id === workflowId);
+    if (!wf) return notFound('Workflow');
+    wf.moodle_course_id = body?.moodle_course_id == null ? null : Number(body.moodle_course_id);
+    wf.updated_at = now();
+    return ok(wf);
+  },
+
+  listWorkflowEvents({ workflowId }) {
+    const wf = db.workflows.find((w) => w.id === workflowId);
+    return wf ? ok({ items: wf.events ?? [] }) : notFound('Workflow');
+  },
 };
 
 // ---------------------------------------------------------------- routing
@@ -821,6 +841,10 @@ const ROUTES = [
   ['GET', '/auth/me', 'me', { anyRole: true }],
   ['GET', '/integrations/moodle/status', 'getMoodleStatus', { anyRole: true }],
   ['GET', '/integrations/moodle/courses', 'getMoodleCourses', { anyRole: true }],
+  ['GET', '/workflows', 'listWorkflows', { anyRole: true }],
+  ['GET', '/workflows/:workflowId', 'getWorkflow', { anyRole: true }],
+  ['PUT', '/workflows/:workflowId/moodle-target', 'updateWorkflowMoodleTarget', { anyRole: true }],
+  ['GET', '/workflows/:workflowId/events', 'listWorkflowEvents', { anyRole: true }],
   ['GET', '/rps', 'listRps'],
   ['POST', '/rps', 'uploadRps'],
   ['GET', '/rps/:rpsId', 'getRps'],
@@ -931,6 +955,7 @@ function newCourse({ rps, moodle_course_id, additional_prompt, activity_configur
     name: rps.analysis.course.name,
     code: rps.analysis.course.code,
     moodle_course_id,
+    workflow_id: rps?.workflow_id ?? null,
     additional_prompt,
     activity_configuration,
     status: 'CREATED',
@@ -1002,6 +1027,19 @@ export function resetMockDb() {
   rps.analysis = buildRpsAnalysis(rps.id);
   db.profile = db.instructorSetup;
   db.rps.push(rps);
+
+  const initialWorkflow = {
+    id: 'workflow_001',
+    status: 'COMPLETED',
+    stage: 'rps_analysis',
+    progress: { completed: 2, total: 2 },
+    rps_id: rps.id,
+    moodle_course_id: 2,
+    events: [],
+    created_at: now(),
+    updated_at: now(),
+  };
+  db.workflows.push(initialWorkflow);
 
   // Course selesai, untuk contoh tampilan akhir.
   const done = newCourse({
