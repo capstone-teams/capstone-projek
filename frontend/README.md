@@ -15,20 +15,13 @@ npm run dev
 ```
 
 Buka http://localhost:3000. Port tidak berganti otomatis; restart Vite setelah
-perubahan dependency atau environment. Mode default menggunakan dua mock di
-browser sehingga tidak memerlukan backend atau server Moodle.
+perubahan dependency atau environment.
 
-Kata sandi akun mock selalu `<username>123`. Akun yang sama tersedia di mock
-backend dan mock Moodle; kolom Username juga menerima email akun.
-
-| Akun mock | Kata sandi | Nama | Role backend |
-| --- | --- | --- | --- |
-| dosen.demo | dosen.demo123 | Dosen Demo (akun uji BE-06.3) | INSTRUCTOR |
-| 11231023 | 11231023123 | Mahasiswa Demo (akun uji BE-06.3) | STUDENT |
-| dosen | dosen123 | Rina Kartika | INSTRUCTOR |
-| mahasiswa | mahasiswa123 | Andi Saputra | STUDENT |
-
-Akun lain: dosen2, mahasiswa2, dan mahasiswa3.
+Login selalu memakai backend nyata (`VITE_USE_MOCK` default `false`). Atur alamatnya
+lewat `VITE_BACKEND_URL` di `.env.local`; akun uji dibuat dengan seed backend dan kata
+sandinya tidak disimpan di repository. Data kursus masih dari mock Moodle
+(`VITE_MOODLE_MOCK=true`), jadi username backend harus ada di fixture tersebut, yaitu
+`dosen.demo` dan `11231023`. Mock backend hanya dipakai test.
 
 Fixture kursus mencakup Pemrograman Web (kelas A dan B) dan Basis Data. Workflow backend mock
 berjalan di memori: navigasi client mempertahankan perubahan, full reload
@@ -43,7 +36,7 @@ Salin `.env.example` ke `.env.local` dan sesuaikan:
 | VITE_MOODLE_MOCK | true | false memakai Web Service Moodle nyata |
 | VITE_MOODLE_URL | http://localhost:8080 | Instance Moodle untuk Web Service (bukan tautan keluar) |
 | VITE_MOODLE_SERVICE | moodle_mobile_app | Service login/token.php |
-| VITE_USE_MOCK | true | false memakai backend capstone nyata |
+| VITE_USE_MOCK | false | true memakai mock backend di browser (untuk test) |
 | VITE_API_BASE_URL | /api/v1 | Prefix API backend; `/api/v1` memakai proxy, URL absolut memanggil backend langsung |
 | VITE_BACKEND_URL | http://localhost:8000 | Tujuan proxy Vite untuk /api |
 
@@ -139,7 +132,7 @@ Pada backend nyata, akun uji dibuat dengan
 [backend/README.md](../backend/README.md)); kata sandinya tidak disimpan di
 repository. Bila `VITE_MOODLE_MOCK=false`, akun yang sama harus ada di Moodle.
 Backend belum menyediakan endpoint course/plan/konten, sehingga
-`VITE_USE_MOCK=false` membuat tab Generator AI gagal (404).
+Generator AI memakai `/workflows` selama API `/courses` belum tersedia.
 
 Halaman /forgot-password hanya menampilkan pemberitahuan "belum tersedia" karena
 backend belum punya endpoint pemulihan; formulir tidak dikirim ke Moodle.

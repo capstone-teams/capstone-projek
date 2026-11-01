@@ -13,8 +13,8 @@ export const USE_MOODLE_MOCK = (import.meta.env.VITE_MOODLE_MOCK ?? 'true') !== 
 // ---- Backend capstone (fitur Generator Konten AI untuk dosen)
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
-// Default true supaya fitur AI bisa dicoba tanpa backend.
-export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? 'true') !== 'false';
+// Default backend nyata; mock hanya bila VITE_USE_MOCK=true (dipakai test).
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 // API /courses (rencana, konten, review, publikasi) belum ada di backend; baru tersedia di mock.
 export const COURSE_API_AVAILABLE = USE_MOCK;

@@ -145,6 +145,11 @@ function publicRps(r) {
   };
 }
 
+// Bentuk GET/PUT /instructors/me/setup (design-api §7).
+function publicSetup({ additional_prompt, activity_configuration, updated_at, ...instructor_profile }) {
+  return { instructor_profile, additional_prompt, activity_configuration, updated_at };
+}
+
 // Bentuk item GET /workflows (design-api §16.1).
 function publicWorkflow(w) {
   return { id: w.id, status: w.status, stage: w.stage, progress: w.progress, rps_id: w.rps_id, created_at: w.created_at, updated_at: w.created_at };
@@ -450,10 +455,11 @@ const handlers = {
     return ok({ rps_id: rps.id, analyzed_at: rps.updated_at ?? rps.created_at, data: buildRpsStructuredData({ incomplete }) });
   },
 
-  // Instructor profile
-  getProfile: () => ok(db.profile),
+  // design-api 7: instructor setup.
+  getProfile: () => ok(publicSetup(db.profile)),
 
-  updateProfile(_p, { body }) {
+  updateProfile(_p, { body: setup }) {
+    const body = { ...setup?.instructor_profile, additional_prompt: setup?.additional_prompt, activity_configuration: setup?.activity_configuration };
     const textFields = ['teaching_style', 'expertise', 'delivery_preference', 'language_preference', 'content_preference', 'additional_prompt'];
     const invalid = textFields.filter((f) => body?.[f] != null && typeof body[f] !== 'string');
     if (invalid.length) return fail(422, 'INVALID_REQUEST', 'Field profil harus berupa teks.', invalid);
@@ -476,7 +482,7 @@ const handlers = {
       db.profile.activity_configuration = mergedConfig;
     }
     db.profile.updated_at = now();
-    return ok(db.profile);
+    return ok(publicSetup(db.profile));
   },
 
   // Course
@@ -785,8 +791,8 @@ const ROUTES = [
   ['GET', '/workflows/:workflowId', 'getWorkflow'],
   ['GET', '/workflows/:workflowId/events', 'getWorkflowEvents'],
   ['PUT', '/workflows/:workflowId/moodle-target', 'updateMoodleTarget'],
-  ['GET', '/instructors/me/profile', 'getProfile'],
-  ['PUT', '/instructors/me/profile', 'updateProfile'],
+  ['GET', '/instructors/me/setup', 'getProfile'],
+  ['PUT', '/instructors/me/setup', 'updateProfile'],
   ['GET', '/courses', 'listCourses'],
   ['POST', '/courses', 'createCourse'],
   ['GET', '/courses/:courseId', 'getCourse'],

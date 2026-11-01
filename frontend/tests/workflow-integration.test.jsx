@@ -39,6 +39,25 @@ describe('Generator AI tanpa API /courses', () => {
   }
   const button = (text) => [...container.querySelectorAll('button')].find((b) => b.textContent === text);
 
+  it('RPS analyzed tanpa workflow tetap dapat dibuka hasil analisisnya dan tidak dapat dihubungkan', async () => {
+    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
+    await backendLogin('dosen', 'dosen123');
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/course/2/ai']}>
+          <AuthProvider><AppStateProvider><App /></AppStateProvider></AuthProvider>
+        </MemoryRouter>,
+      );
+    });
+    const link = () => [...container.querySelectorAll('a')].find((a) => a.textContent === 'Lihat hasil analisis');
+    await waitFor(link, 'tautan hasil analisis');
+    expect(button('Hubungkan RPS').disabled).toBe(true);
+    await act(async () => link().click());
+    await waitFor(() => container.querySelector('section[aria-label^="CPMK:"]'), 'hasil analisis');
+    expect([...container.querySelectorAll('a')].some((a) => a.textContent === 'Kembali ke daftar RPS')).toBe(true);
+  });
+
   it('unggah RPS, hubungkan ke kursus lewat moodle-target, lalu pantau dan lepaskan', async () => {
     localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
     await backendLogin('dosen', 'dosen123');
