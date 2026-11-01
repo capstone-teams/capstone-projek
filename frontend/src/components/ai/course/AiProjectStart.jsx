@@ -69,6 +69,7 @@ export default function AiProjectStart({ moodleCourse, onCreated }) {
                 busyId={library.busyId}
                 onProcess={library.process}
                 onReanalyze={library.reanalyze}
+                analysisHref={COURSE_API_AVAILABLE ? undefined : (item) => `rps?rps=${item.id}`}
               />
             )
           )}

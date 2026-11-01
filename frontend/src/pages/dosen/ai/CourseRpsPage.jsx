@@ -96,7 +96,7 @@ export default function CourseRpsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* Monitoring workflow kursus ini ada di tab Ringkasan (Aktivitas agent). */}
           <Link to=".." relative="path" className="btn btn--ghost btn--sm">
-            Pantau workflow
+            {course.id ? 'Pantau workflow' : 'Kembali ke daftar RPS'}
           </Link>
           {COURSE_PLANNING_AVAILABLE && analyzed ? (
             <Link to="../plan" relative="path" className="btn btn--primary">
