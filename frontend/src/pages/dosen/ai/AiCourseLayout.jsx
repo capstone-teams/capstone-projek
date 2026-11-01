@@ -4,10 +4,12 @@ import { findCourseByMoodleId, getMonitoring } from '../../../services/courseSer
 import { useApi } from '../../../hooks/useApi';
 import { useCourseEvents } from '../../../hooks/useCourseEvents';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
+import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { ErrorAlert, Spinner, StatusBadge } from '../../../components/ui';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 import AiProjectStart from '../../../components/ai/course/AiProjectStart';
 import { ForbiddenPage } from '../../StatusPage';
+import WorkflowLayout from './WorkflowLayout';
 
 const TABS = [
   { to: '', label: 'Ringkasan', end: true },
@@ -23,7 +25,7 @@ const TABS = [
  * bila belum ada, tampilkan form untuk memulainya.
  * Sesuai design-api.md §17: ambil initial state via HTTP dulu, baru pakai event stream.
  */
-export default function AiCourseLayout() {
+function CourseProjectLayout() {
   const { course: moodleCourse, isTeacher } = useMoodleCourse();
   const [events, setEvents] = useState([]);
   // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.
@@ -78,4 +80,8 @@ export default function AiCourseLayout() {
       <Outlet context={{ course, events, version, refresh }} />
     </>
   );
+}
+
+export default function AiCourseLayout() {
+  return COURSE_API_AVAILABLE ? <CourseProjectLayout /> : <WorkflowLayout />;
 }

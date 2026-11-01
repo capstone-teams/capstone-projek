@@ -16,6 +16,9 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 // Default true supaya fitur AI bisa dicoba tanpa backend.
 export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? 'true') !== 'false';
 
+// API /courses (rencana, konten, review, publikasi) belum ada di backend; baru tersedia di mock.
+export const COURSE_API_AVAILABLE = USE_MOCK;
+
 export const TOKEN_STORAGE_KEY = 'agentic-lms.token';
 export const MOODLE_SESSION_KEY = 'agentic-lms.moodle-session';
 // Preferensi UI per user; kunci lengkap: `${PREFERENCES_STORAGE_KEY}.<userId>`.

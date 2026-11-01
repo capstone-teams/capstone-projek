@@ -635,10 +635,10 @@ export function resetMockMoodle() {
   DRAFTS.clear();
 }
 
-export async function mockRequestToken(username, password) {
+export async function mockRequestToken(username, password, { trusted = false } = {}) {
   await sleep(200);
   const user = Object.values(USERS).find((u) => u.username === username);
-  if (!user || password !== `${username}123`) {
+  if (!user || (!trusted && password !== `${username}123`)) {
     const { MoodleError } = await import('../moodle/moodleClient');
     throw new MoodleError('invalidlogin', 'Invalid login, please try again');
   }

@@ -145,6 +145,11 @@ function publicRps(r) {
   };
 }
 
+// Bentuk item GET /workflows (design-api §16.1).
+function publicWorkflow(w) {
+  return { id: w.id, status: w.status, stage: w.stage, progress: w.progress, rps_id: w.rps_id, created_at: w.created_at, updated_at: w.created_at };
+}
+
 // Bentuk GET /rps/{id} (design-api §6.2).
 function rpsDetail(r) {
   return {
@@ -153,6 +158,7 @@ function rpsDetail(r) {
     status: r.status,
     created_at: r.created_at,
     has_source_document: !!r.has_source_document,
+    workflow_id: r.workflow_id ?? null,
     processing_duration_ms: r.processing_duration_ms ?? null,
     processing_error_code: r.status === 'FAILED' ? 'RPS_PROCESSING_FAILED' : null,
     processing_error_message: r.status === 'FAILED' ? RPS_FAILURE_MESSAGE[r.failed_stage] : null,
@@ -416,6 +422,23 @@ const handlers = {
     }
     const workflow = startRpsAnalysis(rps, { immediate: true });
     return ok({ rps_id: rps.id, workflow_id: workflow.id, status: 'ANALYZING' }, 202);
+  },
+
+  // design-api 16: monitoring workflow dan course target Moodle (BE-11.3).
+  listWorkflows: () => ok({ items: [...db.workflows].reverse().map(publicWorkflow) }),
+  getWorkflow({ workflowId }) {
+    const workflow = db.workflows.find((w) => w.id === workflowId);
+    return workflow ? ok({ ...publicWorkflow(workflow), moodle_course_id: workflow.moodle_course_id ?? null }) : notFound('Workflow');
+  },
+  getWorkflowEvents({ workflowId }) {
+    const workflow = db.workflows.find((w) => w.id === workflowId);
+    return workflow ? ok({ items: workflow.events }) : notFound('Workflow');
+  },
+  updateMoodleTarget({ workflowId }, { body }) {
+    const workflow = db.workflows.find((w) => w.id === workflowId);
+    if (!workflow) return notFound('Workflow');
+    workflow.moodle_course_id = body.moodle_course_id;
+    return ok({ ...publicWorkflow(workflow), moodle_course_id: workflow.moodle_course_id });
   },
 
   getRpsAnalysis({ rpsId }) {
@@ -758,6 +781,10 @@ const ROUTES = [
   ['POST', '/rps/:rpsId/process', 'processRps'],
   ['POST', '/rps/:rpsId/reanalyze', 'reanalyzeRps'],
   ['GET', '/rps/:rpsId/analysis', 'getRpsAnalysis'],
+  ['GET', '/workflows', 'listWorkflows'],
+  ['GET', '/workflows/:workflowId', 'getWorkflow'],
+  ['GET', '/workflows/:workflowId/events', 'getWorkflowEvents'],
+  ['PUT', '/workflows/:workflowId/moodle-target', 'updateMoodleTarget'],
   ['GET', '/instructors/me/profile', 'getProfile'],
   ['PUT', '/instructors/me/profile', 'updateProfile'],
   ['GET', '/courses', 'listCourses'],
