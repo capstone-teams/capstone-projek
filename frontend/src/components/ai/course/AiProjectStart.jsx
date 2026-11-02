@@ -69,6 +69,12 @@ export default function AiProjectStart({ moodleCourse, onCreated }) {
                 busyId={library.busyId}
                 onProcess={library.process}
                 onReanalyze={library.reanalyze}
+                onHide={library.hide}
+                onRestore={library.restore}
+                hiddenIds={library.hiddenIds}
+                hiddenCount={library.hiddenCount}
+                showHidden={library.showHidden}
+                onToggleHidden={library.toggleShowHidden}
                 analysisHref={COURSE_API_AVAILABLE ? undefined : (item) => `rps?rps=${item.id}`}
               />
             )

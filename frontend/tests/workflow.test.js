@@ -129,7 +129,7 @@ describe('RPS', () => {
     await rps.processRps(conversion.id);
     await flush();
     expect(await rps.getRps(conversion.id)).toMatchObject({ status: 'FAILED', has_source_document: false });
-    await expectApiError(rps.reanalyzeRps(conversion.id), 409, 'INVALID_REQUEST');
+    await expectApiError(rps.reanalyzeRps(conversion.id), 422, 'INVALID_REQUEST');
   });
 
   it('mendeduplikasi isi yang sama dan menampilkan item daftar dengan workflow_id', async () => {
@@ -172,14 +172,14 @@ describe('RPS', () => {
 
   it('validateRpsFile menolak format dan ukuran yang salah sebelum dikirim', () => {
     expect(rps.validateRpsFile(null)).toBe('Pilih file RPS terlebih dahulu.');
-    expect(rps.validateRpsFile(new File(['x'], 'rps.txt'))).toBe('Format file harus PDF atau DOCX.');
-    expect(rps.validateRpsFile(new File(['x'], 'RPS'))).toBe('Format file harus PDF atau DOCX.');
+    expect(rps.validateRpsFile(new File(['x'], 'rps.txt'))).toBe('Format file harus PDF.');
+    expect(rps.validateRpsFile(new File(['x'], 'RPS'))).toBe('Format file harus PDF.');
     expect(rps.validateRpsFile(new File([''], 'rps.pdf'))).toMatch(/^File kosong/);
     const big = new File(['x'], 'rps.PDF');
     Object.defineProperty(big, 'size', { value: 21 * 1024 * 1024 });
     expect(rps.validateRpsFile(big)).toBe('Ukuran file 21.0 MB melebihi batas 20.0 MB.');
     expect(rps.validateRpsFile(new File(['x'], 'rps.pdf'))).toBeNull();
-    expect(rps.validateRpsFile(new File(['x'], 'RPS Final.DOCX'))).toBeNull();
+    expect(rps.validateRpsFile(new File(['x'], 'RPS Final.DOCX'))).toBe('Format file harus PDF.');
   });
 });
 

@@ -148,12 +148,10 @@ Unggah RPS berada di tab **Generator AI** kursus, pada kartu "1. RPS mata kuliah
 yang tampil selama kursus belum punya project generator (`AiProjectStart`). Kartu
 memuat formulir unggah, daftar RPS milik dosen, dan pilihan RPS yang sudah diproses
 untuk kursus tersebut. File dipilih lewat klik atau diseret ke area unggah, lalu divalidasi
-di klien sebelum dikirim: format PDF atau DOCX dan ukuran 1 byte–20 MB (mengikuti
-default `RPS_MAX_UPLOAD_BYTES` backend). File yang tidak valid ditandai dengan
-pesan di bawah area unggah dan tidak dikirim. DOCX ditampilkan sebagai format
-didukung, tetapi backend saat ini hanya menerima PDF (`RPS_ALLOWED_EXTENSIONS`);
-pemrosesan DOCX menyusul pada M03, sehingga unggahan DOCX dijawab
-`400 INVALID_FILE` dan pesannya ditampilkan.
+di klien sebelum dikirim: format PDF dan ukuran 1 byte–20 MB (mengikuti default
+`RPS_MAX_UPLOAD_BYTES` backend). File yang tidak valid ditandai dengan pesan di bawah
+area unggah dan tidak dikirim. Backend menolak isi yang bukan PDF dengan
+`400 INVALID_FILE`, dan pesannya ditampilkan.
 
 Unggahan memakai `POST /api/v1/rps` dengan indikator progres (`api.upload`
 berbasis XHR; di mode mock progresnya disimulasikan), lalu langsung `POST /api/v1/rps/{rps_id}/process`. RPS baru muncul
@@ -205,6 +203,16 @@ polling menjadi cadangan. Penutupan WebSocket 4401/4403/4404 tidak dicoba ulang.
 Dokumen `PROCESSED` lama tanpa workflow menampilkan tombol **Analisis RPS**
 (`POST /rps/{id}/reanalyze`). Di mock, nama file berisi `tanpa-analisis` meniru dokumen
 lama itu dan `gagal-analisis` gagal saat analisis pertama untuk mencoba Analisis ulang.
+
+### Hapus RPS yang gagal dari daftar
+
+RPS berstatus **Gagal** punya tombol **Hapus dari daftar** (dengan konfirmasi), dan bila ada
+lebih dari satu muncul **Hapus semua yang gagal (N)**. Backend belum punya
+`DELETE /rps/{id}`, jadi ini menyembunyikan RPS dari daftar pengguna yang login (disimpan
+per pengguna di browser, kunci `rps.hidden`); dokumennya tetap di server. Yang
+disembunyikan dapat dilihat lewat **Tampilkan N RPS yang dihapus dari daftar** dan
+dipulihkan dengan **Pulihkan ke daftar**. Setelah backend punya endpoint hapus, tombol ini
+cukup memanggilnya di `useRpsLibrary` (`hide`).
 
 ### Tanpa API /courses
 

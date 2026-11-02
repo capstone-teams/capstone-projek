@@ -422,9 +422,8 @@ const handlers = {
   reanalyzeRps({ rpsId }) {
     const rps = db.rps.find((r) => r.id === rpsId);
     if (!rps) return notFound('RPS');
-    if (!rps.has_source_document || ['PROCESSING', 'ANALYZING'].includes(rps.status)) {
-      return fail(409, 'INVALID_REQUEST', 'Status RPS tidak mengizinkan operasi ini.');
-    }
+    if (!rps.has_source_document) return fail(422, 'INVALID_REQUEST', 'RPS belum dikonversi.');
+    if (['PROCESSING', 'ANALYZING'].includes(rps.status)) return fail(409, 'INVALID_REQUEST', 'Status RPS tidak mengizinkan operasi ini.');
     const workflow = startRpsAnalysis(rps, { immediate: true });
     return ok({ rps_id: rps.id, workflow_id: workflow.id, status: 'ANALYZING' }, 202);
   },
