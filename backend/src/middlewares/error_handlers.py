@@ -1,3 +1,4 @@
+
 import logging
 
 from fastapi import FastAPI, Request
@@ -8,6 +9,13 @@ from src.services.auth.errors import AuthDomainError
 from src.services.course_plan.errors import CoursePlanDomainError
 from src.services.instructor.errors import InstructorSetupError
 from src.services.llm.base import LLMProviderError
+from src.services.moodle_adapter_exceptions import (
+    MoodleEntityNotFoundError,
+    MoodleIntegrationError,
+    MoodleWriteDisabledError,
+)
+from src.services.moodle_error_category import normalize_moodle_error
+from src.services.moodle_exceptions import MoodleError
 from src.services.rps.errors import RPSDomainError
 from src.services.user.errors import UserNotFoundError
 from src.services.workflow.errors import WorkflowDomainError
@@ -207,6 +215,47 @@ async def workflow_error_handler(
 ERROR_RESPONSE_SCHEMA_REF = "#/components/schemas/ErrorResponse"
 
 
+async def moodle_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Translate a Moodle failure into 4xx/5xx ``MOODLE_ERROR`` with a category.
+
+    The category (authentication, permission, validation, transient or
+    execution) and the Moodle error code are the only Moodle details the client
+    receives. The message is generic, so Moodle payloads and credentials cannot
+    leak through an error response.
+    """
+    normalized = normalize_moodle_error(exc)
+    logger.warning(
+        "Moodle failure on %s: category=%s code=%s",
+        request.url.path,
+        normalized.category.value,
+        normalized.moodle_code,
+    )
+    return _error_response(
+        status_code=normalized.status_code,
+        error_code="MOODLE_ERROR",
+        message=normalized.message,
+        details=[
+            {
+                "category": normalized.category.value,
+                "moodle_code": normalized.moodle_code,
+                "retryable": normalized.retryable,
+            }
+        ],
+    )
+
+
+async def moodle_not_found_error_handler(
+    request: Request, exc: MoodleEntityNotFoundError | MoodleWriteDisabledError
+) -> JSONResponse:
+    """Missing Moodle entity, or a write endpoint disabled outside development."""
+    logger.warning("Moodle resource unavailable on %s: %s", request.url.path, exc)
+    return _error_response(
+        status_code=404,
+        error_code="RESOURCE_NOT_FOUND",
+        message="Resource tidak ditemukan.",
+    )
+
+
 def _document_standard_validation_error(app: FastAPI) -> None:
     """Ganti schema 422 default FastAPI dengan amplop error design-api §18.
 
@@ -263,4 +312,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
     app.add_exception_handler(CoursePlanDomainError, course_plan_error_handler)
     app.add_exception_handler(WorkflowDomainError, workflow_error_handler)
+    app.add_exception_handler(MoodleError, moodle_error_handler)
+    app.add_exception_handler(MoodleIntegrationError, moodle_error_handler)
+    app.add_exception_handler(MoodleEntityNotFoundError, moodle_not_found_error_handler)
+    app.add_exception_handler(MoodleWriteDisabledError, moodle_not_found_error_handler)
     _document_standard_validation_error(app)
