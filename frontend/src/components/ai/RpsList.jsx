@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { EmptyState } from '../ui';
+import { EmptyState, Modal } from '../ui';
 import RpsAnalysisSummary from './RpsAnalysisSummary';
 import RpsStatusBadge from './RpsStatusBadge';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../utils/rpsStatus';
 import { formatDateTime } from '../../utils/format';
 
-const STAGE_LABELS = { rps_analysis: 'Analisis RPS', document_extraction: 'Konversi dokumen' };
+const STAGE_LABELS = { rps_analysis: 'Analisis RPS', rps_processing: 'Konversi dokumen', document_extraction: 'Konversi dokumen' };
 
 /**
  * Aksi lanjutan: proses dokumen yang baru diunggah, mulai analisis dokumen PROCESSED lama yang belum
@@ -27,7 +27,7 @@ function RecoveryAction({ item, busy, onProcess, onReanalyze }) {
   );
 }
 
-function RpsItem({ item, progress, highlighted, busy, onProcess, onReanalyze, analysisHref, monitorHref }) {
+function RpsItem({ item, progress, highlighted, busy, hidden, onProcess, onReanalyze, onHide, onRestore, analysisHref, monitorHref }) {
   const [showSummary, setShowSummary] = useState(false);
   const running = isRpsInProgress(item);
   const analyzed = item.status === RPS_STATUS.ANALYZED;
@@ -36,7 +36,7 @@ function RpsItem({ item, progress, highlighted, busy, onProcess, onReanalyze, an
   const monitorLink = item.workflow_id && monitorHref?.(item);
 
   return (
-    <li className={`rounded-lg border border-line p-3 ${highlighted ? 'bg-primary-light' : ''}`}>
+    <li className={`rounded-lg border border-line p-3 ${highlighted ? 'bg-primary-light' : ''} ${hidden ? 'opacity-60' : ''}`}>
       <div className="flex items-start justify-between gap-2 font-semibold">
         <div className="min-w-0">
           <span className="wrap-anywhere">{item.filename}</span>
@@ -74,6 +74,15 @@ function RpsItem({ item, progress, highlighted, busy, onProcess, onReanalyze, an
           </button>
         )}
         {monitorLink && <Link to={monitorLink} className="btn btn--ghost btn--sm">Pantau workflow</Link>}
+        {hidden ? (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => onRestore([item])}>Pulihkan ke daftar</button>
+        ) : (
+          item.status === RPS_STATUS.FAILED && onHide && (
+            <button type="button" className="btn btn--ghost btn--sm text-danger" disabled={busy} onClick={() => onHide(item)}>
+              Hapus dari daftar
+            </button>
+          )
+        )}
       </div>
       {showSummary && <RpsAnalysisSummary rpsId={item.id} />}
     </li>
@@ -84,26 +93,76 @@ function RpsItem({ item, progress, highlighted, busy, onProcess, onReanalyze, an
  * Daftar RPS milik dosen dengan status pemrosesan yang diperbarui otomatis.
  * analysisHref/monitorHref (opsional) mengembalikan tujuan tautan bila halamannya dapat dibuka;
  * tanpa analysisHref, hasil analisis ditampilkan ringkas di dalam item.
+ * onHide/onRestore/hiddenIds (opsional) mengaktifkan "Hapus dari daftar" untuk RPS yang gagal, dengan
+ * konfirmasi; hiddenCount dan onToggleHidden menampilkan kembali yang sudah dihapus dari daftar.
  */
-export default function RpsList({ items, progress = {}, highlightId, busyId, onProcess, onReanalyze, analysisHref, monitorHref }) {
+export default function RpsList({
+  items, progress = {}, highlightId, busyId, onProcess, onReanalyze, analysisHref, monitorHref,
+  onHide, onRestore, hiddenIds, hiddenCount = 0, showHidden = false, onToggleHidden,
+}) {
+  const [pending, setPending] = useState(null);
+  const failed = items.filter((item) => item.status === RPS_STATUS.FAILED && !hiddenIds?.has(item.id));
+  const confirm = () => {
+    onHide(pending);
+    setPending(null);
+  };
+
+  const hiddenToggle = hiddenCount > 0 && (
+    <button type="button" className="btn btn--ghost btn--sm self-start" aria-pressed={showHidden} onClick={onToggleHidden}>
+      {showHidden ? 'Sembunyikan RPS yang dihapus' : `Tampilkan ${hiddenCount} RPS yang dihapus dari daftar`}
+    </button>
+  );
+
   if (!items.length) {
-    return <EmptyState title="Belum ada RPS.">Unggah RPS pertama Anda untuk memulai analisis.</EmptyState>;
+    return (
+      <div className="flex flex-col gap-3">
+        <EmptyState title="Belum ada RPS.">Unggah RPS pertama Anda untuk memulai analisis.</EmptyState>
+        {hiddenToggle}
+      </div>
+    );
   }
   return (
-    <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Daftar RPS">
-      {items.map((item) => (
-        <RpsItem
-          key={item.id}
-          item={item}
-          progress={progress[item.id]}
-          highlighted={item.id === highlightId}
-          busy={busyId === item.id}
-          onProcess={onProcess}
-          onReanalyze={onReanalyze}
-          analysisHref={analysisHref}
-          monitorHref={monitorHref}
-        />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      {onHide && failed.length > 1 && (
+        <button type="button" className="btn btn--ghost btn--sm self-start text-danger" onClick={() => setPending(failed)}>
+          Hapus semua yang gagal ({failed.length}) dari daftar
+        </button>
+      )}
+      <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Daftar RPS">
+        {items.map((item) => (
+          <RpsItem
+            key={item.id}
+            item={item}
+            progress={progress[item.id]}
+            highlighted={item.id === highlightId}
+            busy={busyId === item.id}
+            hidden={!!hiddenIds?.has(item.id)}
+            onProcess={onProcess}
+            onReanalyze={onReanalyze}
+            onHide={onHide && ((target) => setPending([target]))}
+            onRestore={onRestore}
+            analysisHref={analysisHref}
+            monitorHref={monitorHref}
+          />
+        ))}
+      </ul>
+      {hiddenToggle}
+      <Modal
+        open={!!pending}
+        title={pending?.length > 1 ? `Hapus ${pending.length} RPS dari daftar?` : 'Hapus RPS dari daftar?'}
+        onClose={() => setPending(null)}
+        footer={
+          <>
+            <button type="button" className="btn btn--ghost" onClick={() => setPending(null)}>Batal</button>
+            <button type="button" className="btn btn--danger" onClick={confirm}>Hapus dari daftar</button>
+          </>
+        }
+      >
+        <p>
+          {pending?.length > 1 ? 'RPS yang gagal ini' : pending?.[0]?.filename} dihapus dari daftar Anda. Server belum
+          menyediakan penghapusan permanen, jadi dokumennya tetap tersimpan di server dan dapat dipulihkan kapan saja.
+        </p>
+      </Modal>
+    </div>
   );
 }

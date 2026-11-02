@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePreference } from './useAppState';
 import { useApi } from './useApi';
 import { usePolling } from './usePolling';
 import { useWorkflowEvents } from './useWorkflowEvents';
@@ -7,6 +8,7 @@ import { RPS_STATUS, isRpsInProgress } from '../utils/rpsStatus';
 
 // Polling hanya cadangan: event workflow (§17) memicu pembaruan lebih cepat bila tersedia.
 const POLL_MS = 3000;
+const MESSAGE_ATTEMPTS = 5;
 
 const listWithTime = () => listRps().then((data) => ({ ...data, fetchedAt: Date.now() }));
 
@@ -27,7 +29,13 @@ export function useRpsLibrary() {
   const [actionError, setActionError] = useState(null);
   const reloadList = list.reload;
 
-  const items = useMemo(() => {
+  // Backend belum punya DELETE /rps/{id}: "hapus" menyembunyikan RPS dari daftar milik pengguna ini
+  // (disimpan per pengguna di browser); dokumennya tetap ada di server dan dapat dipulihkan.
+  const [hiddenIds, setHiddenIds] = usePreference('rps.hidden', []);
+  const hiddenSet = useMemo(() => new Set(Array.isArray(hiddenIds) ? hiddenIds : []), [hiddenIds]);
+  const [showHidden, setShowHidden] = useState(false);
+
+  const allItems = useMemo(() => {
     const fetchedAt = list.data?.fetchedAt ?? 0;
     const merged = new Map((list.data?.items ?? []).map((item) => [item.id, item]));
     // Data yang lebih baru menang: patch lokal setelah daftar dimuat menimpa item daftar;
@@ -38,6 +46,8 @@ export function useRpsLibrary() {
     });
     return [...merged.values()].sort(byNewest);
   }, [list.data, local]);
+  const items = useMemo(() => (showHidden ? allItems : allItems.filter((item) => !hiddenSet.has(item.id))), [allItems, hiddenSet, showHidden]);
+  const hiddenCount = allItems.filter((item) => hiddenSet.has(item.id)).length;
 
   const remember = useCallback((id, patch) => {
     setLocal((current) => ({ ...current, [id]: { ...current[id], ...patch, id, updatedAt: Date.now() } }));
@@ -49,16 +59,25 @@ export function useRpsLibrary() {
     if (detail) remember(item.id, detail);
   }, [remember]);
 
-  // GET /rps tidak memuat processing_error_message; ambil sekali dari GET /rps/{id} untuk RPS yang gagal.
-  const failedFetched = useRef(new Set());
+  // GET /rps tidak memuat processing_error_message; ambil dari GET /rps/{id} untuk RPS yang gagal.
+  // Diulang bila gagal terbaca agar gangguan jaringan sesaat tidak menyisakan pesan umum.
+  const failedFetching = useRef(new Set());
   useEffect(() => {
     items
-      .filter((item) => item.status === RPS_STATUS.FAILED && !item.processing_error_message && !failedFetched.current.has(item.id))
-      .forEach((item) => {
-        failedFetched.current.add(item.id);
-        refreshOne(item);
+      .filter((item) => item.status === RPS_STATUS.FAILED && !item.processing_error_message && !failedFetching.current.has(item.id))
+      .forEach(async (item) => {
+        failedFetching.current.add(item.id);
+        for (let attempt = 0; attempt < MESSAGE_ATTEMPTS; attempt += 1) {
+          if (attempt) await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+          const detail = await getRps(item.id).catch(() => null);
+          if (!detail) continue;
+          remember(item.id, detail);
+          if (detail.processing_error_message || detail.status !== RPS_STATUS.FAILED) break;
+        }
+        // Setelah selesai, kegagalan berikutnya (mis. usai Proses ulang) dapat mengambil pesannya lagi.
+        failedFetching.current.delete(item.id);
       });
-  }, [items, refreshOne]);
+  }, [items, remember]);
 
   const pending = items.filter(isRpsInProgress);
   usePolling(() => Promise.all(pending.map(refreshOne)), POLL_MS, pending.length > 0);
@@ -104,6 +123,13 @@ export function useRpsLibrary() {
 
   return {
     items,
+    hiddenIds: hiddenSet,
+    hiddenCount,
+    showHidden,
+    toggleShowHidden: () => setShowHidden((value) => !value),
+    /** Hapus dari daftar: hanya RPS yang tidak sedang diproses. */
+    hide: (targets) => setHiddenIds([...new Set([...hiddenSet, ...targets.map((item) => item.id)])]),
+    restore: (targets) => setHiddenIds([...hiddenSet].filter((id) => !targets.some((item) => item.id === id))),
     progress,
     loading: list.loading && !list.data,
     error: list.error,

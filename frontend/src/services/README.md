@@ -10,7 +10,7 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true, termasuk aksi Mode edit (hanya editingteacher) dan `resetMockMoodle()` untuk test |
 | apiClient.js | HTTP/mock backend, Bearer token, ApiError, handler 401 bila token ditolak, dan pemeriksaan respons |
 | authService.js | Login (`POST /auth/login`), current user (`GET /auth/me`), pemetaan role backend → UI, dan logout client |
-| rpsService.js | RPS: validasi file di klien (PDF/DOCX, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
+| rpsService.js | RPS: validasi file di klien (PDF, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
 | profileService.js | Instructor setup (`/instructors/me/setup`) dengan `instructor_profile` diratakan untuk form |
 | workflowService.js | Monitoring workflow dan course target Moodle |
 | courseService.js | API `/courses` untuk mode mock; backend belum menyediakannya |

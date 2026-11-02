@@ -88,7 +88,7 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
   });
 
   it.each([
-    ['format salah', new File(['x'], 'rps.txt', { type: 'text/plain' }), 'Format file harus PDF atau DOCX.'],
+    ['format salah', new File(['x'], 'rps.txt', { type: 'text/plain' }), 'Format file harus PDF.'],
     ['ukuran berlebih', sized('rps-besar.pdf', 25 * 1024 * 1024), 'Ukuran file 25.0 MB melebihi batas 20.0 MB.'],
     ['file kosong', sized('kosong.pdf', 0), 'File kosong. Pilih file RPS yang berisi dokumen.'],
   ])('menolak %s sebelum dikirim', async (_, file, message) => {
@@ -121,14 +121,14 @@ describe('FE-08.1 unggah RPS di Generator AI', () => {
     expect(q('form.upload input[type="file"]').value).toBe('');
   });
 
-  it('menampilkan catatan DOCX dan pesan backend bila DOCX belum diterima server', async () => {
+  it('menolak DOCX di klien tanpa mengirim ke backend', async () => {
+    const uploadSpy = vi.spyOn(rpsService, 'uploadRps');
     await render();
     await waitFor(() => submitButton(), 'form');
     await pick(new File(['docx'], 'RPS-Final.docx'));
-    expect(container.textContent).toContain('pemrosesannya di backend menyusul pada M03');
+    expect(q('form.upload [role="alert"]').textContent).toContain('Format file harus PDF.');
     await act(async () => q('form.upload').requestSubmit());
-    await waitFor(() => q('form.upload [role="alert"]')?.textContent.includes('File RPS tidak valid.'), 'pesan backend');
-    expect(rowFor('RPS-Final.docx')).toBeUndefined();
+    expect(uploadSpy).not.toHaveBeenCalled();
   });
 
   it('konversi yang gagal menampilkan pesannya dan dapat diproses ulang', async () => {
@@ -228,6 +228,73 @@ describe('FE-08.2 status pemrosesan RPS', () => {
     await render();
     await waitFor(() => rowFor('rps-rusak.pdf')?.textContent.includes('Dokumen RPS gagal diproses'), 'pesan dari GET /rps/{id}');
     expect(getRps).toHaveBeenCalledTimes(1);
+  });
+
+  it('pesan gagal tetap dari backend setelah Proses ulang gagal lagi', async () => {
+    await upload('rps-rusak.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Dokumen RPS gagal diproses'), 'pesan pertama');
+    const retry = [...rowFor('rps-rusak.pdf').querySelectorAll('button')].find((b) => b.textContent === 'Proses ulang');
+    await act(async () => retry.click());
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Dokumen RPS gagal diproses') && rowFor('rps-rusak.pdf').textContent.includes('Gagal'), 'pesan setelah proses ulang');
+    expect(rowFor('rps-rusak.pdf').textContent).not.toContain('Pemrosesan RPS gagal.');
+  });
+
+  it('pesan gagal diambil ulang bila GET /rps/{id} sempat gagal', async () => {
+    await upload('rps-rusak.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Dokumen RPS gagal diproses'), 'pesan pertama');
+    act(() => root.unmount());
+    const real = rpsService.getRps;
+    vi.spyOn(rpsService, 'getRps').mockRejectedValueOnce(new Error('jaringan')).mockImplementation(real);
+    await render();
+    await waitFor(() => rowFor('rps-rusak.pdf')?.textContent.includes('Dokumen RPS gagal diproses'), 'pesan setelah percobaan ulang', 8000);
+  });
+
+  it('RPS yang gagal dapat dihapus dari daftar dengan konfirmasi dan dipulihkan', async () => {
+    await upload('rps-rusak.pdf');
+    await upload('rps-rusak-dua.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal') && rowFor('rps-rusak-dua.pdf').textContent.includes('Gagal'), 'dua RPS gagal');
+    const dialogButton = (text) => [...container.querySelectorAll('dialog button')].find((b) => b.textContent === text);
+    const rowButton = (name, text) => [...rowFor(name).querySelectorAll('button')].find((b) => b.textContent === text);
+
+    // Tombol hanya untuk RPS gagal; batal tidak mengubah apa pun.
+    expect(rowButton('RPS-Pemrograman-Web-2026.pdf', 'Hapus dari daftar')).toBeUndefined();
+    await act(async () => rowButton('rps-rusak.pdf', 'Hapus dari daftar').click());
+    expect(container.querySelector('dialog').textContent).toContain('dapat dipulihkan');
+    await act(async () => dialogButton('Batal').click());
+    expect(rowFor('rps-rusak.pdf')).toBeTruthy();
+
+    // Konfirmasi: hilang dari daftar, dan tersimpan per pengguna di browser.
+    await act(async () => rowButton('rps-rusak.pdf', 'Hapus dari daftar').click());
+    await act(async () => dialogButton('Hapus dari daftar').click());
+    expect(rowFor('rps-rusak.pdf')).toBeUndefined();
+    expect(rowFor('rps-rusak-dua.pdf')).toBeTruthy();
+    expect(Object.values({ ...localStorage }).some((value) => value.includes('rps.hidden'))).toBe(true);
+
+    // Hapus semua yang gagal, lalu pulihkan satu.
+    expect(rowFor('rps-rusak-dua.pdf')).toBeTruthy();
+    await act(async () => rowButton('rps-rusak-dua.pdf', 'Hapus dari daftar').click());
+    await act(async () => dialogButton('Hapus dari daftar').click());
+    const toggle = () => [...container.querySelectorAll('button')].find((b) => b.textContent.startsWith('Tampilkan 2 RPS yang dihapus'));
+    expect(toggle()).toBeTruthy();
+    await act(async () => toggle().click());
+    expect(rowFor('rps-rusak.pdf')).toBeTruthy();
+    await act(async () => rowButton('rps-rusak.pdf', 'Pulihkan ke daftar').click());
+    await act(async () => [...container.querySelectorAll('button')].find((b) => b.textContent.startsWith('Sembunyikan RPS yang dihapus')).click());
+    expect(rowFor('rps-rusak.pdf')).toBeTruthy();
+    expect(rowFor('rps-rusak-dua.pdf')).toBeUndefined();
+  });
+
+  it('hapus semua RPS yang gagal sekaligus', async () => {
+    await upload('rps-rusak.pdf');
+    await upload('rps-rusak-dua.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal') && rowFor('rps-rusak-dua.pdf').textContent.includes('Gagal'), 'dua RPS gagal');
+    const bulk = [...container.querySelectorAll('button')].find((b) => b.textContent.startsWith('Hapus semua yang gagal (2)'));
+    await act(async () => bulk.click());
+    expect(container.querySelector('dialog').textContent).toContain('Hapus 2 RPS dari daftar?');
+    await act(async () => [...container.querySelectorAll('dialog button')].find((b) => b.textContent === 'Hapus dari daftar').click());
+    expect(rowFor('rps-rusak.pdf')).toBeUndefined();
+    expect(rowFor('rps-rusak-dua.pdf')).toBeUndefined();
+    expect(rowFor('RPS-Pemrograman-Web-2026.pdf')).toBeTruthy();
   });
 
   it('menampilkan ringkasan hasil analisis untuk RPS yang selesai dianalisis', async () => {
