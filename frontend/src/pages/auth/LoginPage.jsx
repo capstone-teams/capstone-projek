@@ -8,6 +8,7 @@ import { MSG_LOGIN_FAILED, logTechnical } from '../../utils/userMessages';
 
 // Kegagalan di belakang layar (layanan kursus) tidak disebut ke pengguna; detailnya hanya ke konsol.
 const ACCOUNT_NOT_READY = 'Akun Anda belum dapat digunakan untuk masuk. Hubungi admin.';
+const WRONG_CREDENTIALS = 'Username atau kata sandi salah. Periksa username, lalu ketik ulang kata sandi Anda.';
 const SERVICE_DOWN_CODES = ['networkerror', 'invalidresponse', 'enablewsdescription', 'servicenotavailable'];
 
 /** Pesan backend yang sudah ramah (kontrak §18) ditampilkan apa adanya; sisanya dibuat umum. */
@@ -17,6 +18,7 @@ function describeLoginError(err) {
     const code = String(err.code ?? '').toLowerCase();
     return { title: 'Login gagal', message: SERVICE_DOWN_CODES.includes(code) ? err.message : ACCOUNT_NOT_READY };
   }
+  if (err?.status === 401) return { title: 'Login gagal', message: WRONG_CREDENTIALS };
   return { title: 'Login gagal', message: err?.message || MSG_LOGIN_FAILED };
 }
 
@@ -43,6 +45,8 @@ export default function LoginPage() {
       navigate(homePathFor(session.user.role), { replace: true });
     } catch (err) {
       if (err?.name !== 'AbortError') setError(describeLoginError(err));
+      // Kata sandi yang ditolak dikosongkan agar tidak terkirim lagi (mis. hasil isian otomatis browser).
+      if (err?.status === 401) setForm((f) => ({ ...f, password: '' }));
       setPending(false);
     }
   };

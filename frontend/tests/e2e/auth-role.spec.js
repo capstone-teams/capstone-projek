@@ -69,7 +69,7 @@ test('wrong credentials show the backend error and keep the session empty', asyn
   await login(page, 'dosen.demo', 'password-salah');
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('Login gagal');
-  await expect(alert).toContainText('Autentikasi gagal.');
+  await expect(alert).toContainText('Username atau kata sandi salah.');
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('button', { name: 'Masuk', exact: true })).toBeEnabled();
   expect(await tokens(page)).toEqual([null, null]);

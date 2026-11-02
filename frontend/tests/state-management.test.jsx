@@ -139,7 +139,7 @@ describe('FE state: authentication and current user', () => {
     await submitLogin('dosen', 'salah');
     const alert = node.querySelector('[role="alert"]');
     expect(alert.textContent).toContain('Login gagal');
-    expect(alert.textContent).toContain('Autentikasi gagal.');
+    expect(alert.textContent).toContain('Username atau kata sandi salah.');
     expect(auth.isAuthenticated).toBe(false);
     expect(service.requestToken).not.toHaveBeenCalled();
     expect(node.querySelector('button[type="submit"]').disabled).toBe(false);
