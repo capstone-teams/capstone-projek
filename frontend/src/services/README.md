@@ -15,7 +15,7 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | workflowService.js | Monitoring workflow dan course target Moodle |
 | courseService.js | API `/courses` untuk mode mock; backend belum menyediakannya |
 | coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
-| monitoringSocket.js | WebSocket dengan reconnect: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
+| monitoringSocket.js | WebSocket dengan reconnect, status koneksi (`SOCKET_STATUS`), dan satu koneksi bersama per path: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
 | mock/ | State machine backend ketika VITE_USE_MOCK=true; auth mengikuti kontrak backend (role huruf besar, pesan error identik, kata sandi `<username>123`) |
 | config.js | URL, mode mock, dan kunci penyimpanan dari environment |
 
