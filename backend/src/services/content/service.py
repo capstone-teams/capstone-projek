@@ -182,6 +182,11 @@ async def _generate_week_content(
 
         # 1. Panggilan LLM
         try:
+            print("COURSE: %s", ctx.rps_analysis.course_identity)
+            print("WEEK: %s", ctx.week_data.title)
+            print("MATERIALS: %s", ctx.week_data.materials) 
+            # print("FINAL PROMPT:\n", rendered_prompt) 
+
             result = await service.execute_prompt(
                 prompt_name=PROMPT_NAME,
                 version=PROMPT_VERSION,

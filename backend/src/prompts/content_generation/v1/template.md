@@ -52,21 +52,25 @@ Jika topics dan Sub-CPMK kosong, jangan membuat materi pembelajaran. Kembalikan 
 
 <context>
 <rps_structured>
-{{rps_structured}}
+${rps_structured}
 </rps_structured>
 
 <week_context>
-{{week_context}}
+${week_context}
 </week_context>
 
 <instructor_profile>
-{{instructor_profile}}
+${instructor_profile}
 </instructor_profile>
 
 <additional_prompt>
-{{additional_prompt}}
+${additional_prompt}
 </additional_prompt>
 </context>
+
+<validation_feedback>
+${validation_feedback}
+</validation_feedback>
 
 <task_instruction>
 Buat materi pembelajaran berdasarkan material_name, topics, cpmk, dan sub_cpmk yang tersedia dalam RPS Context.
