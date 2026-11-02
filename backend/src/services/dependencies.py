@@ -24,10 +24,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.database import get_session_factory
+from src.config.settings import Settings, get_settings
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
 from src.services.instructor.service import InstructorSetupService
+from src.services.moodle_adapter_exceptions import MoodleWriteDisabledError
+from src.services.moodle_client import MoodleClient
+from src.services.moodle_integration_service import MoodleIntegrationService
 from src.services.rps.service import RPSService
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
@@ -52,11 +56,14 @@ __all__ = [
     "get_current_user",
     "get_db_session",
     "get_instructor_service",
+    "get_moodle_client",
+    "get_moodle_integration_service",
     "get_rps_analysis_runner",
     "get_rps_processing_runner",
     "get_rps_service",
     "get_user_service",
     "get_workflow_service",
+    "require_development_environment",
     "require_roles",
 ]
 
@@ -78,6 +85,32 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def get_moodle_client() -> AsyncIterator[MoodleClient]:
+    """Moodle client per request; ditutup setelah request selesai (BE-04.7)."""
+    client = MoodleClient.from_settings(get_settings())
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+def get_moodle_integration_service(
+    client: MoodleClient = Depends(get_moodle_client),
+) -> MoodleIntegrationService:
+    """Service endpoint integrasi Moodle internal (BE-04.7)."""
+    return MoodleIntegrationService(client)
+
+
+def require_development_environment(
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Guard endpoint write Moodle: hanya aktif bila ``APP_ENV=development``."""
+    if (settings.APP_ENV or "").strip().lower() != "development":
+        raise MoodleWriteDisabledError(
+            "endpoint write Moodle hanya aktif pada development"
+        )
 
 
 def get_user_service(session: AsyncSession = Depends(get_db_session)) -> UserService:
