@@ -112,8 +112,10 @@ describe('login', () => {
   it('menampilkan pesan error dari backend untuk password yang salah', async () => {
     await render('/login');
     await fillAndSubmit('dosen', 'keliru');
-    await waitForText('Autentikasi gagal.');
+    await waitForText('Username atau kata sandi salah.');
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Login gagal');
+    expect(container.querySelector('#password').value).toBe('');
+    expect(container.querySelector('#username').value).toBe('dosen');
   });
 
   it.each([
