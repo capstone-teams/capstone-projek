@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
 import { getCoursesByClassification, getUserById } from '../../services/moodle/moodleApi';
-import { moodleUrl } from '../../services/moodle/moodleClient';
 import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Avatar, Badge, Card, ErrorAlert, Spinner } from '../../components/ui';
 import TeachingPreferencesCard from '../../components/ai/TeachingPreferencesCard';
@@ -32,12 +31,6 @@ export default function ProfilePage() {
       <div className="grid--2">
         <Card
           title="Detail pengguna"
-// tidak perlu karena link ke edit profil Moodle
-          // actions={
-          //   <a href={moodleUrl(`/user/edit.php?id=${user.id}`)} target="_blank" rel="noreferrer" className="text-sm">
-          //     Edit profil di Moodle ↗
-          //   </a>
-          // }
         >
           <ErrorAlert error={profile.error} />
           {profile.loading && !p ? (

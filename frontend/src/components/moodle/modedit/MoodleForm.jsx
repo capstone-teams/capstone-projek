@@ -1,7 +1,7 @@
 import { createContext, useContext, useId, useState } from 'react';
 
 /*
- * Potongan formulir Moodle (lib/form, tema Boost): bagian yang dapat dilipat dengan "Expand all",
+ * Potongan formulir. Rujukan source Moodle: lib/form dan tema Boost (bagian yang dapat dilipat, "Expand all",
  * baris label di kiri dan isian di kanan, ikon wajib, serta date_time_selector dengan "Enable".
  */
 
@@ -51,7 +51,7 @@ export function FormSection({ id, title, children }) {
           {title}
         </button>
       </legend>
-      {/* Isi tetap terpasang saat dilipat agar nilai dan validasi tidak hilang, seperti di Moodle. */}
+      {/* Isi tetap terpasang saat dilipat agar nilai dan validasi tidak hilang (rujukan: perilaku form Moodle). */}
       <div id={`${id}-body`} hidden={!open} className="flex flex-col gap-4 pt-4 pb-2">{children}</div>
     </fieldset>
   );
@@ -65,7 +65,7 @@ export function RequiredIcon() {
   );
 }
 
-/** Satu baris formulir: label (col-md-3) dan isian (col-md-9), dengan pesan error Moodle di bawah isian. */
+/** Satu baris formulir: label (col-md-3), isian (col-md-9), dan pesan error di bawah isian. */
 export function FormRow({ label, labelFor, labelId, required, error, errorId, children }) {
   return (
     <div className="grid gap-x-6 gap-y-1 md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]">

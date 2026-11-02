@@ -42,7 +42,7 @@ function InfoIcon() {
 }
 
 /**
- * Pemilih jenis aktivitas seperti "Add an activity or resource" di Moodle: pencarian, tab, dan
+ * Pemilih jenis aktivitas. Rujukan tampilan: dialog "Add an activity or resource" di Moodle (pencarian, tab, dan
  * kartu dengan bintang serta info. Bintang disimpan per pengguna.
  * types: [{ modname, name, kind, recommended, description, iconClass }].
  */

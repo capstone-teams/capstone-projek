@@ -22,7 +22,7 @@ function initialFiles(files) {
   return { entries, folders: [...folders] };
 }
 
-/** Formulir "Add submission" (Moodle: mod/assign/view.php?action=editsubmission). */
+/** Formulir "Add submission". Rujukan: https://docs.moodle.org/503/en/Using_Assignment (Student view). */
 function SubmissionForm({ assign, types, content, onDone }) {
   const notify = useContext(AppStateContext)?.notify;
   const [open, setOpen] = useState(true);
@@ -42,7 +42,7 @@ function SubmissionForm({ assign, types, content, onDone }) {
     setPending(true);
     setError(null);
     try {
-      // Tanpa perubahan file, files_filemanager tidak dikirim sehingga file di Moodle tetap.
+      // Tanpa perubahan file, files_filemanager tidak dikirim sehingga file yang tersimpan tetap.
       await saveSubmission(assign.id, {
         onlineText: types.onlineText ? text : null,
         files: types.files && filesChanged ? files.entries : null,

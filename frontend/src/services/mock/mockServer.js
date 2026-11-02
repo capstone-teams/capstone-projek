@@ -428,7 +428,7 @@ const handlers = {
     return ok({ rps_id: rps.id, workflow_id: workflow.id, status: 'ANALYZING' }, 202);
   },
 
-  // design-api 16: monitoring workflow dan course target Moodle (BE-11.3).
+  // design-api 16: monitoring workflow dan course target (BE-11.3).
   listWorkflows: () => ok({ items: [...db.workflows].reverse().map(publicWorkflow) }),
   getWorkflow({ workflowId }) {
     const workflow = db.workflows.find((w) => w.id === workflowId);
@@ -498,7 +498,7 @@ const handlers = {
       return fail(422, 'INVALID_REQUEST', 'RPS harus selesai dianalisis terlebih dahulu.', ['rps_id']);
     }
     const moodleId = body.moodle_course_id == null ? '' : String(body.moodle_course_id).trim();
-    // Satu kursus Moodle hanya punya satu project generator.
+    // Satu kursus hanya punya satu project generator.
     if (moodleId && db.courses.some((c) => String(c.moodle_course_id) === moodleId)) {
       return conflict('Kursus ini sudah memiliki project generator AI.');
     }

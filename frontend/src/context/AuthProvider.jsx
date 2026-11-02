@@ -23,13 +23,13 @@ function isTransient(error) {
   return error instanceof ApiError && (error.status === 0 || error.status >= 500);
 }
 
-// Tandai kegagalan langkah Moodle agar halaman login dapat membedakannya dari error backend.
+// Tandai kegagalan langkah setelah akun backend terverifikasi, agar halaman login dapat membedakannya.
 function fromMoodle(error) {
   if (error && typeof error === 'object') error.source = 'moodle';
   return error;
 }
 
-/** Identitas & role dari backend (GET /auth/me); data kursus dan hak mengajar dari Moodle. */
+/** Identitas & role dari backend (GET /auth/me); data kursus dan hak mengajar dari layanan LMS (belum ada API backend). */
 function buildSession(moodle, me) {
   return {
     site: moodle.site,
@@ -38,8 +38,8 @@ function buildSession(moodle, me) {
 }
 
 /**
- * Sesi login memakai akun backend (POST /auth/login, dipulihkan via GET /auth/me) dan
- * akun Moodle dengan kredensial yang sama, karena halaman kursus membaca data dari Moodle.
+ * Sesi login memakai akun backend (POST /auth/login, dipulihkan via GET /auth/me) dan token LMS
+ * dengan kredensial yang sama, karena data kursus belum tersedia lewat API backend.
  * Keduanya wajib: kegagalan salah satunya membatalkan login.
  */
 export function AuthProvider({ children }) {
@@ -85,7 +85,7 @@ export function AuthProvider({ children }) {
         })
         .finally(() => { if (isCurrent()) setInitializing(false); });
     } else if (token || backendAuth.hasToken()) {
-      // Sesi tidak lengkap (mis. hanya login Moodle dari versi sebelumnya): buang, mulai dari login.
+      // Sesi tidak lengkap (mis. tersisa dari versi sebelumnya): buang, mulai dari login.
       storeToken(null);
       backendAuth.logout();
     }
@@ -108,7 +108,7 @@ export function AuthProvider({ children }) {
     try {
       me = await backendAuth.getCurrentUser();
       ensureCurrent();
-      // Username dari backend dipakai untuk Moodle, sehingga login memakai email tetap berhasil.
+      // Username dari backend dipakai untuk token LMS, sehingga login memakai email tetap berhasil.
       token = await requestToken(me.username, password).catch((e) => { throw fromMoodle(e); });
       ensureCurrent();
       setMoodleToken(token);

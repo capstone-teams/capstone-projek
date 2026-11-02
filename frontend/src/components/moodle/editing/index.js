@@ -1,4 +1,4 @@
-// Komponen Edit mode kursus Moodle. Import lewat:
+// Komponen Edit mode kursus. Import lewat:
 //   import { ActivityEditMenu, AddActivityModal } from '../components/moodle/editing';
 export { default as ActionMenu } from './ActionMenu';
 export { default as ActivityEditMenu } from './ActivityEditMenu';

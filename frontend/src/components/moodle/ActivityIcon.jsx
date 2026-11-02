@@ -25,12 +25,12 @@ const PURPOSE = {
   scorm: 'interactivecontent',
 };
 
-// Ukuran .activityiconcontainer / .small / .smaller di theme/boost/style/moodle.css.
+// Rujukan source Moodle 5.3 (theme/boost/style/moodle.css): ukuran .activityiconcontainer, .small, .smaller.
 const SIZES = { md: 'size-[52px]', sm: 'size-[42px]', xs: 'size-8' };
 
 /**
- * Ikon aktivitas gaya Moodle 5.3: glyph monologo diwarnai sesuai purpose
- * (filter .act-icon--<purpose> disalin dari CSS Moodle), tanpa kotak latar.
+ * Ikon aktivitas: glyph monologo diwarnai sesuai purpose, tanpa kotak latar.
+ * Rujukan source Moodle 5.3: filter .act-icon--<purpose> disalin dari CSS tema Boost.
  */
 export default function ActivityIcon({ modname, src, size = 'md' }) {
   const purpose = PURPOSE[modname];

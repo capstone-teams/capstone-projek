@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 
 /**
- * Nama yang dapat diubah langsung (ikon pensil, seperti inplace editable Moodle).
+ * Nama yang dapat diubah langsung lewat ikon pensil. Rujukan Moodle: inplace editable
+ * (core_update_inplace_editable), Enter atau keluar dari kolom menyimpan, Escape membatalkan.
  * Enter atau keluar dari kolom menyimpan, Escape membatalkan. onSave mengembalikan true bila berhasil.
  */
 export default function InlineNameEditor({ name, itemLabel, onSave, disabled = false, children }) {
