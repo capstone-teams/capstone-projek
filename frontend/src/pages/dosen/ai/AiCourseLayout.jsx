@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { findCourseByMoodleId, getMonitoring } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
 import { useCourseEvents } from '../../../hooks/useCourseEvents';
@@ -14,6 +14,7 @@ import WorkflowLayout from './WorkflowLayout';
 const TABS = [
   { to: '', label: 'Ringkasan', end: true },
   { to: 'rps', label: 'RPS' },
+  { to: 'workflows', label: 'Workflow' },
   { to: 'plan', label: 'Rencana' },
   { to: 'content', label: 'Konten' },
   { to: 'review', label: 'Review' },
@@ -21,13 +22,15 @@ const TABS = [
 ];
 
 /**
- * Tab "Generator AI" di halaman kursus Moodle. Satu kursus memiliki satu project generator;
+ * Tab "Generator AI" di halaman kursus. Satu kursus memiliki satu project generator;
  * bila belum ada, tampilkan form untuk memulainya.
  * Sesuai design-api.md §17: ambil initial state via HTTP dulu, baru pakai event stream.
  */
 function CourseProjectLayout() {
   const { course: moodleCourse, isTeacher } = useMoodleCourse();
   const [events, setEvents] = useState([]);
+  // Status workflow dapat dibuka walau kursus ini belum punya project, mis. dari tautan di daftar RPS.
+  const onStatusPage = useLocation().pathname.endsWith('/workflows');
   // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.
   const [version, setVersion] = useState(0);
 
@@ -57,6 +60,7 @@ function CourseProjectLayout() {
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
   if (error && !course) return <ErrorAlert error={error} />;
+  if (!course && onStatusPage) return <Outlet context={{ course: null, events: [], version, refresh }} />;
   if (!course) return <AiProjectStart moodleCourse={moodleCourse} onCreated={() => reload()} />;
 
   return (

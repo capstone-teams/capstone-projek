@@ -249,49 +249,52 @@ describe('FE-08.2 status pemrosesan RPS', () => {
     await waitFor(() => rowFor('rps-rusak.pdf')?.textContent.includes('Dokumen RPS gagal diproses'), 'pesan setelah percobaan ulang', 8000);
   });
 
-  it('RPS yang gagal dapat dihapus dari daftar dengan konfirmasi dan dipulihkan', async () => {
-    await upload('rps-rusak.pdf');
-    await upload('rps-rusak-dua.pdf');
-    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal') && rowFor('rps-rusak-dua.pdf').textContent.includes('Gagal'), 'dua RPS gagal');
-    const dialogButton = (text) => [...container.querySelectorAll('dialog button')].find((b) => b.textContent === text);
-    const rowButton = (name, text) => [...rowFor(name).querySelectorAll('button')].find((b) => b.textContent === text);
+  const dialogButton = (text) => [...container.querySelectorAll('dialog button')].find((b) => b.textContent === text);
+  const rowButton = (name, text) => [...rowFor(name).querySelectorAll('button')].find((b) => b.textContent === text);
+  const pickAndUpload = async (name) => {
+    await pick(new File(['%PDF'], name, { type: 'application/pdf' }));
+    await act(async () => q('form.upload').requestSubmit());
+  };
 
+  it('RPS gagal dapat dihapus dengan konfirmasi dan tidak dapat dilihat lagi', async () => {
+    await upload('rps-rusak.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal'), 'RPS gagal');
     // Tombol hanya untuk RPS gagal; batal tidak mengubah apa pun.
-    expect(rowButton('RPS-Pemrograman-Web-2026.pdf', 'Hapus dari daftar')).toBeUndefined();
-    await act(async () => rowButton('rps-rusak.pdf', 'Hapus dari daftar').click());
-    expect(container.querySelector('dialog').textContent).toContain('dapat dipulihkan');
+    expect(rowButton('RPS-Pemrograman-Web-2026.pdf', 'Hapus')).toBeUndefined();
+    await act(async () => rowButton('rps-rusak.pdf', 'Hapus').click());
     await act(async () => dialogButton('Batal').click());
     expect(rowFor('rps-rusak.pdf')).toBeTruthy();
 
-    // Konfirmasi: hilang dari daftar, dan tersimpan per pengguna di browser.
-    await act(async () => rowButton('rps-rusak.pdf', 'Hapus dari daftar').click());
-    await act(async () => dialogButton('Hapus dari daftar').click());
+    await act(async () => rowButton('rps-rusak.pdf', 'Hapus').click());
+    await act(async () => dialogButton('Hapus').click());
     expect(rowFor('rps-rusak.pdf')).toBeUndefined();
-    expect(rowFor('rps-rusak-dua.pdf')).toBeTruthy();
-    expect(Object.values({ ...localStorage }).some((value) => value.includes('rps.hidden'))).toBe(true);
+    // Tidak ada tampilan atau pemulihan RPS yang dihapus.
+    expect(container.textContent).not.toMatch(/yang dihapus|Pulihkan/);
 
-    // Hapus semua yang gagal, lalu pulihkan satu.
-    expect(rowFor('rps-rusak-dua.pdf')).toBeTruthy();
-    await act(async () => rowButton('rps-rusak-dua.pdf', 'Hapus dari daftar').click());
-    await act(async () => dialogButton('Hapus dari daftar').click());
-    const toggle = () => [...container.querySelectorAll('button')].find((b) => b.textContent.startsWith('Tampilkan 2 RPS yang dihapus'));
-    expect(toggle()).toBeTruthy();
-    await act(async () => toggle().click());
-    expect(rowFor('rps-rusak.pdf')).toBeTruthy();
-    await act(async () => rowButton('rps-rusak.pdf', 'Pulihkan ke daftar').click());
-    await act(async () => [...container.querySelectorAll('button')].find((b) => b.textContent.startsWith('Sembunyikan RPS yang dihapus')).click());
-    expect(rowFor('rps-rusak.pdf')).toBeTruthy();
-    expect(rowFor('rps-rusak-dua.pdf')).toBeUndefined();
+    // Tetap hilang setelah halaman dimuat ulang.
+    act(() => root.unmount());
+    await render();
+    await waitFor(() => rowFor('RPS-Pemrograman-Web-2026.pdf'), 'daftar dimuat');
+    expect(rowFor('rps-rusak.pdf')).toBeUndefined();
+  });
+
+  it('mengunggah lagi file yang sudah dihapus menampilkannya kembali', async () => {
+    await upload('rps-rusak.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal'), 'RPS gagal');
+    await act(async () => rowButton('rps-rusak.pdf', 'Hapus').click());
+    await act(async () => dialogButton('Hapus').click());
+    await pickAndUpload('rps-rusak.pdf');
+    await waitFor(() => rowFor('rps-rusak.pdf'), 'tampil lagi');
   });
 
   it('hapus semua RPS yang gagal sekaligus', async () => {
     await upload('rps-rusak.pdf');
-    await upload('rps-rusak-dua.pdf');
-    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal') && rowFor('rps-rusak-dua.pdf').textContent.includes('Gagal'), 'dua RPS gagal');
-    const bulk = [...container.querySelectorAll('button')].find((b) => b.textContent.startsWith('Hapus semua yang gagal (2)'));
-    await act(async () => bulk.click());
-    expect(container.querySelector('dialog').textContent).toContain('Hapus 2 RPS dari daftar?');
-    await act(async () => [...container.querySelectorAll('dialog button')].find((b) => b.textContent === 'Hapus dari daftar').click());
+    await waitFor(() => rowFor('rps-rusak.pdf').textContent.includes('Gagal'), 'RPS gagal pertama');
+    await pickAndUpload('rps-rusak-dua.pdf');
+    await waitFor(() => rowFor('rps-rusak-dua.pdf')?.textContent.includes('Gagal'), 'RPS gagal kedua');
+    await act(async () => [...container.querySelectorAll('button')].find((b) => b.textContent === 'Hapus semua yang gagal (2)').click());
+    expect(container.querySelector('dialog').textContent).toContain('Hapus 2 RPS?');
+    await act(async () => dialogButton('Hapus').click());
     expect(rowFor('rps-rusak.pdf')).toBeUndefined();
     expect(rowFor('rps-rusak-dua.pdf')).toBeUndefined();
     expect(rowFor('RPS-Pemrograman-Web-2026.pdf')).toBeTruthy();
@@ -309,10 +312,10 @@ describe('FE-08.2 status pemrosesan RPS', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('tab RPS menampilkan status dan tautan Pantau workflow ke Ringkasan', async () => {
+  it('tab RPS menampilkan status dan tautan Pantau workflow ke tab Workflow', async () => {
     await render('/course/2/ai/rps');
     await waitFor(() => container.textContent.includes('Selesai dianalisis'), 'status di tab RPS');
     const monitor = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Pantau workflow');
-    expect(monitor.getAttribute('href')).toBe('/course/2/ai');
+    expect(monitor.getAttribute('href')).toBe('/course/2/ai/workflows');
   });
 });

@@ -27,9 +27,9 @@ export function Alert({ tone = 'danger', title, children, onClose }) {
 
 export function ErrorAlert({ error, onClose }) {
   if (!error) return null;
-  const code = error.code && !['INTERNAL_ERROR', 'networkerror'].includes(error.code) ? error.code : undefined;
+  // Kode teknis (mis. NETWORK_ERROR, RESOURCE_NOT_FOUND) tidak berguna bagi pengguna; cukup pesannya.
   return (
-    <Alert tone="danger" onClose={onClose} title={code}>
+    <Alert tone="danger" onClose={onClose}>
       {error.message}
     </Alert>
   );

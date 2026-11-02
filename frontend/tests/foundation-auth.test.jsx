@@ -160,7 +160,7 @@ describe('FE-06.2 session restore', () => {
 
   it('keeps the tokens when the backend is unreachable during restore', async () => {
     storeSession();
-    service.getCurrentUser.mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.'));
+    service.getCurrentUser.mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR', 'Layanan sedang tidak dapat diakses. Silakan coba lagi beberapa saat lagi.'));
     service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     expect(state.user).toBeNull();

@@ -7,7 +7,7 @@ import ActivityIcon from '../../../components/moodle/ActivityIcon';
 import MoodleHtml from '../../../components/moodle/MoodleHtml';
 import { gradeItemLabel, gradeRange } from '../../../utils/grades';
 
-/** Laporan nilai mahasiswa sendiri (seperti grade/report/user Moodle). */
+/** Laporan nilai mahasiswa sendiri. Rujukan: user report Moodle (grade/report/user). */
 export default function GradesPage() {
   const { course } = useMoodleCourse();
   const { user } = useAuth();

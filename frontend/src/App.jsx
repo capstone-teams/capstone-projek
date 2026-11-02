@@ -23,6 +23,7 @@ import ModEditPage from './pages/dosen/course/ModEditPage';
 import AiCourseLayout from './pages/dosen/ai/AiCourseLayout';
 import CourseOverviewPage from './pages/dosen/ai/CourseOverviewPage';
 import WorkflowOverviewPage from './pages/dosen/ai/WorkflowOverviewPage';
+import WorkflowStatusPage from './pages/dosen/ai/WorkflowStatusPage';
 import CourseRpsPage from './pages/dosen/ai/CourseRpsPage';
 import CoursePlanPage from './pages/dosen/ai/CoursePlanPage';
 import CourseContentPage from './pages/dosen/ai/CourseContentPage';
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="ai" element={<AiCourseLayout />}>
                 <Route index element={COURSE_API_AVAILABLE ? <CourseOverviewPage /> : <WorkflowOverviewPage />} />
                 <Route path="rps" element={<CourseRpsPage />} />
+                <Route path="workflows" element={<WorkflowStatusPage />} />
                 {/* Tahap berikut butuh API /courses, yang belum ada di backend. */}
                 {COURSE_API_AVAILABLE && (
                   <>

@@ -1,8 +1,8 @@
-// Jenis pengumpulan tugas Moodle (Assignment > Submission types) dari `configs` mod_assign_get_assignments.
+// Jenis pengumpulan tugas dari `configs` mod_assign_get_assignments. Rujukan: Assignment settings > Submission types.
 import { formatFileSize } from './format';
 
 const MB = 1024 * 1024;
-// Batas ukuran ditulis seperti display_size() Moodle: "1 MB", bukan "1.0 MB".
+// Rujukan source Moodle: batas ukuran ditulis seperti display_size(), yaitu "1 MB", bukan "1.0 MB".
 export const formatLimit = (bytes) => (bytes >= MB ? `${Number((bytes / MB).toFixed(1))} MB` : formatFileSize(bytes));
 
 const configValue = (assign, plugin, name) =>
@@ -19,7 +19,7 @@ export function submissionTypes(assign) {
   };
 }
 
-/** Hitungan kata seperti Moodle: tag diabaikan, singkatan seperti "I'm" dihitung satu kata. */
+/** Hitungan kata mengikuti perilaku Moodle: tag diabaikan, singkatan seperti "I'm" dihitung satu kata. */
 export function countWords(text) {
   return text.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }

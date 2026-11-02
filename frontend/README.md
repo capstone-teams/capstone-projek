@@ -204,15 +204,40 @@ Dokumen `PROCESSED` lama tanpa workflow menampilkan tombol **Analisis RPS**
 (`POST /rps/{id}/reanalyze`). Di mock, nama file berisi `tanpa-analisis` meniru dokumen
 lama itu dan `gagal-analisis` gagal saat analisis pertama untuk mencoba Analisis ulang.
 
-### Hapus RPS yang gagal dari daftar
+### Status workflow (FE-10.1)
 
-RPS berstatus **Gagal** punya tombol **Hapus dari daftar** (dengan konfirmasi), dan bila ada
-lebih dari satu muncul **Hapus semua yang gagal (N)**. Backend belum punya
-`DELETE /rps/{id}`, jadi ini menyembunyikan RPS dari daftar pengguna yang login (disimpan
-per pengguna di browser, kunci `rps.hidden`); dokumennya tetap di server. Yang
-disembunyikan dapat dilihat lewat **Tampilkan N RPS yang dihapus dari daftar** dan
-dipulihkan dengan **Pulihkan ke daftar**. Setelah backend punya endpoint hapus, tombol ini
-cukup memanggilnya di `useRpsLibrary` (`hide`).
+Tab **Workflow** di Generator AI (`/course/:id/ai/workflows`) menampilkan workflow milik dosen:
+daftar dari `GET /workflows` (nama RPS dari `GET /rps`), dan detail dari `GET /workflows/{id}` beserta
+riwayat `GET /workflows/{id}/events`. Workflow dipilih lewat `?workflow=<id>`; tautan **Pantau workflow**
+di daftar RPS membukanya. Tab **Ringkasan** memakai komponen status yang sama untuk workflow kursus ini.
+
+Konstanta ada di `src/utils/workflowStatus.js` (dipakai juga FE-11.1): `WORKFLOW_STATUS` (seluruh nilai
+WorkflowStatus backend), `EVENT_TYPE` dan `WORKFLOW_EVENT`, beserta label Bahasa Indonesia, warna, dan penanda.
+Berbeda dari `utils/workflow.js`, yang memuat status course milik API `/courses`.
+
+Backend hanya mengirim `status` (QUEUED, RUNNING, COMPLETED, FAILED) dan `stage` (mis. `rps_analysis`,
+`retrying`, `instructor_review`), bukan status tahap internal (`src/schemas/workflow.py`). Frontend menurunkan
+nilai WorkflowStatus lewat `workflowStatusOf()`, dan keadaan tiap tahap lewat `deriveStages()` dari workflow dan
+event-nya: selesai (event `WORKFLOW_STAGE_COMPLETED`), berjalan, **menunggu tindakan dosen** (stage
+`instructor_review`), **mencoba ulang** (stage `retrying`, tahap dari event `WORKFLOW_RETRY`), **gagal**
+(tahap pada event `WORKFLOW_FAILED`), dan menunggu. FAILED dibedakan dari RETRYING lewat warna (merah/kuning)
+dan bentuk penanda (✕/↻). Tahap yang belum dijalankan backend (rencana, konten, review, pengiriman, verifikasi)
+tampil sebagai menunggu, atau "Belum dijalankan" bila workflow sudah berhenti.
+
+Pembaruan otomatis: event WebSocket memicu pengambilan ulang, dan polling setiap 4-5 detik menjadi cadangan
+sampai workflow COMPLETED atau FAILED. Saat ini orkestrator backend baru menjalankan dua tahap (pemrosesan dan
+analisis RPS), sehingga RETRYING dan WAITING_FOR_REVIEW baru teruji lewat data contoh di tes.
+
+### Hapus RPS yang gagal (dimatikan)
+
+Fitur ini **disembunyikan** karena backend belum punya `DELETE /rps/{id}`; kodenya disimpan untuk
+berjaga-jaga. Flag-nya `RPS_DELETE_AVAILABLE` (`services/config.js`), diaktifkan dengan
+`VITE_RPS_DELETE=true` (mode mock untuk tes selalu aktif). Bila aktif, RPS berstatus **Gagal** punya tombol
+**Hapus** (dengan konfirmasi), dan bila ada lebih dari satu muncul **Hapus semua yang gagal (N)**. Saat ini
+"hapus" hanya mengeluarkan RPS dari daftar pengguna di browser (kunci `rps.hidden`) dan dokumennya tetap di
+server; unggah file yang sama menampilkannya kembali. Saat flag mati, RPS yang pernah dihapus tampil lagi.
+
+Setelah backend punya endpoint hapus: aktifkan flag, lalu ganti isi `hide` di `useRpsLibrary` agar memanggilnya.
 
 ### Tanpa API /courses
 

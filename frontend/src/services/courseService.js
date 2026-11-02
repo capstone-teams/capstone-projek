@@ -8,7 +8,7 @@ export function listCourses() {
 }
 
 /**
- * Project generator milik satu kursus Moodle (satu kursus = satu project), atau null bila belum ada.
+ * Project generator milik satu kursus (satu kursus = satu project), atau null bila belum ada.
  * Hasil tetap disaring di sini supaya benar walau backend belum mendukung filter moodle_course_id.
  */
 export async function findCourseByMoodleId(moodleCourseId) {

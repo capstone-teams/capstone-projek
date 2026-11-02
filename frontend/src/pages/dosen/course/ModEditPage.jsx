@@ -13,7 +13,7 @@ const TYPES = {
   label: { name: 'Text and media area', Form: LabelModForm, successMessage: 'Teks dan media ditambahkan.' },
 };
 
-/** Halaman "New <aktivitas>" (Moodle: course/modedit.php?add=<modname>&section=<n>). */
+/** Halaman "New <aktivitas>". Rujukan alur Moodle: course/modedit.php?add=<modname>&section=<n>. */
 export default function ModEditPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();

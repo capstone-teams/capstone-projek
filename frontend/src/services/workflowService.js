@@ -1,6 +1,6 @@
 import { api } from './apiClient';
 
-// Monitoring workflow dan course target Moodle (design-api §16, BE-11.3).
+// Monitoring workflow dan course target (design-api §16, BE-11.3).
 
 export function listWorkflows() {
   return api.get('/workflows').then((data) => data.items);

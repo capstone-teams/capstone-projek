@@ -72,7 +72,7 @@ function ModForm({ sections, initiallyOpen, validate, toFields, state, props, wi
     const found = validate(state.form);
     state.setErrors(found);
     if (Object.values(found).some(Boolean)) {
-      // Seperti Moodle: buka bagian yang berisi error lalu fokus ke field pertama yang salah.
+      // Rujukan perilaku formulir Moodle: buka bagian yang berisi error lalu fokus ke field pertama yang salah.
       const form = event.currentTarget;
       setTimeout(() => {
         const field = form.querySelector('[aria-invalid="true"], [data-invalid="true"]');

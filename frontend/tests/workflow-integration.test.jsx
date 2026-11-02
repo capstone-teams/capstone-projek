@@ -11,7 +11,7 @@ import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
 import { getWorkflow } from '../src/services/workflowService';
 
 // Meniru backend nyata: API /courses belum ada, Generator AI berjalan di atas /workflows.
-vi.mock('../src/services/config', async (original) => ({ ...(await original()), COURSE_API_AVAILABLE: false }));
+vi.mock('../src/services/config', async (original) => ({ ...(await original()), COURSE_API_AVAILABLE: false, RPS_DELETE_AVAILABLE: false }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,6 +58,35 @@ describe('Generator AI tanpa API /courses', () => {
     expect([...container.querySelectorAll('a')].some((a) => a.textContent === 'Kembali ke daftar RPS')).toBe(true);
   });
 
+  it('tombol Hapus RPS gagal disembunyikan selama backend belum punya DELETE, dan RPS yang pernah dihapus tampil lagi', async () => {
+    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
+    await backendLogin('dosen', 'dosen123');
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/course/2/ai']}>
+          <AuthProvider><AppStateProvider><App /></AppStateProvider></AuthProvider>
+        </MemoryRouter>,
+      );
+    });
+    await waitFor(() => container.querySelector('form.upload'), 'form unggah');
+    const input = container.querySelector('form.upload input[type="file"]');
+    const upload = async (name) => {
+      await act(async () => {
+        Object.defineProperty(input, 'files', { value: [new File(['%PDF'], name, { type: 'application/pdf' })], configurable: true });
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await act(async () => container.querySelector('form.upload').requestSubmit());
+    };
+    await upload('rps-rusak.pdf');
+    await upload('rps-rusak-dua.pdf');
+    const rows = () => [...container.querySelectorAll('ul[aria-label="Daftar RPS"] > li')];
+    await waitFor(() => rows().filter((row) => row.textContent.includes('Gagal')).length === 2, 'dua RPS gagal');
+    expect(button('Hapus')).toBeUndefined();
+    expect(container.textContent).not.toMatch(/Hapus semua yang gagal/);
+    expect(button('Proses ulang')).toBeTruthy();
+  });
+
   it('unggah RPS, hubungkan ke kursus lewat moodle-target, lalu pantau dan lepaskan', async () => {
     localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
     await backendLogin('dosen', 'dosen123');
@@ -83,7 +112,7 @@ describe('Generator AI tanpa API /courses', () => {
 
     await act(async () => button('Hubungkan RPS').click());
     await waitFor(() => container.textContent.includes('Status workflow'), 'ringkasan workflow');
-    expect([...container.querySelectorAll('[aria-label="Bagian generator AI"] a')].map((a) => a.textContent)).toEqual(['Ringkasan', 'RPS']);
+    expect([...container.querySelectorAll('[aria-label="Bagian generator AI"] a')].map((a) => a.textContent)).toEqual(['Ringkasan', 'RPS', 'Workflow']);
     await waitFor(() => container.querySelector('.event-log'), 'riwayat event');
     expect(await getWorkflow('workflow_001')).toMatchObject({ moodle_course_id: 2, rps_id: expect.any(String) });
 

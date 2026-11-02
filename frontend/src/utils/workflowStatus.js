@@ -1,0 +1,231 @@
+// Status dan event workflow dari API monitoring (design-api §16-§17, BE-11.3). Dipakai tampilan status
+// workflow (FE-10.1) dan dashboard dosen (FE-11.1).
+//
+// Berbeda dari utils/workflow.js, yang memuat status course milik API /courses (design-api §20).
+//
+// Backend memakai dua tingkat status:
+// - lifecycle yang dikirim API: QUEUED, RUNNING, COMPLETED, FAILED (field `status`);
+// - tahap yang sedang berjalan (field `stage`), mis. rps_analysis, retrying, instructor_review.
+// Status tahap internal (PROCESSING_RPS, WAITING_FOR_REVIEW, RETRYING, ...) sengaja tidak dikirim API
+// (src/schemas/workflow.py), jadi frontend menurunkannya dari `status` + `stage` lewat workflowStatusOf().
+
+/** Status lifecycle yang dikirim API (`status`). */
+export const WORKFLOW_API_STATUS = {
+  QUEUED: 'QUEUED',
+  RUNNING: 'RUNNING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+};
+
+/** Seluruh nilai WorkflowStatus backend (src/models/workflow.py). */
+export const WORKFLOW_STATUS = {
+  QUEUED: 'QUEUED',
+  PROCESSING_RPS: 'PROCESSING_RPS',
+  ANALYZING_RPS: 'ANALYZING_RPS',
+  PLANNING_COURSE: 'PLANNING_COURSE',
+  GENERATING_CONTENT: 'GENERATING_CONTENT',
+  VALIDATING: 'VALIDATING',
+  WAITING_FOR_REVIEW: 'WAITING_FOR_REVIEW',
+  EXECUTING_TO_MOODLE: 'EXECUTING_TO_MOODLE',
+  VERIFYING: 'VERIFYING',
+  RETRYING: 'RETRYING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+};
+
+/**
+ * label: teks; tone: warna Badge; marker: penanda visual (idle, running, review, retry, done, failed);
+ * description: penjelasan singkat untuk pengguna.
+ */
+export const WORKFLOW_STATUS_META = {
+  [WORKFLOW_STATUS.QUEUED]: { label: 'Antre', tone: 'neutral', marker: 'idle', description: 'Menunggu giliran dikerjakan.' },
+  [WORKFLOW_STATUS.PROCESSING_RPS]: { label: 'Memproses RPS', tone: 'info', marker: 'running', description: 'Dokumen RPS sedang dikonversi.' },
+  [WORKFLOW_STATUS.ANALYZING_RPS]: { label: 'Menganalisis RPS', tone: 'info', marker: 'running', description: 'Agent sedang menganalisis isi RPS.' },
+  [WORKFLOW_STATUS.PLANNING_COURSE]: { label: 'Menyusun rencana', tone: 'info', marker: 'running', description: 'Agent sedang menyusun rencana mingguan.' },
+  [WORKFLOW_STATUS.GENERATING_CONTENT]: { label: 'Membuat konten', tone: 'info', marker: 'running', description: 'Agent sedang membuat konten pembelajaran.' },
+  [WORKFLOW_STATUS.VALIDATING]: { label: 'Validasi konten', tone: 'info', marker: 'running', description: 'Konten sedang diperiksa.' },
+  [WORKFLOW_STATUS.WAITING_FOR_REVIEW]: { label: 'Menunggu review Anda', tone: 'warning', marker: 'review', description: 'Perlu tindakan Anda: periksa lalu setujui atau tolak.' },
+  [WORKFLOW_STATUS.EXECUTING_TO_MOODLE]: { label: 'Mengirim ke kursus', tone: 'info', marker: 'running', description: 'Konten sedang dikirim ke kursus.' },
+  [WORKFLOW_STATUS.VERIFYING]: { label: 'Verifikasi', tone: 'info', marker: 'running', description: 'Hasil pengiriman sedang diperiksa.' },
+  [WORKFLOW_STATUS.RETRYING]: { label: 'Mencoba ulang', tone: 'warning', marker: 'retry', description: 'Tahap gagal sebagian dan sedang diperbaiki otomatis.' },
+  [WORKFLOW_STATUS.COMPLETED]: { label: 'Selesai', tone: 'success', marker: 'done', description: 'Seluruh tahap selesai.' },
+  [WORKFLOW_STATUS.FAILED]: { label: 'Gagal', tone: 'danger', marker: 'failed', description: 'Workflow berhenti karena kesalahan.' },
+};
+
+/** Nilai `stage` dari API (src/services/workflow/domain.py: STAGE_BY_STATUS). */
+export const WORKFLOW_STAGE = {
+  RPS_PROCESSING: 'rps_processing',
+  RPS_ANALYSIS: 'rps_analysis',
+  COURSE_PLANNING: 'course_planning',
+  CONTENT_GENERATION: 'content_generation',
+  VALIDATION: 'validation',
+  INSTRUCTOR_REVIEW: 'instructor_review',
+  MOODLE_EXECUTION: 'moodle_execution',
+  VERIFICATION: 'verification',
+  RETRYING: 'retrying',
+};
+
+const STATUS_BY_STAGE = {
+  [WORKFLOW_STAGE.RPS_PROCESSING]: WORKFLOW_STATUS.PROCESSING_RPS,
+  [WORKFLOW_STAGE.RPS_ANALYSIS]: WORKFLOW_STATUS.ANALYZING_RPS,
+  [WORKFLOW_STAGE.COURSE_PLANNING]: WORKFLOW_STATUS.PLANNING_COURSE,
+  [WORKFLOW_STAGE.CONTENT_GENERATION]: WORKFLOW_STATUS.GENERATING_CONTENT,
+  [WORKFLOW_STAGE.VALIDATION]: WORKFLOW_STATUS.VALIDATING,
+  [WORKFLOW_STAGE.INSTRUCTOR_REVIEW]: WORKFLOW_STATUS.WAITING_FOR_REVIEW,
+  [WORKFLOW_STAGE.MOODLE_EXECUTION]: WORKFLOW_STATUS.EXECUTING_TO_MOODLE,
+  [WORKFLOW_STAGE.VERIFICATION]: WORKFLOW_STATUS.VERIFYING,
+  [WORKFLOW_STAGE.RETRYING]: WORKFLOW_STATUS.RETRYING,
+};
+
+/** Urutan tahap workflow penuh (design-api §20). Tahap yang belum dijalankan backend tampil sebagai menunggu. */
+export const WORKFLOW_PIPELINE = [
+  WORKFLOW_STAGE.RPS_PROCESSING,
+  WORKFLOW_STAGE.RPS_ANALYSIS,
+  WORKFLOW_STAGE.COURSE_PLANNING,
+  WORKFLOW_STAGE.CONTENT_GENERATION,
+  WORKFLOW_STAGE.VALIDATION,
+  WORKFLOW_STAGE.INSTRUCTOR_REVIEW,
+  WORKFLOW_STAGE.MOODLE_EXECUTION,
+  WORKFLOW_STAGE.VERIFICATION,
+];
+
+/** Nilai WorkflowStatus rinci dari response API: lifecycle terminal/antre dipakai apa adanya, RUNNING dibaca dari stage. */
+export function workflowStatusOf(workflow) {
+  const status = workflow?.status;
+  if (status === WORKFLOW_API_STATUS.COMPLETED) return WORKFLOW_STATUS.COMPLETED;
+  if (status === WORKFLOW_API_STATUS.FAILED) return WORKFLOW_STATUS.FAILED;
+  if (status === WORKFLOW_API_STATUS.QUEUED) return WORKFLOW_STATUS.QUEUED;
+  return STATUS_BY_STAGE[workflow?.stage] ?? null;
+}
+
+const UNKNOWN_META = { label: 'Berjalan', tone: 'info', marker: 'running', description: '' };
+
+export function workflowStatusMeta(workflow) {
+  const value = workflowStatusOf(workflow);
+  return value ? WORKFLOW_STATUS_META[value] : { ...UNKNOWN_META, label: workflow?.status ?? 'Tidak diketahui', marker: workflow?.status ? 'running' : 'idle' };
+}
+
+/** Workflow sudah berhenti (tidak perlu dipantau lagi). */
+export const isWorkflowFinished = (workflow) => [WORKFLOW_API_STATUS.COMPLETED, WORKFLOW_API_STATUS.FAILED].includes(workflow?.status);
+
+// ---- Event
+
+/** Kategori event (src/models/workflow_event.py: EventType, DL-011). API publik tidak mengirimnya; lihat eventTypeOf(). */
+export const EVENT_TYPE = {
+  PERUBAHAN_TAHAP: 'PERUBAHAN_TAHAP',
+  AKTIVITAS_AGENT: 'AKTIVITAS_AGENT',
+  OPERASI_MOODLE: 'OPERASI_MOODLE',
+  RETRY_FIX: 'RETRY_FIX',
+  ERROR_FAILURE: 'ERROR_FAILURE',
+};
+
+export const EVENT_TYPE_META = {
+  [EVENT_TYPE.PERUBAHAN_TAHAP]: { label: 'Perubahan tahap', tone: 'info', marker: 'stage' },
+  [EVENT_TYPE.AKTIVITAS_AGENT]: { label: 'Aktivitas agent', tone: 'neutral', marker: 'agent' },
+  [EVENT_TYPE.OPERASI_MOODLE]: { label: 'Operasi kursus', tone: 'info', marker: 'stage' },
+  [EVENT_TYPE.RETRY_FIX]: { label: 'Percobaan ulang', tone: 'warning', marker: 'retry' },
+  [EVENT_TYPE.ERROR_FAILURE]: { label: 'Kegagalan', tone: 'danger', marker: 'failed' },
+};
+
+/** Nama event publik (design-api §17, field `event`). */
+export const WORKFLOW_EVENT = {
+  STARTED: 'WORKFLOW_STARTED',
+  STAGE_STARTED: 'WORKFLOW_STAGE_STARTED',
+  STAGE_PROGRESS: 'WORKFLOW_STAGE_PROGRESS',
+  STAGE_COMPLETED: 'WORKFLOW_STAGE_COMPLETED',
+  RETRY: 'WORKFLOW_RETRY',
+  COMPLETED: 'WORKFLOW_COMPLETED',
+  FAILED: 'WORKFLOW_FAILED',
+};
+
+export const WORKFLOW_EVENT_LABELS = {
+  [WORKFLOW_EVENT.STARTED]: 'Workflow dimulai',
+  [WORKFLOW_EVENT.STAGE_STARTED]: 'Tahap dimulai',
+  [WORKFLOW_EVENT.STAGE_PROGRESS]: 'Tahap berjalan',
+  [WORKFLOW_EVENT.STAGE_COMPLETED]: 'Tahap selesai',
+  [WORKFLOW_EVENT.RETRY]: 'Mencoba ulang',
+  [WORKFLOW_EVENT.COMPLETED]: 'Workflow selesai',
+  [WORKFLOW_EVENT.FAILED]: 'Workflow gagal',
+};
+
+/** Kategori sebuah event, diturunkan dari nama dan tahapnya (sama dengan pemetaan di orkestrator backend). */
+export function eventTypeOf(event) {
+  switch (event?.event) {
+    case WORKFLOW_EVENT.RETRY:
+      return EVENT_TYPE.RETRY_FIX;
+    case WORKFLOW_EVENT.FAILED:
+      return EVENT_TYPE.ERROR_FAILURE;
+    case WORKFLOW_EVENT.STAGE_PROGRESS:
+      return [WORKFLOW_STAGE.MOODLE_EXECUTION, WORKFLOW_STAGE.VERIFICATION].includes(event.stage) ? EVENT_TYPE.OPERASI_MOODLE : EVENT_TYPE.AKTIVITAS_AGENT;
+    default:
+      return EVENT_TYPE.PERUBAHAN_TAHAP;
+  }
+}
+
+// ---- Indikator tahap
+
+/** Label tiap tahap pada indikator. */
+export const STAGE_LABELS = {
+  [WORKFLOW_STAGE.RPS_PROCESSING]: 'Pemrosesan RPS',
+  [WORKFLOW_STAGE.RPS_ANALYSIS]: 'Analisis RPS',
+  [WORKFLOW_STAGE.COURSE_PLANNING]: 'Penyusunan rencana',
+  [WORKFLOW_STAGE.CONTENT_GENERATION]: 'Pembuatan konten',
+  [WORKFLOW_STAGE.VALIDATION]: 'Validasi konten',
+  [WORKFLOW_STAGE.INSTRUCTOR_REVIEW]: 'Review dosen',
+  [WORKFLOW_STAGE.MOODLE_EXECUTION]: 'Pengiriman ke kursus',
+  [WORKFLOW_STAGE.VERIFICATION]: 'Verifikasi',
+  [WORKFLOW_STAGE.RETRYING]: 'Percobaan ulang',
+};
+
+/** Keadaan satu tahap pada indikator. */
+export const STAGE_STATE = {
+  DONE: 'done',
+  RUNNING: 'running',
+  REVIEW: 'review',
+  RETRYING: 'retrying',
+  FAILED: 'failed',
+  PENDING: 'pending',
+};
+
+export const STAGE_STATE_LABELS = {
+  [STAGE_STATE.DONE]: 'Selesai',
+  [STAGE_STATE.RUNNING]: 'Berjalan',
+  [STAGE_STATE.REVIEW]: 'Menunggu tindakan Anda',
+  [STAGE_STATE.RETRYING]: 'Mencoba ulang',
+  [STAGE_STATE.FAILED]: 'Gagal',
+  [STAGE_STATE.PENDING]: 'Menunggu',
+};
+
+/**
+ * Keadaan setiap tahap pipeline, dari workflow (GET /workflows/{id}) dan riwayat event-nya:
+ * - selesai: tahap yang punya event WORKFLOW_STAGE_COMPLETED;
+ * - berjalan, menunggu review, atau mencoba ulang: dari `stage` workflow;
+ * - gagal: tahap pada event WORKFLOW_FAILED (atau tahap terakhir yang dimulai tetapi belum selesai);
+ * - menunggu: sisanya, termasuk tahap yang belum dijalankan backend.
+ */
+export function deriveStages(workflow, events = []) {
+  const stages = new Set(WORKFLOW_PIPELINE);
+  events.forEach((event) => event.stage && stages.add(event.stage));
+  const completed = new Set(events.filter((event) => event.event === WORKFLOW_EVENT.STAGE_COMPLETED).map((event) => event.stage));
+  const lastRetry = [...events].reverse().find((event) => event.event === WORKFLOW_EVENT.RETRY);
+  const failedEvent = [...events].reverse().find((event) => event.event === WORKFLOW_EVENT.FAILED);
+  const lastStarted = [...events].reverse().find((event) => event.event === WORKFLOW_EVENT.STAGE_STARTED);
+  const running = workflow?.status === WORKFLOW_API_STATUS.RUNNING;
+  const failed = workflow?.status === WORKFLOW_API_STATUS.FAILED;
+  const failedStage = failed ? (failedEvent?.stage ?? (lastStarted && !completed.has(lastStarted.stage) ? lastStarted.stage : null)) : null;
+  const retryingStage = running && workflow.stage === WORKFLOW_STAGE.RETRYING ? lastRetry?.stage : null;
+
+  const stateOf = (stage) => {
+    if (stage === failedStage) return STAGE_STATE.FAILED;
+    if (stage === retryingStage) return STAGE_STATE.RETRYING;
+    if (running && stage === workflow.stage) return stage === WORKFLOW_STAGE.INSTRUCTOR_REVIEW ? STAGE_STATE.REVIEW : STAGE_STATE.RUNNING;
+    if (completed.has(stage)) return STAGE_STATE.DONE;
+    return STAGE_STATE.PENDING;
+  };
+
+  const ordered = [...WORKFLOW_PIPELINE, ...[...stages].filter((stage) => !WORKFLOW_PIPELINE.includes(stage) && stage !== WORKFLOW_STAGE.RETRYING)];
+  return ordered.map((stage) => ({ stage, label: STAGE_LABELS[stage] ?? stage, state: stateOf(stage) }));
+}
+
+/** Tahap yang sedang menunggu tindakan dosen (WAITING_FOR_REVIEW), bila ada. */
+export const needsInstructorAction = (workflow) => workflowStatusOf(workflow) === WORKFLOW_STATUS.WAITING_FOR_REVIEW;

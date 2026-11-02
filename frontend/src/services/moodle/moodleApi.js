@@ -1,6 +1,9 @@
 /**
- * Fungsi Moodle Web Service yang dipakai frontend. Semua termasuk layanan
- * "moodle_mobile_app" (lihat 'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE] di db/services.php).
+ * Data kursus yang belum punya API backend: kursus, peserta, nilai, aktivitas, dan pengumpulan tugas.
+ * Saat API-nya tersedia, ganti fungsi di sini dengan panggilan backend (lihat moodleClient.js).
+ *
+ * Rujukan source Moodle: semua fungsi termasuk layanan "moodle_mobile_app"
+ * ('services' => [MOODLE_OFFICIAL_MOBILE_SERVICE] di db/services.php).
  */
 import { MoodleError, callWs, uploadDraftFiles } from './moodleClient';
 
@@ -21,7 +24,7 @@ export function getUserCourses(userId) {
   return callWs('core_enrol_get_users_courses', { userid: userId, returnusercount: 0 });
 }
 
-/** classification: all | inprogress | future | past (sama dengan halaman My courses Moodle). */
+/** classification: all | inprogress | future | past. Rujukan: filter halaman My courses di Moodle. */
 export async function getCoursesByClassification(classification = 'all') {
   const res = await callWs('core_course_get_enrolled_courses_by_timeline_classification', {
     classification,
@@ -95,7 +98,7 @@ export function getSubmissionStatus(assignId) {
 
 /**
  * Simpan pengumpulan mahasiswa (mod_assign_save_submission): teks online sebagai HTML dan file lewat draft area.
- * Tanpa pengaturan "wajib klik kirim" Moodle langsung menandainya dikumpulkan untuk dinilai.
+ * Rujukan perilaku Moodle: tanpa pengaturan "wajib klik kirim" langsung ditandai dikumpulkan untuk dinilai.
  */
 /** files: null = file tidak diubah; array entri uploadDraftFiles = isi baru area file (boleh kosong). */
 export async function saveSubmission(assignId, { onlineText, files }) {
@@ -124,7 +127,7 @@ export function listAssignParticipants(assignId) {
 const TEACHER_OPTIONS = ['update', 'reports', 'backup', 'gradebook'];
 
 /**
- * Data user Moodle untuk sesi: identitas, admin situs, dan kursus yang diajar (hak per kursus).
+ * Data pengguna untuk sesi: identitas, admin situs, dan kursus yang diajar (hak per kursus).
  * Role aplikasi (DOSEN/MAHASISWA) TIDAK ditentukan di sini; sumbernya GET /auth/me backend (FE-06.3).
  */
 export async function resolveSession() {

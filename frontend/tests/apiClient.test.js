@@ -137,7 +137,9 @@ describe('apiClient (mode backend)', () => {
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(500);
     expect(err.code).toBe('INTERNAL_ERROR');
-    expect(err.message).toBe('Request gagal (HTTP 500).');
+    // Pengguna tidak melihat kode HTTP; detailnya hanya di konsol.
+    expect(err.message).toBe('Layanan sedang tidak dapat diakses. Silakan coba lagi beberapa saat lagi.');
+    expect(err.message).not.toMatch(/HTTP|\d{3}/);
   });
 
   it('menyisipkan Authorization Bearer token bila token tersedia di storage', async () => {
@@ -203,6 +205,14 @@ describe('apiClient (mode backend)', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     const err = await request('GET', '/x').catch((e) => e);
     expect(err.code).toBe('NETWORK_ERROR');
+    expect(err.message).not.toMatch(/server|backend|HTTP/i);
+  });
+
+  it('gateway error (502) dari proxy tidak menampilkan kode HTTP kepada pengguna', async () => {
+    mockFetch(502, null);
+    const err = await request('GET', '/x').catch((e) => e);
+    expect(err.status).toBe(502);
+    expect(err.message).toBe('Layanan sedang tidak dapat diakses. Silakan coba lagi beberapa saat lagi.');
   });
 
   it('rejects malformed successful JSON instead of presenting it as empty data', async () => {

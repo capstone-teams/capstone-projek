@@ -8,7 +8,7 @@ import MoodleHtml from './MoodleHtml';
 import { submissionContent, submissionTypes } from '../../utils/assignSubmission';
 import { formatFileSize, formatUnixDateTime } from '../../utils/format';
 
-// String mod_assign (lang/en/assign.php) agar tampilan sama dengan halaman tugas Moodle.
+// Rujukan source Moodle: teks status dari mod/assign/lang/en/assign.php agar sama dengan dokumentasinya.
 const SUBMISSION_STATUS = {
   new: ['No submission', 'neutral'],
   draft: ['Draft (not submitted)', 'warning'],
@@ -17,7 +17,7 @@ const SUBMISSION_STATUS = {
 };
 const GRADING_STATUS = { notgraded: 'Not graded', graded: 'Graded', released: 'Graded' };
 
-// Seperti format_time() Moodle: "8 days 23 hours".
+// Rujukan source Moodle: mengikuti format_time(), mis. "8 days 23 hours".
 function formatDuration(seconds) {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
@@ -25,7 +25,7 @@ function formatDuration(seconds) {
   return days ? `${unit(days, 'day')} ${unit(hours, 'hour')}` : unit(hours, 'hour');
 }
 
-/** Kotak "Opened/Due" dan deskripsi di atas halaman tugas (activity header Moodle). */
+/** Kotak Opened/Due dan deskripsi. Rujukan: https://docs.moodle.org/503/en/Using_Assignment (Student view). */
 export function AssignIntro({ assign }) {
   const hasDates = assign.allowsubmissionsfromdate > 0 || assign.duedate > 0;
   return (

@@ -5,6 +5,7 @@ import { usePolling } from './usePolling';
 import { useWorkflowEvents } from './useWorkflowEvents';
 import { getRps, listRps, processRps, reanalyzeRps } from '../services/rpsService';
 import { RPS_STATUS, isRpsInProgress } from '../utils/rpsStatus';
+import { RPS_DELETE_AVAILABLE } from '../services/config';
 
 // Polling hanya cadangan: event workflow (§17) memicu pembaruan lebih cepat bila tersedia.
 const POLL_MS = 3000;
@@ -29,11 +30,10 @@ export function useRpsLibrary() {
   const [actionError, setActionError] = useState(null);
   const reloadList = list.reload;
 
-  // Backend belum punya DELETE /rps/{id}: "hapus" menyembunyikan RPS dari daftar milik pengguna ini
-  // (disimpan per pengguna di browser); dokumennya tetap ada di server dan dapat dipulihkan.
+  // Backend belum punya DELETE /rps/{id}: "hapus" mengeluarkan RPS dari daftar pengguna ini
+  // (disimpan per pengguna di browser); dokumennya tetap ada di server.
   const [hiddenIds, setHiddenIds] = usePreference('rps.hidden', []);
   const hiddenSet = useMemo(() => new Set(Array.isArray(hiddenIds) ? hiddenIds : []), [hiddenIds]);
-  const [showHidden, setShowHidden] = useState(false);
 
   const allItems = useMemo(() => {
     const fetchedAt = list.data?.fetchedAt ?? 0;
@@ -46,8 +46,8 @@ export function useRpsLibrary() {
     });
     return [...merged.values()].sort(byNewest);
   }, [list.data, local]);
-  const items = useMemo(() => (showHidden ? allItems : allItems.filter((item) => !hiddenSet.has(item.id))), [allItems, hiddenSet, showHidden]);
-  const hiddenCount = allItems.filter((item) => hiddenSet.has(item.id)).length;
+  // Tanpa fitur hapus, RPS yang pernah dihapus (tersimpan di browser) tampil kembali.
+  const items = useMemo(() => (RPS_DELETE_AVAILABLE ? allItems.filter((item) => !hiddenSet.has(item.id)) : allItems), [allItems, hiddenSet]);
 
   const remember = useCallback((id, patch) => {
     setLocal((current) => ({ ...current, [id]: { ...current[id], ...patch, id, updatedAt: Date.now() } }));
@@ -91,6 +91,8 @@ export function useRpsLibrary() {
 
   /** Dipanggil RpsUploadForm setelah file tersimpan di server. */
   const addUploaded = useCallback(({ rps, processing: started }) => {
+    // File yang sama diunggah lagi memakai id lama (deduplicated), jadi harus tampil kembali.
+    if (hiddenSet.has(rps.id)) setHiddenIds([...hiddenSet].filter((id) => id !== rps.id));
     remember(rps.id, {
       filename: rps.filename,
       status: started?.status ?? rps.status,
@@ -99,7 +101,7 @@ export function useRpsLibrary() {
     });
     setHighlightId(rps.id);
     reloadList({ silent: true });
-  }, [remember, reloadList]);
+  }, [remember, reloadList, hiddenSet, setHiddenIds]);
 
   const run = useCallback(async (item, action) => {
     setBusyId(item.id);
@@ -123,13 +125,8 @@ export function useRpsLibrary() {
 
   return {
     items,
-    hiddenIds: hiddenSet,
-    hiddenCount,
-    showHidden,
-    toggleShowHidden: () => setShowHidden((value) => !value),
-    /** Hapus dari daftar: hanya RPS yang tidak sedang diproses. */
+    /** Hapus RPS yang gagal dari daftar. */
     hide: (targets) => setHiddenIds([...new Set([...hiddenSet, ...targets.map((item) => item.id)])]),
-    restore: (targets) => setHiddenIds([...hiddenSet].filter((id) => !targets.some((item) => item.id === id))),
     progress,
     loading: list.loading && !list.data,
     error: list.error,

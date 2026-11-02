@@ -63,6 +63,8 @@ function RpsNotAnalyzed({ rps, onChanged }) {
 export default function CourseRpsPage() {
   const { course } = useCourse();
   const rpsId = course.rps_id;
+  // Pada backend nyata `course` adalah workflow itu sendiri; pada mock /courses itu project, jadi tanpa id workflow.
+  const workflowId = COURSE_API_AVAILABLE ? course.workflow_id : course.id;
   // Status dulu (GET /rps/{id}); hasil analisis hanya diminta bila sudah ANALYZED.
   const rpsQuery = useApi(() => getRps(rpsId), [rpsId]);
   const rps = rpsQuery.data;
@@ -94,8 +96,8 @@ export default function CourseRpsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Monitoring workflow kursus ini ada di tab Ringkasan (Aktivitas agent). */}
-          <Link to=".." relative="path" className="btn btn--ghost btn--sm">
+          {/* Status workflow ada di tab Workflow; RPS tanpa workflow kembali ke daftar RPS. */}
+          <Link to={course.id ? `../workflows${workflowId ? `?workflow=${workflowId}` : ''}` : '..'} relative="path" className="btn btn--ghost btn--sm">
             {course.id ? 'Pantau workflow' : 'Kembali ke daftar RPS'}
           </Link>
           {COURSE_PLANNING_AVAILABLE && analyzed ? (

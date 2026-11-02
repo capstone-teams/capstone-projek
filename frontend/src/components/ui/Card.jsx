@@ -1,4 +1,4 @@
-/** Kotak bergaya "block"/card Moodle. */
+/** Kotak konten dengan judul dan aksi opsional. Rujukan tampilan: block/card pada tema Boost Moodle. */
 export function Card({ title, actions, children, className = '' }) {
   return (
     <section className={`min-w-0 rounded-lg border border-line-subtle bg-white p-4 md:p-5 ${className}`}>

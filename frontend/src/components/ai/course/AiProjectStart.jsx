@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { RPS_READY } from '../../../utils/rpsStatus';
-import { COURSE_API_AVAILABLE } from '../../../services/config';
+import { COURSE_API_AVAILABLE, RPS_DELETE_AVAILABLE } from '../../../services/config';
 import { createCourse } from '../../../services/courseService';
 import { setMoodleTarget } from '../../../services/workflowService';
 import { useAction } from '../../../hooks/useApi';
@@ -69,13 +69,9 @@ export default function AiProjectStart({ moodleCourse, onCreated }) {
                 busyId={library.busyId}
                 onProcess={library.process}
                 onReanalyze={library.reanalyze}
-                onHide={library.hide}
-                onRestore={library.restore}
-                hiddenIds={library.hiddenIds}
-                hiddenCount={library.hiddenCount}
-                showHidden={library.showHidden}
-                onToggleHidden={library.toggleShowHidden}
+                onHide={RPS_DELETE_AVAILABLE ? library.hide : undefined}
                 analysisHref={COURSE_API_AVAILABLE ? undefined : (item) => `rps?rps=${item.id}`}
+                monitorHref={(item) => `workflows?workflow=${item.workflow_id}`}
               />
             )
           )}

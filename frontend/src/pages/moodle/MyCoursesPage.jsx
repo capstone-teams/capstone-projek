@@ -18,7 +18,7 @@ const FILTERS = [
 
 export default function MyCoursesPage() {
   const { isTeacherOf, isDosen } = useCurrentUser();
-  // Filter diingat per user, seperti blok "Ikhtisar kursus" Moodle.
+  // Filter diingat per pengguna. Rujukan: blok "Course overview" di Moodle.
   const [storedClassification, setClassification] = usePreference('myCourses.classification', 'all');
   const classification = FILTERS.some((f) => f.value === storedClassification) ? storedClassification : 'all';
   const [query, setQuery] = useState('');
