@@ -13,6 +13,7 @@ JSONB dan partial unique index benar-benar terpakai.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 
 import pytest
@@ -71,7 +72,7 @@ async def workflow(db_session, owner_id) -> WorkflowRecord:
         file_name="rps.pdf",
         file_type="pdf",
         file_path="rps/rps.pdf",
-        file_hash=shortuuid.uuid(),
+        file_hash=hashlib.sha256(b"be-14-rps").hexdigest(),
         status=RPSStatus.ANALYZED,
     )
     db_session.add(rps)

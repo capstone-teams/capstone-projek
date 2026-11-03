@@ -14,6 +14,7 @@ Database memakai PostgreSQL pada fixture :func:`conftest.db_session`.
 
 from __future__ import annotations
 
+import hashlib
 
 import httpx
 import pytest
@@ -61,7 +62,7 @@ async def _create_workflow(session, owner_id: str) -> WorkflowRecord:
         file_name="rps.pdf",
         file_type="pdf",
         file_path="rps/rps.pdf",
-        file_hash=shortuuid.uuid(),
+        file_hash=hashlib.sha256(b"be-14-rps").hexdigest(),
         status=RPSStatus.ANALYZED,
     )
     session.add(rps)
