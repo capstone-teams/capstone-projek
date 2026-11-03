@@ -1,0 +1,11 @@
+name: assignment_generation
+version: v1
+description: Generate academic assignments based on RPS and learning materials.
+
+required_variables:
+  - rps_context
+  - learning_material
+
+optional_variables:
+  - instructor_profile
+  - additional_prompt

@@ -49,7 +49,7 @@ class CoursePlan(BaseModel):
         nullable=True,
     )
 
-    generated_by_agent_run_id: Mapped[str | None] = mapped_column(
-        ForeignKey("agent_runs.id"),
-        nullable=True,
-    )
+    # generated_by_agent_run_id: Mapped[str | None] = mapped_column(
+    #     ForeignKey("agent_runs.id"),
+    #     nullable=True,
+    # )

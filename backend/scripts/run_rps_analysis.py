@@ -146,9 +146,9 @@ def make_reporters():
     traces: list[dict] = []
     indent = " " * EVENT_PREFIX_WIDTH
 
-    async def emit_event(*, event_type: str, message: str, **data) -> None:
+    async def emit_event(*, event_type: str, **data) -> None:
         elapsed = time.perf_counter() - started
-        print(f"[{elapsed:6.2f}s] {event_type:<20} {message}")
+        print(f"[{elapsed:6.2f}s] {event_type}")
 
         if event_type == "LLM_RESPONDED":
             print(

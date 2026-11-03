@@ -1,0 +1,12 @@
+name: content_generation
+version: v1
+description: Generate learning materials based on RPS topics.
+
+required_variables:
+  - rps_structured
+  - week_context
+
+optional_variables:
+  - instructor_profile
+  - additional_prompt
+  - validation_feedback

@@ -128,6 +128,7 @@ class RPSWeekType(str, Enum):
     """
 
     REGULAR = "regular"
+    KUIS = "kuis"
     UTS = "uts"
     UAS = "uas"
 
@@ -208,6 +209,11 @@ class RPSWeekAssessment(RPSStructuredModel):
     description: str | None = None
     weight_percent: float | None = Field(default=None, ge=0, le=100)
 
+# class RPSLearningMaterial(RPSStructuredModel):
+#     """Materi pembelajaran untuk setiap minggu."""
+#
+#     material_name: str | None = None
+#     learning_material: dict | None = None
 
 class RPSWeek(RPSStructuredModel):
     """Distribusi materi per minggu (content-schema §6.2).
@@ -226,6 +232,7 @@ class RPSWeek(RPSStructuredModel):
     teaching_method: list[str] = Field(default_factory=list)
     media: list[str] = Field(default_factory=list)
     assessment: RPSWeekAssessment | None = None
+    # material: RPSLearningMaterial
 
     @field_validator(
         "topics", "cpmk", "sub_cpmk", "teaching_method", "media", mode="after"

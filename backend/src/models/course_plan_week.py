@@ -29,7 +29,7 @@ class CoursePlanWeek(BaseModel):
         String(255),
         nullable=False,
     )
-
+# pembelajaran kaya ceramah atau diskusi gitu
     learning_outcomes: Mapped[dict | None] = mapped_column(
         JSONB,
         nullable=True,
