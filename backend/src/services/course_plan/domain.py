@@ -61,6 +61,8 @@ class CoursePlanRecord:
     course: dict = field(default_factory=dict)
     weeks: tuple[CoursePlanWeekRecord, ...] = ()
     weeks_count: int = 0
+    #: Snapshot output agent; dipakai sebagai konteks regenerasi.
+    plan_data: dict | None = None
     validation_result: dict | None = None
     activity_configuration: dict | None = None
     revision_notes: str | None = None

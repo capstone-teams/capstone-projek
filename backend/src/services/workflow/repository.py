@@ -11,7 +11,7 @@ Pemetaan entity ↔ domain berada di modul ini (pola yang sama dengan
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.workflow import Workflow as WorkflowEntity
@@ -65,6 +65,34 @@ class WorkflowRepository:
         )
         entities = (await self._session.execute(statement)).scalars().all()
         return [_to_domain(entity) for entity in entities]
+
+    async def claim_status(
+        self,
+        workflow_id: str,
+        owner_id: str,
+        *,
+        allowed,
+        target,
+    ) -> bool:
+        """Pindahkan status hanya bila masih berada pada status yang diizinkan.
+
+        Update bersyarat ini adalah kunci optimistik untuk operasi yang tidak
+        boleh berjalan ganda (mis. memulai course planning). ``True`` berarti
+        baris ini yang memenangkan klaim. Owner ikut diperiksa di query supaya
+        klaim tidak pernah menyentuh workflow dosen lain.
+        """
+        statement = (
+            update(WorkflowEntity)
+            .where(
+                WorkflowEntity.id == workflow_id,
+                WorkflowEntity.owner_id == owner_id,
+                WorkflowEntity.status.in_(allowed),
+            )
+            .values(status=target, updated_at=func.now())
+        )
+        result = await self._session.execute(statement)
+        await self._session.commit()
+        return result.rowcount == 1
 
     async def update(self, workflow: WorkflowRecord) -> WorkflowRecord | None:
         """Perbarui workflow yang sudah dipersist; ``None`` bila barisnya tidak ada."""
