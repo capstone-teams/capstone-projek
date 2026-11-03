@@ -22,6 +22,7 @@ backend/
 │   │   ├── rps.py                # POST /rps, GET /rps/{id}, POST /rps/{id}/process, POST /rps/{id}/reanalyze
 │   │   ├── instructors.py        # GET/PUT /instructors/me/setup (INSTRUCTOR only)
 │   │   ├── workflows.py          # Workflow monitoring + WS /ws/workflows/{id} (BE-11.3)
+│   │   ├── course_plans.py       # Baca/review/generate course plan (BE-14)
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
@@ -29,7 +30,8 @@ backend/
 │   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
 │   │   ├── rps/                  # Unggah, konversi (BE-05), & analisis dokumen RPS (BE-08.2)
 │   │   ├── instructor/           # Setup dosen: profil, aktivitas, konteks agent (BE-10)
-│   │   ├── workflow/             # State machine, event, & orkestrator RPS (BE-11)
+│   │   ├── workflow/             # State machine, event, & orkestrator (BE-11)
+│   │   ├── course_plan/          # Course plan berversi, review, & planner (BE-14)
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
 │   │   └── dependencies.py       # Dependency provider untuk routes (+ require_roles)
@@ -40,6 +42,7 @@ backend/
 │   │   ├── rps.py                # DTO endpoint RPS
 │   │   ├── instructor.py         # DTO setup dosen (BE-10)
 │   │   ├── workflow.py           # DTO monitoring workflow & event (BE-11.3)
+│   │   ├── course_plan.py        # Kontrak output + DTO course plan (BE-14)
 │   │   └── rps_structured.py     # Kontrak RPS Structured Data (BE-05.3)
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
 │   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
@@ -747,7 +750,7 @@ POST /rps/{id}/process ──▶ workflow QUEUED
                      ANALYZING_RPS   (BE-08.1 → BE-09.2 → BE-08.2)
                               │
                               ▼
-                       COMPLETED / FAILED
+                  WAITING_FOR_REVIEW / FAILED   (DL-012)
 ```
 
 Endpoint `POST /rps/{id}/process` membuat workflow, menautkannya ke
@@ -775,10 +778,16 @@ Setiap perubahan tahap, aktivitas agent, retry, dan kegagalan tercatat pada
 `workflow_events` sebagai kategori (`PERUBAHAN_TAHAP`, `AKTIVITAS_AGENT`,
 `OPERASI_MOODLE`, `RETRY_FIX`, `ERROR_FAILURE`) sekaligus nama event publik
 `WORKFLOW_*` (`WORKFLOW_STARTED`, `WORKFLOW_STAGE_STARTED`,
-`WORKFLOW_STAGE_PROGRESS`, `WORKFLOW_STAGE_COMPLETED`, `WORKFLOW_RETRY`,
-`WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`). Bentuk frame WebSocket sama dengan
-item riwayat HTTP, dan event tidak pernah memuat credential, API key, atau isi
-prompt.
+`WORKFLOW_STAGE_PROGRESS`, `WORKFLOW_STAGE_COMPLETED`,
+`WORKFLOW_WAITING_FOR_REVIEW`, `WORKFLOW_RETRY`, `WORKFLOW_COMPLETED`,
+`WORKFLOW_FAILED`, serta `WORKFLOW_PLAN_*` untuk course plan). Bentuk frame
+WebSocket sama dengan item riwayat HTTP, dan event tidak pernah memuat
+credential, API key, atau isi prompt.
+
+`WAITING_FOR_REVIEW` adalah status tunggu DL-012: rangkaian tahap yang selesai
+berhenti di sini sampai dosen menjalankan tahap berikutnya (review rencana,
+generate konten, eksekusi). Status API tetap `RUNNING` dengan `stage`
+`instructor_review`.
 
 WebSocket hanya mengirim event **baru**; client mengambil keadaan awal dan
 riwayat lewat HTTP sebelum/ketika berlangganan. Penolakan handshake memakai
@@ -810,6 +819,86 @@ uv run pytest tests/test_workflow_api.py          # REST, course target, WebSock
 > worker uvicorn atau restart server memutus langganan dan event dari worker
 > lain tidak terkirim ke klien; riwayat HTTP tetap lengkap dan menjadi sumber
 > kebenaran. Ganti dengan Redis pub/sub bila deployment horizontal dibutuhkan.
+
+---
+
+## 🗂️ Course Plan Data & Review (BE-14)
+
+Rencana pembelajaran disimpan **berversi** per workflow. Regenerasi menambah
+versi baru; versi lama — termasuk yang ditolak — tidak pernah ditimpa, sehingga
+riwayat keputusan dosen tetap dapat ditelusuri (DL-012, proposal §3.5.2).
+
+```text
+POST /workflows/{id}/plan
+        │  PLANNING_COURSE → VALIDATING
+        ▼
+  course_plans v1 (DRAFT)
+        │
+        ▼
+  WAITING_FOR_REVIEW ──▶ POST .../plan/approve  → APPROVED (final, satu per workflow)
+        │
+        └──────────────▶ POST .../plan/reject   → REJECTED + catatan revisi
+                                 │
+                                 ▼
+                       POST .../plan/regenerate → v2 (DRAFT)
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/workflows/{workflow_id}/plan` | `INSTRUCTOR` | Versi terbaru + weekly plan + hasil validasi |
+| `GET` | `/api/v1/workflows/{workflow_id}/plan/versions` | `INSTRUCTOR` | Riwayat versi (terbaru dulu) |
+| `GET` | `/api/v1/workflows/{workflow_id}/plan/versions/{version}` | `INSTRUCTOR` | Detail satu versi |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan` | `INSTRUCTOR` | **Jadwalkan** generate versi pertama (`202`) |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan/regenerate` | `INSTRUCTOR` | **Jadwalkan** regenerasi setelah reject (`202`) |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan/approve` | `INSTRUCTOR` | Setujui versi terbaru |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan/reject` | `INSTRUCTOR` | Tolak dengan catatan revisi wajib |
+
+### Aturan yang dijaga
+
+1. **Generate hanya untuk RPS `ANALYZED` dan workflow yang belum punya rencana.**
+   Regenerate hanya setelah versi terbaru `REJECTED`; instruksinya opsional dan
+   jatuh kembali ke catatan penolakan terakhir.
+2. **Tidak ada generate ganda.** Workflow diklaim dengan update bersyarat
+   (`WAITING_FOR_REVIEW`/`FAILED` → `PLANNING_COURSE`) sebelum background
+   dijadwalkan, sehingga dua request bersamaan tidak memulai dua run.
+3. **Approve hanya untuk versi terbaru `DRAFT` yang lolos validasi.** Versi
+   lama tidak pernah disetujui lewat endpoint ini; reject tanpa catatan
+   menghasilkan `422 INVALID_REQUEST`.
+4. **Hanya satu versi `APPROVED` per workflow**, dijaga service dan partial
+   unique index `uq_course_plans_workflow_approved`.
+5. **Konteks generasi**: RPS Structured Data (BE-08.1), konteks dosen
+   (BE-10.3, termasuk Activity Configuration), serta versi sebelumnya + catatan
+   revisi/instruksi pada regenerasi.
+6. **Validasi hasil** (content-schema §8–§9): nomor minggu mengikuti RPS, kode
+   Sub-CPMK dikenal dan seluruhnya tercakup, minggu UTS/UAS tanpa materi baru,
+   dan aktivitas hanya dari jenis yang aktif. Temuan disimpan di
+   `course_plans.validation_result`; rencana dengan temuan tidak dapat
+   disetujui tetapi tetap tersimpan untuk ditinjau/diregenerasi.
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Tabel `course_plans`, `course_plan_weeks` | `src/models/course_plan.py`, `src/models/course_plan_week.py` + migrasi `f3a1c9d2b7e4` |
+| Kontrak output agent + DTO review | `src/schemas/course_plan.py` |
+| Aturan versi, approve/reject, generate | `src/services/course_plan/service.py` |
+| Akses data versi | `src/services/course_plan/repository.py` |
+| Validasi akademik | `src/services/course_plan/validation.py` |
+| Course Planning Service (adapter LLM + retry) | `src/services/course_plan/planner.py`, prompt `src/prompts/course_planning/v1` |
+| Tahap orkestrator `PLANNING_COURSE` → `VALIDATING` | `src/services/workflow/orchestrator.py` |
+| Endpoint HTTP | `src/routes/course_plans.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_course_plan_repository.py      # model + versi + invariant APPROVED
+uv run pytest tests/test_course_plan_api.py             # baca/review, otorisasi, event
+uv run pytest tests/test_course_planning_orchestrator.py # tahap, regenerasi, retry, gagal
+uv run pytest tests/test_course_planning_api.py         # prasyarat + endpoint generate
+uv run pytest tests/test_course_planning_service.py     # prompt, retry schema, validasi
+```
 
 ---
 
