@@ -14,9 +14,13 @@ tidak dapat ditebak dari perbedaan response.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.course_plan import CoursePlanStatus
+from src.models.workflow import WorkflowStatus
+from src.models.workflow_event import EventType
 from src.schemas.course_plan import CoursePlanOutput
 from src.services.course_plan.domain import (
     CoursePlanDraft,
@@ -29,13 +33,24 @@ from src.services.course_plan.errors import (
     CoursePlanValidationError,
 )
 from src.services.course_plan.repository import CoursePlanRepository
-from src.services.workflow.domain import WorkflowRecord
+from src.services.workflow.domain import WorkflowRecord, stage_name
 from src.services.workflow.service import WorkflowService
 
 __all__ = ["CoursePlanService"]
 
 #: Nilai ``week_type`` yang dikenal domain (selaras ``CoursePlanWeek``).
 WEEK_TYPES = ("regular", "kuis", "uts", "uas")
+
+#: Batas catatan revisi; nilai yang lebih panjang dipotong events/pesan, jadi
+#: ditolak lebih awal supaya tidak ada data yang hilang diam-diam.
+MAX_REVISION_NOTES_LENGTH = 2000
+
+#: Nama event publik keputusan review (design-api §17: selalu ``WORKFLOW_*``).
+EVENT_PLAN_APPROVED = "WORKFLOW_PLAN_APPROVED"
+EVENT_PLAN_REJECTED = "WORKFLOW_PLAN_REJECTED"
+
+#: Tahap workflow yang sedang ditinjau saat keputusan review diberikan.
+REVIEW_STAGE = stage_name(WorkflowStatus.WAITING_FOR_REVIEW) or "instructor_review"
 
 
 class CoursePlanService:
@@ -95,6 +110,87 @@ class CoursePlanService:
         if record is None:
             raise CoursePlanNotFoundError(workflow_id, version=version)
         return record
+
+    # --- Review (BE-14.2) -------------------------------------------------
+
+    async def approve(self, *, workflow_id: str, owner_id: str) -> CoursePlanRecord:
+        """Setujui versi terbaru yang berstatus ``DRAFT`` dan lolos validasi.
+
+        Versi lama tidak disentuh: yang disetujui selalu versi terbaru, dan
+        riwayat versi sebelumnya tetap tersimpan apa adanya. Workflow tetap
+        berada pada status tunggu ``WAITING_FOR_REVIEW`` (DL-012) karena tahap
+        berikutnya — generasi konten — belum dijalankan; keputusan dosen dicatat
+        sebagai status course plan + ``WorkflowEvent``.
+        """
+        workflow, latest = await self._reviewable_latest(
+            workflow_id=workflow_id, owner_id=owner_id
+        )
+        if not latest.validation_passed:
+            raise CoursePlanStateError(
+                f"course plan versi {latest.version} belum lolos validasi",
+                public_message=(
+                    "Course plan belum lolos validasi sehingga belum dapat disetujui."
+                ),
+            )
+
+        updated = await self._repository.set_status(
+            latest.id,
+            CoursePlanStatus.APPROVED,
+            approved_at=datetime.now(timezone.utc),
+        )
+        if updated is None:
+            raise CoursePlanNotFoundError(workflow.id or "", version=latest.version)
+
+        await self._workflows.record_event(
+            workflow,
+            event_type=EventType.PERUBAHAN_TAHAP,
+            event=EVENT_PLAN_APPROVED,
+            stage=REVIEW_STAGE,
+            message=f"Course plan versi {updated.version} disetujui.",
+            metadata={"version": updated.version, "course_plan_id": updated.id},
+        )
+        return updated
+
+    async def reject(
+        self, *, workflow_id: str, owner_id: str, notes: str
+    ) -> CoursePlanRecord:
+        """Tolak versi terbaru dengan catatan revisi wajib.
+
+        Catatan disimpan pada versi yang ditolak (bukan pada workflow) supaya
+        regenerasi berikutnya dapat memakai alasan penolakan versi tersebut.
+        """
+        revision_notes = (notes or "").strip()
+        if not revision_notes:
+            raise CoursePlanValidationError("notes", "catatan revisi wajib diisi")
+        if len(revision_notes) > MAX_REVISION_NOTES_LENGTH:
+            raise CoursePlanValidationError(
+                "notes", f"maksimal {MAX_REVISION_NOTES_LENGTH} karakter"
+            )
+
+        workflow, latest = await self._reviewable_latest(
+            workflow_id=workflow_id, owner_id=owner_id
+        )
+        updated = await self._repository.set_status(
+            latest.id,
+            CoursePlanStatus.REJECTED,
+            revision_notes=revision_notes,
+        )
+        if updated is None:
+            raise CoursePlanNotFoundError(workflow.id or "", version=latest.version)
+
+        await self._workflows.record_event(
+            workflow,
+            event_type=EventType.PERUBAHAN_TAHAP,
+            event=EVENT_PLAN_REJECTED,
+            stage=REVIEW_STAGE,
+            message=f"Course plan versi {updated.version} ditolak.",
+            metadata={
+                "version": updated.version,
+                "course_plan_id": updated.id,
+                "revision_notes": revision_notes,
+            },
+        )
+        return updated
 
     # --- Tulis ------------------------------------------------------------
 
@@ -160,6 +256,36 @@ class CoursePlanService:
             model_name=model_name,
         )
         return await self._repository.create(draft)
+
+    async def _reviewable_latest(
+        self, *, workflow_id: str, owner_id: str
+    ) -> tuple[WorkflowRecord, CoursePlanRecord]:
+        """Workflow yang menunggu review beserta versi terbarunya yang DRAFT."""
+        workflow = await self._workflows.get_workflow(
+            workflow_id=workflow_id, owner_id=owner_id
+        )
+        if workflow.status is not WorkflowStatus.WAITING_FOR_REVIEW:
+            raise CoursePlanStateError(
+                f"workflow {workflow.id} berstatus {workflow.status.value}, "
+                "bukan menunggu review",
+                public_message=(
+                    "Course plan hanya dapat direview ketika workflow menunggu "
+                    "peninjauan."
+                ),
+            )
+
+        latest = await self._repository.get_latest(workflow.id or "")
+        if latest is None:
+            raise CoursePlanNotFoundError(workflow_id)
+        if latest.status is not CoursePlanStatus.DRAFT:
+            raise CoursePlanStateError(
+                f"course plan versi {latest.version} berstatus {latest.status.value}",
+                public_message=(
+                    "Hanya course plan versi terbaru berstatus DRAFT yang dapat "
+                    "direview."
+                ),
+            )
+        return workflow, latest
 
 
 def _build_weeks(

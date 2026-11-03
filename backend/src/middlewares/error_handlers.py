@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.services.auth.errors import AuthDomainError
+from src.services.course_plan.errors import CoursePlanDomainError
 from src.services.instructor.errors import InstructorSetupError
 from src.services.llm.base import LLMProviderError
 from src.services.rps.errors import RPSDomainError
@@ -167,6 +168,24 @@ async def instructor_setup_error_handler(
     )
 
 
+async def course_plan_error_handler(
+    request: Request, exc: CoursePlanDomainError
+) -> JSONResponse:
+    """Translate a course plan failure into the standard API error format (BE-14.2).
+
+    Rencana yang tidak ada atau milik workflow dosen lain menjadi 404
+    ``RESOURCE_NOT_FOUND``; review pada versi yang salah atau belum lolos
+    validasi menjadi 409 ``INVALID_REQUEST``; input tidak valid 422. Pesan
+    internal (mis. isi prompt atau identifier) hanya dicatat server-side.
+    """
+    logger.warning("Course plan failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+    )
+
+
 async def workflow_error_handler(
     request: Request, exc: WorkflowDomainError
 ) -> JSONResponse:
@@ -242,5 +261,6 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(UserNotFoundError, user_not_found_error_handler)
     app.add_exception_handler(RPSDomainError, rps_error_handler)
     app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
+    app.add_exception_handler(CoursePlanDomainError, course_plan_error_handler)
     app.add_exception_handler(WorkflowDomainError, workflow_error_handler)
     _document_standard_validation_error(app)

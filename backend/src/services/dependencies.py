@@ -27,6 +27,7 @@ from src.config.database import get_session_factory
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
+from src.services.course_plan.service import CoursePlanService
 from src.services.instructor.service import InstructorSetupService
 from src.services.rps.service import RPSService
 from src.services.user.domain import User
@@ -49,6 +50,7 @@ RPSAnalysisRunner = Callable[..., Awaitable[None]]
 __all__ = [
     "bearer_scheme",
     "get_auth_service",
+    "get_course_plan_service",
     "get_current_user",
     "get_db_session",
     "get_instructor_service",
@@ -88,6 +90,13 @@ def get_user_service(session: AsyncSession = Depends(get_db_session)) -> UserSer
 def get_auth_service(session: AsyncSession = Depends(get_db_session)) -> AuthService:
     """Auth Service untuk endpoint authentication."""
     return AuthService.from_session(session)
+
+
+def get_course_plan_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> CoursePlanService:
+    """Course Plan Service untuk endpoint review rencana (BE-14.2)."""
+    return CoursePlanService.from_session(session)
 
 
 def get_instructor_service(

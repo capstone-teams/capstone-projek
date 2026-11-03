@@ -72,8 +72,12 @@ class CoursePlanStateError(CoursePlanDomainError):
     status_code = 409
     public_message = "Status course plan tidak mengizinkan operasi ini."
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, *, public_message: str | None = None) -> None:
         self.message = message
+        if public_message is not None:
+            # Pesan publik yang lebih spesifik (mis. "belum lolos validasi")
+            # supaya client dapat menampilkan alasan penolakan yang jelas.
+            self.public_message = public_message
         super().__init__(message)
 
 
