@@ -4,6 +4,45 @@ from src.config.database import get_session_factory, dispose_engine
 from src.services.content.service import generate_contents
 
 
+async def print_event(event_type, message, **fields):
+    """Cetak setiap tahap proses saat terjadi."""
+    week = fields.pop("week", "-")
+    attempt = fields.pop("attempt", None)
+
+    prefix = f"[Minggu {week}]"
+    if attempt is not None:
+        prefix += f"[Percobaan {attempt}]"
+
+    extras = []
+    if fields.get("tokens_input") is not None:
+        extras.append(f"in={fields['tokens_input']}")
+    if fields.get("tokens_output") is not None:
+        extras.append(f"out={fields['tokens_output']}")
+    if fields.get("duration_ms") is not None:
+        extras.append(f"{fields['duration_ms']}ms")
+    if fields.get("reason_code"):
+        extras.append(f"reason={fields['reason_code']}")
+
+    line = f"{prefix} {message}"
+    if extras:
+        line += f" ({', '.join(extras)})"
+    print(line, flush=True)
+
+    for detail in fields.get("details") or []:
+        print(f"      - {detail}", flush=True)
+
+
+async def print_trace(**fields):
+    """Cetak ringkasan tiap percobaan (opsional)."""
+    print(
+        f"    TRACE attempt={fields.get('attempt')} "
+        f"validation={fields.get('validation')} "
+        f"model={fields.get('model')} "
+        f"{fields.get('duration_ms')}ms",
+        flush=True,
+    )
+
+
 async def main():
     rps_id = input("RPS ID: ").strip()
 
@@ -32,6 +71,8 @@ async def main():
                 rps_id=rps_id,
                 week_numbers=week_numbers,
                 additional_prompt="Jelaskan materi dengan contoh praktis.",
+                emit_event=print_event,
+                record_trace=print_trace,  # hapus kalau tidak perlu
             )
 
         for result in results:
@@ -45,15 +86,8 @@ async def main():
 
             print(result.material.model_dump_json(indent=2))
 
-        successful = sum(
-            1 for result in results
-            if result.material is not None
-        )
-
-        failed = sum(
-            1 for result in results
-            if result.error is not None
-        )
+        successful = sum(1 for r in results if r.material is not None)
+        failed = sum(1 for r in results if r.error is not None)
 
         print("\n=== GENERATION SUMMARY ===")
         print(f"Total weeks : {len(results)}")
