@@ -7,29 +7,19 @@ from pydantic import BaseModel, ConfigDict, Field
 # ==========================================
 # INPUT CONTEXT
 # ==========================================
-
-class RPSAnalysisContext(BaseModel):
-    version: int
-    course_identity: dict[str, Any] | None = None
-    learning_outcomes: dict[str, Any] | None = None
-    objectives: dict[str, Any] | None = None
-    topics: dict[str, Any] | None = None
-    weekly_distribution: dict[str, Any] | None = None
-    teaching_methods: dict[str, Any] | None = None
-    assessments: dict[str, Any] | None = None
-    references: dict[str, Any] | None = None
-
-
 class WeeklyContentContext(BaseModel):
     week_number: int = Field(ge=1)
     week_type: str = "regular"
     title: str | None = None
-    materials: list[str] = Field(default_factory=list)
+    learning_outcomes: Any = None
+    topics: list[Any] = Field(default_factory=list)
+    methods: list[Any] = Field(default_factory=list)
+    assessment: Any = None
 
 
 class WeekContext(BaseModel):
-    rps_id: str
-    rps_analysis: RPSAnalysisContext
+    course_plan_id: str
+    course_plan_week_id: str
     week_number: int = Field(ge=1)
     week_data: WeeklyContentContext
 
@@ -39,8 +29,8 @@ class WeekContext(BaseModel):
 
     def to_prompt_dict(self) -> dict:
         return {
-            "rps_id": self.rps_id,
-            "rps_analysis": self.rps_analysis.model_dump(mode="json"),
+            "course_plan_id": self.course_plan_id,
+            "course_plan_week_id": self.course_plan_week_id,
             "week_number": self.week_number,
             "week_data": self.week_data.model_dump(mode="json"),
         }

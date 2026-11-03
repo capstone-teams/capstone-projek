@@ -13,11 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.schemas.content import (
     GeneratedLearningMaterial,
-    RPSAnalysisContext,
     WeekContext,
     WeeklyContentContext,
 )
-from src.models.rps_analysis import RPSAnalysis
 from src.services.content.repository import ContentGenerationRepository
 from src.services.content.pipeline import (
     MAX_ERROR_CHARS,
@@ -31,8 +29,11 @@ from src.services.content.pipeline import (
 )
 from src.services.content.schema import CONTENT_OUTPUT_SCHEMA
 from src.services.llm import LLMService, OpenAIProvider
+from sqlalchemy.exc import SQLAlchemyError
+from src.models.course_plan import CoursePlan
 
 logger = logging.getLogger(__name__)
+
 
 PROMPT_NAME = "content_generation"
 PROMPT_VERSION = "v1"
@@ -75,53 +76,40 @@ class WeekResult:
     error: ContentGenerationError | None = None
 
 
-def _build_week_contexts(data: RPSAnalysis) -> list[WeekContext]:
-    weekly_distribution = data.weekly_distribution or {}
-    weeks = weekly_distribution.get("weeks", [])
+def _build_week_contexts(
+    plan: CoursePlan,
+    weeks: list[CoursePlanWeek],
+) -> list[WeekContext]:
 
     if not weeks:
-        raise ValueError(
-            f"No weekly distribution found for RPS ID: {data.rps_id}"
+        raise ContentGenerationError(
+            "Course plan belum memiliki course plan weeks."
         )
-
-    rps_analysis = RPSAnalysisContext(
-        version=data.version,
-        course_identity=data.course_identity,
-        learning_outcomes=data.learning_outcomes,
-        objectives=data.objectives,
-        topics=data.topics,
-        weekly_distribution=data.weekly_distribution,
-        teaching_methods=data.teaching_methods,
-        assessments=data.assessments,
-        references=data.references_data,
-    )
 
     contexts = []
 
-    for week_data in weeks:
-        week_numbers = week_data.get("weeks", [])
+    for week in weeks:
+        meta = week.metadata_ or {}
 
-        for week_number in week_numbers:
-            context_week = WeeklyContentContext(
-                week_number=week_number,
-                week_type=week_data.get("week_type", "regular"),
-                title=week_data.get("name"),
-                materials=week_data.get("materials", []),
+        contexts.append(
+            WeekContext(
+                course_plan_id=plan.id,
+                course_plan_week_id=week.id,
+                week_number=week.week_number,
+                week_data=WeeklyContentContext(
+                    week_number=week.week_number,
+                    week_type=meta.get("week_type", "regular"),
+                    title=week.title,
+                    learning_outcomes=week.learning_outcomes,
+                    topics=(week.topics or {}).get("items", []),
+                    methods=(week.methods or {}).get("items", []),
+                    assessment=week.assessment,
+                ),
             )
-
-            contexts.append(
-                WeekContext(
-                    rps_id=data.rps_id,
-                    rps_analysis=rps_analysis,
-                    week_number=week_number,
-                    week_data=context_week,
-                )
-            )
-
-    if not contexts:
-        raise ValueError("No valid weekly distribution found.")
+        )
 
     return contexts
+
 
 async def _generate_week_content(
     ctx: WeekContext,
@@ -131,7 +119,6 @@ async def _generate_week_content(
     record_trace: RecordTrace | None = None,
     additional_prompt: str = "",
 ) -> GeneratedLearningMaterial:
-    """Buat materi pembelajaran untuk satu minggu."""
 
     if max_fix_attempts is None:
         max_fix_attempts = settings.content_generation_max_fix_attempts
@@ -180,22 +167,11 @@ async def _generate_week_content(
             attempt=attempt,
         )
 
-        # 1. Panggilan LLM
         try:
-            print("COURSE: %s", ctx.rps_analysis.course_identity)
-            print("WEEK: %s", ctx.week_data.title)
-            print("MATERIALS: %s", ctx.week_data.materials) 
-            # print("FINAL PROMPT:\n", rendered_prompt) 
-
             result = await service.execute_prompt(
                 prompt_name=PROMPT_NAME,
                 version=PROMPT_VERSION,
                 variables={
-                    "rps_structured": json.dumps(
-                        ctx.rps_analysis.model_dump(mode="json"),
-                        ensure_ascii=False,
-                        indent=2,
-                    ),
                     "week_context": json.dumps(
                         ctx.to_prompt_dict(),
                         ensure_ascii=False,
@@ -254,7 +230,6 @@ async def _generate_week_content(
             duration_ms=elapsed_ms(),
         )
 
-        # 2. Validasi output
         await emit(
             emit_event,
             ContentEvent.VALIDATING,
@@ -313,7 +288,6 @@ async def _generate_week_content(
 
             return material
 
-        # 3. Retry jika validasi gagal
         last_code = code
         last_details = details
 
@@ -370,7 +344,7 @@ async def _generate_week_content(
 
 async def generate_contents(
     db: AsyncSession,
-    rps_id: str,
+    course_plan_id: str,
     *,
     week_numbers: list[int] | None = None,
     concurrency: int = 1,
@@ -378,30 +352,34 @@ async def generate_contents(
     emit_event: EmitEvent | None = None,
     record_trace: RecordTrace | None = None,
     additional_prompt: str = "",
+    save: bool = True,
 ) -> list[WeekResult]:
 
     if concurrency < 1:
         raise ValueError("concurrency minimal 1")
 
+    print("COURSE PLAN ID:", course_plan_id)
+
     data = await ContentGenerationRepository.get_context(
-        db=db,
-        rps_id=rps_id,
+        db,
+        course_plan_id,
     )
 
     if data is None:
-        raise ValueError(
-            f"RPS analysis not found for RPS ID: {rps_id}"
+        raise ContentGenerationError(
+            "Course plan tidak ditemukan."
         )
 
-    contexts = _build_week_contexts(data)
+    plan, weeks = data
 
-    # Hanya minggu reguler yang bisa dibuat materinya.
+    contexts = _build_week_contexts(plan, weeks)
+
     contexts = [
-        ctx for ctx in contexts
+        ctx
+        for ctx in contexts
         if ctx.week_data.week_type.lower() == "regular"
     ]
 
-    # Jika week_numbers tidak diberikan, gunakan semua minggu reguler.
     if week_numbers is not None:
         if not week_numbers:
             raise ValueError("week_numbers tidak boleh kosong.")
@@ -427,12 +405,15 @@ async def generate_contents(
         selected_weeks = set(week_numbers)
 
         contexts = [
-            ctx for ctx in contexts
+            ctx
+            for ctx in contexts
             if ctx.week_number in selected_weeks
         ]
 
     if not contexts:
-        raise ValueError("Tidak ada minggu pembelajaran yang tersedia.")
+        raise ValueError(
+            "Tidak ada minggu pembelajaran yang tersedia."
+        )
 
     semaphore = asyncio.Semaphore(concurrency)
 
@@ -447,7 +428,10 @@ async def generate_contents(
                     additional_prompt=additional_prompt,
                 )
 
-                return WeekResult(ctx=ctx, material=material)
+                return WeekResult(
+                    ctx=ctx,
+                    material=material,
+                )
 
             except ContentGenerationError as exc:
                 logger.exception(
@@ -455,17 +439,85 @@ async def generate_contents(
                     ctx.week,
                 )
 
-                return WeekResult(ctx=ctx, error=exc)
+                return WeekResult(
+                    ctx=ctx,
+                    error=exc,
+                )
 
-    return await asyncio.gather(
+    results = await asyncio.gather(
         *(run(ctx) for ctx in contexts)
     )
 
+    if save:
+        for r in results:
+            if r.material is None:
+                continue
+
+            try:
+                m = r.material
+                markdown = "# TODO: markdown belum dirender"
+                
+                content_data = m.content_data.model_dump(mode="json")
+                content_type = m.content_type.value
+
+                existing = await ContentGenerationRepository.get_by_week_id(
+                    db,
+                    r.ctx.course_plan_week_id,
+                )
+
+                if (
+                    existing is not None
+                    and existing.status == ContentStatus.APPROVED
+                ):
+                    r.material = None
+                    r.error = ContentGenerationError(
+                        "Konten sudah APPROVED, tidak bisa ditimpa.",
+                        reason_code="ALREADY_APPROVED",
+                    )
+                    continue
+
+                elif existing is None:
+                    await ContentGenerationRepository.create(
+                        db,
+                        course_plan_week_id=r.ctx.course_plan_week_id,
+                        title=m.title,
+                        content_type=content_type,
+                        content_data=content_data,
+                        content_markdown=markdown,
+                    )
+
+                else:
+                    await ContentGenerationRepository.update_content(
+                        db,
+                        existing,
+                        title=m.title,
+                        content_type=content_type,
+                        content_data=content_data,
+                        content_markdown=markdown,
+                    )
+
+                await db.commit()
+
+            except SQLAlchemyError:
+                await db.rollback()
+
+                logger.exception(
+                    "Gagal menyimpan minggu %s",
+                    r.ctx.week,
+                )
+
+                r.material = None
+                r.error = ContentGenerationError(
+                    "Gagal menyimpan konten ke database.",
+                    reason_code="DB_SAVE_FAILED",
+                )
+
+    return results
 
 
 async def generate_week_content(
     db: AsyncSession,
-    rps_id: str,
+    course_plan_week_id: str,
     week_number: int,
     *,
     max_fix_attempts: int | None = None,
@@ -473,53 +525,60 @@ async def generate_week_content(
     record_trace: RecordTrace | None = None,
     additional_prompt: str = "",
 ) -> GeneratedLearningMaterial:
-    """Ambil analisis RPS dan generate materi untuk satu minggu."""
 
-    # 1. Ambil hasil analisis RPS terbaru
-    data = await ContentGenerationRepository.get_context(
-        db=db,
-        rps_id=rps_id,
+    result = await db.execute(
+        select(CoursePlan, CoursePlanWeek)
+        .join(
+            CoursePlanWeek,
+            CoursePlanWeek.course_plan_id == CoursePlan.id,
+        )
+        .where(
+            CoursePlanWeek.id == course_plan_week_id
+        )
     )
 
-    if data is None:
-        raise ValueError(
-            f"RPS analysis not found for RPS ID: {rps_id}"
+    row = result.first()
+
+    if row is None:
+        raise ContentGenerationError(
+            f"Course plan week tidak ditemukan: {course_plan_week_id}"
         )
 
-    # 2. Bangun konteks setiap minggu dari weekly_distribution
-    contexts = _build_week_contexts(data)
+    plan = row[0]
 
-    # 3. Cari konteks berdasarkan nomor minggu
+    weeks_result = await db.execute(
+        select(CoursePlanWeek)
+        .where(
+            CoursePlanWeek.course_plan_id == plan.id
+        )
+    )
+
+    weeks = weeks_result.scalars().all()
+
+    contexts = _build_week_contexts(plan, weeks)
+
     ctx = next(
         (
             context
             for context in contexts
             if context.week_number == week_number
+            and context.course_plan_week_id == course_plan_week_id
         ),
         None,
     )
 
     if ctx is None:
-        raise ValueError(
-            f"Week {week_number} not found in RPS ID: {rps_id}"
+        raise ContentGenerationError(
+            f"Week {week_number} tidak ditemukan."
         )
 
-    # 4. Pastikan minggu merupakan minggu pembelajaran reguler
     week_type = ctx.week_data.week_type.lower()
 
     if week_type != "regular":
-        raise ValueError(
-            f"Week {week_number} is classified as '{week_type}'. "
-            "Content generation is only available for regular weeks."
+        raise ContentGenerationError(
+            f"Week {week_number} bukan minggu pembelajaran reguler."
         )
 
-    # 5. Pastikan minggu memiliki materi pembelajaran
-    if not ctx.week_data.materials:
-        raise ValueError(
-            f"No learning materials found for week {week_number}."
-        )
-
-    # 6. Generate materi menggunakan pipeline LLM
     return await _generate_week_content(
         ctx,
         max_fix_attempts=max_fix_attempts,

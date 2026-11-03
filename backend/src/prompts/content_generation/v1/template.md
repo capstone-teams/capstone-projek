@@ -51,10 +51,6 @@ Jika topics dan Sub-CPMK kosong, jangan membuat materi pembelajaran. Kembalikan 
 </system_instruction>
 
 <context>
-<rps_structured>
-${rps_structured}
-</rps_structured>
-
 <week_context>
 ${week_context}
 </week_context>
