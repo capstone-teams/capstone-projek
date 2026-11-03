@@ -182,6 +182,7 @@ class CoursePlanRepository:
             course=course or {},
             weeks=tuple(_to_week_record(week) for week in week_entities),
             weeks_count=entity.weeks_count,
+            plan_data=entity.plan_data,
             validation_result=entity.validation_result,
             activity_configuration=entity.activity_configuration,
             revision_notes=entity.revision_notes,

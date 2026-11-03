@@ -233,6 +233,27 @@ class WorkflowService:
         )
         return updated
 
+    async def claim_planning(
+        self, *, workflow_id: str, owner_id: str
+    ) -> WorkflowRecord | None:
+        """Klaim workflow untuk satu run course planning (BE-14.3).
+
+        ``None`` berarti workflow tidak ada, bukan milik dosen ini, atau sedang
+        berada pada status yang tidak mengizinkan perencanaan baru. Perubahan
+        status tidak menulis event di sini: orkestrator menulis
+        ``WORKFLOW_STARTED``/``WORKFLOW_STAGE_STARTED`` saat run benar-benar
+        dimulai, sehingga klaim yang gagal tidak meninggalkan event palsu.
+        """
+        claimed = await self._repository.claim_status(
+            workflow_id,
+            owner_id,
+            allowed=(WorkflowStatus.WAITING_FOR_REVIEW, WorkflowStatus.FAILED),
+            target=WorkflowStatus.PLANNING_COURSE,
+        )
+        if not claimed:
+            return None
+        return await self._repository.find_by_id_and_owner(workflow_id, owner_id)
+
     async def wait_for_review(self, workflow: WorkflowRecord) -> WorkflowRecord:
         """Tahap selesai; workflow menunggu tindakan dosen (DL-012).
 
