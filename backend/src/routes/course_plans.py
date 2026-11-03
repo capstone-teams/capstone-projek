@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, BackgroundTasks, Depends, Path
 
 from src.schemas.course_plan import (
     CoursePlanIdentity,
@@ -31,6 +31,8 @@ from src.schemas.course_plan import (
     CoursePlanValidationResult,
     CoursePlanVersionListResponse,
     CoursePlanVersionSummary,
+    PlanGenerationResponse,
+    PlanRegenerateRequest,
     PlanRejectRequest,
     PlanWeekResponse,
 )
@@ -39,12 +41,22 @@ from src.services.course_plan import (
     CoursePlanService,
     CoursePlanWeekRecord,
 )
-from src.services.dependencies import get_course_plan_service, require_roles
+from src.services.dependencies import (
+    CoursePlanningRunner,
+    get_course_plan_service,
+    get_course_planning_runner,
+    require_roles,
+)
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.validation import ID_LENGTH, SHORTUUID_PATTERN
 
 router = APIRouter(tags=["Course Plans"])
+
+#: Pesan response 202 generate/regenerate; pekerjaan berjalan di background.
+GENERATION_MESSAGE = (
+    "Course planning dijadwalkan; pantau status workflow dan event untuk hasilnya."
+)
 
 #: Course plan hanya dapat dibaca/direview dosen (design-api §22).
 instructor_only = require_roles(UserRole.INSTRUCTOR)
@@ -210,3 +222,83 @@ async def reject_course_plan(
         notes=payload.notes,
     )
     return _to_plan(record)
+
+
+# --- Generate / regenerate (BE-14.3) ----------------------------------------
+
+
+@router.post(
+    "/workflows/{workflow_id}/plan",
+    response_model=PlanGenerationResponse,
+    status_code=202,
+)
+async def generate_course_plan(
+    workflow_id: WorkflowIdPath,
+    background: BackgroundTasks,
+    current_user: User = Depends(instructor_only),
+    service: CoursePlanService = Depends(get_course_plan_service),
+    runner: CoursePlanningRunner = Depends(get_course_planning_runner),
+) -> PlanGenerationResponse:
+    """Mulai penyusunan course plan versi pertama (issue BE-14.3).
+
+    Hanya untuk workflow yang RPS-nya sudah ``ANALYZED`` dan belum memiliki
+    course plan. Response ``202`` berarti pekerjaan sudah dijadwalkan;
+    client memantau status workflow dan event sampai ``WAITING_FOR_REVIEW``
+    atau ``FAILED``. Dua permintaan bersamaan tidak dapat memulai dua run:
+    workflow diklaim secara atomik sebelum dijadwalkan.
+    """
+    workflow = await service.start_planning(
+        workflow_id=workflow_id,
+        owner_id=current_user.id,
+        regenerate=False,
+    )
+    background.add_task(
+        runner,
+        workflow_id=workflow.id or "",
+        owner_id=current_user.id,
+        instruction=None,
+    )
+    return PlanGenerationResponse(
+        workflow_id=workflow.id or "",
+        status=workflow.status.value,
+        message=GENERATION_MESSAGE,
+    )
+
+
+@router.post(
+    "/workflows/{workflow_id}/plan/regenerate",
+    response_model=PlanGenerationResponse,
+    status_code=202,
+)
+async def regenerate_course_plan(
+    workflow_id: WorkflowIdPath,
+    background: BackgroundTasks,
+    payload: PlanRegenerateRequest | None = None,
+    current_user: User = Depends(instructor_only),
+    service: CoursePlanService = Depends(get_course_plan_service),
+    runner: CoursePlanningRunner = Depends(get_course_planning_runner),
+) -> PlanGenerationResponse:
+    """Susun ulang course plan setelah versi terbaru ditolak (issue BE-14.3).
+
+    ``instruction`` opsional; bila kosong, catatan revisi terakhir pada versi
+    yang ditolak dipakai sebagai konteks regenerasi. Versi lama tidak diubah —
+    hasilnya disimpan sebagai versi baru berstatus ``DRAFT``.
+    """
+    instruction = payload.instruction if payload is not None else None
+    workflow = await service.start_planning(
+        workflow_id=workflow_id,
+        owner_id=current_user.id,
+        regenerate=True,
+        instruction=instruction,
+    )
+    background.add_task(
+        runner,
+        workflow_id=workflow.id or "",
+        owner_id=current_user.id,
+        instruction=instruction,
+    )
+    return PlanGenerationResponse(
+        workflow_id=workflow.id or "",
+        status=workflow.status.value,
+        message=GENERATION_MESSAGE,
+    )

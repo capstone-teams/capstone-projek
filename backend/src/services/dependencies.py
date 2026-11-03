@@ -34,6 +34,7 @@ from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.service import UserService
 from src.services.workflow.orchestrator import (
+    run_course_planning_workflow,
     run_rps_analysis_workflow,
     run_rps_processing_workflow,
 )
@@ -47,10 +48,15 @@ RPSProcessingRunner = Callable[..., Awaitable[None]]
 #: Bentuk callable yang menjalankan analisis RPS di background.
 RPSAnalysisRunner = Callable[..., Awaitable[None]]
 
+#: Bentuk callable yang menjalankan generate/regenerate course plan di background.
+CoursePlanningRunner = Callable[..., Awaitable[None]]
+
 __all__ = [
     "bearer_scheme",
+    "CoursePlanningRunner",
     "get_auth_service",
     "get_course_plan_service",
+    "get_course_planning_runner",
     "get_current_user",
     "get_db_session",
     "get_instructor_service",
@@ -118,6 +124,15 @@ def get_rps_service(session: AsyncSession = Depends(get_db_session)) -> RPSServi
     diambil dari factory yang meng-cache-nya per proses.
     """
     return RPSService.from_session(session)
+
+
+def get_course_planning_runner() -> CoursePlanningRunner:
+    """Runner generate/regenerate course plan di background (BE-14.3).
+
+    Route mengklaim workflow lebih dulu; runner hanya menjalankan tahap
+    ``PLANNING_COURSE`` → ``VALIDATING`` pada workflow yang sudah diklaim.
+    """
+    return run_course_planning_workflow
 
 
 def get_rps_processing_runner() -> RPSProcessingRunner:

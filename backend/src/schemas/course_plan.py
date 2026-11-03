@@ -38,6 +38,8 @@ __all__ = [
     "CoursePlanVersionListResponse",
     "CoursePlanVersionSummary",
     "CoursePlanWeek",
+    "PlanGenerationResponse",
+    "PlanRegenerateRequest",
     "PlanRejectRequest",
     "PlanWeekResponse",
     "WEEK_TYPE_VALUES",
@@ -244,4 +246,40 @@ class PlanRejectRequest(BaseModel):
         min_length=1,
         description="Catatan revisi untuk dosen/agent; tidak boleh kosong.",
         examples=["Minggu 8 seharusnya UTS, pindahkan materi ke minggu 9."],
+    )
+
+
+class PlanRegenerateRequest(BaseModel):
+    """Body regenerasi; instruksi opsional.
+
+    Bila kosong, catatan penolakan terakhir pada versi sebelumnya dipakai
+    sebagai instruksi (issue BE-14.3).
+    """
+
+    instruction: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Instruksi perbaikan; kosong berarti memakai catatan penolakan terakhir.",
+        examples=["Pindahkan topik indeks ke minggu 6 dan tambah latihan JOIN."],
+    )
+
+
+class PlanGenerationResponse(BaseModel):
+    """Response diterimanya permintaan generate/regenerate (``202``)."""
+
+    workflow_id: str
+    status: str
+    message: str
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "workflow_id": WORKFLOW_ID_EXAMPLE,
+                "status": "PLANNING_COURSE",
+                "message": (
+                    "Course planning dijadwalkan; pantau status workflow dan "
+                    "event untuk hasilnya."
+                ),
+            }
+        }
     )
