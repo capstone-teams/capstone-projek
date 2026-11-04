@@ -1,15 +1,9 @@
 /**
-<<<<<<< HEAD
- * Fungsi Moodle Web Service yang dipakai frontend.
- * Terintegrasi dengan fallback Single Gateway (Backend API) agar UI kursus
- * tetap dapat menampilkan data tanpa ketergantungan pada sesi/token Moodle di browser.
-=======
  * Data kursus yang belum punya API backend: kursus, peserta, nilai, aktivitas, dan pengumpulan tugas.
  * Saat API-nya tersedia, ganti fungsi di sini dengan panggilan backend (lihat moodleClient.js).
  *
  * Rujukan source Moodle: semua fungsi termasuk layanan "moodle_mobile_app"
  * ('services' => [MOODLE_OFFICIAL_MOBILE_SERVICE] di db/services.php).
->>>>>>> develop
  */
 import { api } from '../apiClient';
 import { MoodleError, callWs, uploadDraftFiles } from './moodleClient';
@@ -211,14 +205,8 @@ export function getSubmissionStatus(assignId) {
 }
 
 /**
-<<<<<<< HEAD
- * Simpan pengumpulan tugas mahasiswa.
- * @param {number} assignId
- * @param {{ onlineText?: string, files?: Array }} options
-=======
  * Simpan pengumpulan mahasiswa (mod_assign_save_submission): teks online sebagai HTML dan file lewat draft area.
  * Rujukan perilaku Moodle: tanpa pengaturan "wajib klik kirim" langsung ditandai dikumpulkan untuk dinilai.
->>>>>>> develop
  */
 export async function saveSubmission(assignId, { onlineText, files }) {
   const plugindata = {};
@@ -243,13 +231,8 @@ export function listAssignParticipants(assignId) {
 const TEACHER_OPTIONS = ['update', 'reports', 'backup', 'gradebook'];
 
 /**
-<<<<<<< HEAD
- * Data user Moodle untuk sesi: identitas, admin situs, dan kursus yang diajar.
- * Role utama tetap ditentukan oleh backend (/auth/me).
-=======
  * Data pengguna untuk sesi: identitas, admin situs, dan kursus yang diajar (hak per kursus).
  * Role aplikasi (DOSEN/MAHASISWA) TIDAK ditentukan di sini; sumbernya GET /auth/me backend (FE-06.3).
->>>>>>> develop
  */
 export async function resolveSession() {
   const site = await getSiteInfo();
