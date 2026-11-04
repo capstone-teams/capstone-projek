@@ -34,7 +34,7 @@ export const SAMPLE_TOPICS = [
   'Ujian Akhir Semester',
 ];
 
-export const EXAM_WEEKS = [8, 16];
+const EXAM_WEEKS = [8, 16];
 
 export function buildRpsAnalysis(rpsId) {
   return {

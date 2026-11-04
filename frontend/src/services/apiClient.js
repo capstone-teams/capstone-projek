@@ -97,7 +97,7 @@ function defaultErrorCode(status) {
   return 'API_ERROR';
 }
 
-export function toApiError(status, payload) {
+function toApiError(status, payload) {
   if (payload?.error && typeof payload.error === 'object') {
     const err = payload.error;
     return new ApiError(

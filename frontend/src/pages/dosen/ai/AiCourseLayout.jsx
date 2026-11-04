@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { findCourseByMoodleId, getMonitoring } from '../../../services/courseService';
+import { findCourseByMoodleId } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
-import { useCourseEvents } from '../../../hooks/useCourseEvents';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
+import { useWorkflow } from '../../../hooks/useWorkflow';
 import { ErrorAlert, ErrorBoundary, Spinner, StatusBadge } from '../../../components/ui';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 import AiProjectStart from '../../../components/ai/course/AiProjectStart';
@@ -26,33 +26,25 @@ export default function AiCourseLayout() {
   const moodleContext = useMoodleCourse();
   const moodleCourse = moodleContext?.course;
   const isTeacher = moodleContext?.isTeacher;
-  const [events, setEvents] = useState([]);
-  // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.
   const [version, setVersion] = useState(0);
 
   const { data: course, error, loading, reload } = useApi(async () => {
     if (!moodleCourse?.id) return null;
-    const project = await findCourseByMoodleId(moodleCourse.id);
-    if (!project) return null;
-    const monitoring = await getMonitoring(project.id).catch(() => ({ recent_events: [] }));
-    setEvents(monitoring?.recent_events ?? []);
-    return project;
+    return findCourseByMoodleId(moodleCourse.id);
   }, [moodleCourse?.id]);
 
-  const onEvent = useCallback(
-    (ev) => {
-      setEvents((list) => [...list.slice(-199), ev]);
-      setVersion((v) => v + 1);
-      reload({ silent: true });
-    },
-    [reload],
-  );
-  useCourseEvents(course?.id, onEvent, !!course);
+  const {
+    workflowId,
+    workflow,
+    events,
+    reload: reloadWorkflow,
+  } = useWorkflow(course);
 
   const refresh = useCallback(() => {
     setVersion((v) => v + 1);
+    reloadWorkflow();
     return reload({ silent: true });
-  }, [reload]);
+  }, [reload, reloadWorkflow]);
 
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
@@ -78,7 +70,7 @@ export default function AiCourseLayout() {
       </nav>
 
       <ErrorBoundary>
-        <Outlet context={{ course, events, version, refresh }} />
+        <Outlet context={{ course, workflow, workflowId, events, version, refresh }} />
       </ErrorBoundary>
     </>
   );

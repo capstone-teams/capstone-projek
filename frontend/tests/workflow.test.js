@@ -6,8 +6,8 @@ import { isRpsInProgress } from '../src/utils/rpsStatus';
 import { subscribeWorkflowEvents } from '../src/services/monitoringSocket';
 import * as courses from '../src/services/courseService';
 import * as instructor from '../src/services/instructorService';
-import { subscribeCourseEvents } from '../src/services/monitoringSocket';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
+import { describeEvent } from '../src/utils/workflow';
 
 const flush = () => vi.runAllTimersAsync();
 
@@ -201,8 +201,6 @@ describe('workflow course end-to-end', () => {
       additional_prompt: 'Contoh kasus kampus',
       activity_configuration: { learning_material: true, assignment: true, quiz: true },
     });
-    const events = [];
-    const unsubscribe = subscribeCourseEvents(id, (ev) => events.push(ev.event));
     const status = async () => (await courses.getCourse(id)).status;
     expect(await status()).toBe('CREATED');
 
@@ -272,13 +270,6 @@ describe('workflow course end-to-end', () => {
 
     const runs = (await courses.getAgentRuns(id)).runs;
     expect(runs.every((r) => r.status === 'completed')).toBe(true);
-    const monitoring = await courses.getMonitoring(id);
-    expect(monitoring.status).toBe('COMPLETED');
-
-    expect(events).toEqual(
-      expect.arrayContaining(['PLANNING_COMPLETED', 'CONTENT_GENERATION_COMPLETED', 'EXECUTION_COMPLETED', 'VERIFICATION_COMPLETED']),
-    );
-    unsubscribe();
   });
 
   it('eksekusi dapat dibatalkan dan kembali ke APPROVED', async () => {
@@ -303,5 +294,18 @@ describe('workflow course end-to-end', () => {
     await expectApiError(courses.getCourse('nope'), 404, 'RESOURCE_NOT_FOUND');
     await expectApiError(courses.regeneratePlan('course_project_002', '  '), 422, 'INVALID_REQUEST');
     await expectApiError(courses.generateContent('course_project_002', [0]), 409, 'INVALID_REQUEST');
+  });
+});
+
+describe('describeEvent', () => {
+  it('memprioritaskan ev.message langsung dari backend jika tersedia', () => {
+    const ev = { event: 'WORKFLOW_FAILED', message: 'Penyimpanan dokumen gagal: Bucket tidak ditemukan.' };
+    expect(describeEvent(ev)).toBe('Penyimpanan dokumen gagal: Bucket tidak ditemukan.');
+  });
+
+  it('menerjemahkan event WORKFLOW_* jika message tidak ada', () => {
+    expect(describeEvent({ event: 'WORKFLOW_STARTED' })).toBe('Workflow dimulai');
+    expect(describeEvent({ event: 'WORKFLOW_STAGE_STARTED', stage: 'rps_processing' })).toBe('Tahap alur kerja dimulai (Pemrosesan RPS)');
+    expect(describeEvent({ event: 'WORKFLOW_FAILED' })).toBe('Workflow gagal');
   });
 });

@@ -17,7 +17,7 @@ export const RPS_STATUS = {
  * label: teks badge; tone: warna Badge; marker: penanda visual (running = indikator berputar);
  * description: penjelasan singkat untuk pengguna.
  */
-export const RPS_STATUS_META = {
+const RPS_STATUS_META = {
   [RPS_STATUS.UPLOADED]: { label: 'Diunggah', tone: 'neutral', marker: 'idle', description: 'Menunggu pemrosesan dimulai.' },
   [RPS_STATUS.PROCESSING]: { label: 'Diproses', tone: 'info', marker: 'running', description: 'Dokumen sedang dikonversi.' },
   [RPS_STATUS.PROCESSED]: { label: 'Siap dianalisis', tone: 'info', marker: 'idle', description: 'Dokumen terkonversi; menunggu analisis.' },

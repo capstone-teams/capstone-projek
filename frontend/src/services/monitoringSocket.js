@@ -1,13 +1,13 @@
 import { API_BASE_URL, USE_MOCK } from './config';
 import { getToken } from './apiClient';
-import { subscribeMockEvents, subscribeMockWorkflowEvents } from './mock/mockServer';
+import { subscribeMockWorkflowEvents } from './mock/mockServer';
 
 /** Buka WebSocket ke API backend dengan reconnect (backoff maks. 15 detik); kembalikan fungsi penutup. */
 function openSocket(path, onEvent) {
   const { protocol, host } = window.location;
   const wsBase = API_BASE_URL.startsWith('http')
-    ? API_BASE_URL.replace(/^http/, 'ws')
-    : `${protocol === 'https:' ? 'wss' : 'ws'}://${host}${API_BASE_URL}`;
+    ? API_BASE_URL.replace(/^http/, 'ws').replace(/\/+$/, '')
+    : `${protocol === 'https:' ? 'wss' : 'ws'}://${host}${API_BASE_URL.replace(/\/+$/, '')}`;
   // Browser tidak dapat menyetel header Authorization pada WebSocket: token dikirim lewat query (§17).
   const token = getToken();
   const url = `${wsBase}${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
@@ -19,6 +19,9 @@ function openSocket(path, onEvent) {
 
   const connect = () => {
     socket = new WebSocket(url);
+    socket.onerror = () => {
+      // Tangani error koneksi WebSocket tanpa melempar unhandled event di console
+    };
     socket.onopen = () => {
       retry = 0;
     };
@@ -41,16 +44,6 @@ function openSocket(path, onEvent) {
     clearTimeout(timer);
     socket?.close();
   };
-}
-
-/**
- * Berlangganan event real-time satu course.
- * Panggil HTTP monitoring dulu untuk initial state, baru subscribe.
- * Mengembalikan fungsi unsubscribe.
- */
-export function subscribeCourseEvents(courseId, onEvent) {
-  if (USE_MOCK) return subscribeMockEvents(courseId, onEvent);
-  return openSocket(`/ws/courses/${courseId}`, onEvent);
 }
 
 /**

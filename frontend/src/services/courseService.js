@@ -113,16 +113,8 @@ export function getVerification(courseId, verificationId) {
   return api.get(`/courses/${courseId}/verification/${verificationId}`);
 }
 
-// Agent Run & Monitoring
-
-export function getAgentRun(runId) {
-  return api.get(`/agent-runs/${runId}`);
-}
+// Agent Run
 
 export function getAgentRuns(courseId) {
   return api.get(`/courses/${courseId}/agent-runs`).catch(() => ({ runs: [] }));
-}
-
-export function getMonitoring(courseId) {
-  return api.get(`/courses/${courseId}/monitoring`).catch(() => ({ recent_events: [] }));
 }

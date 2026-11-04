@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { generatePlan, getAgentRuns } from '../../../services/courseService';
 import { useAction, useApi } from '../../../hooks/useApi';
-import { Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
+import { Alert, Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import EventLog from '../../../components/ai/EventLog';
 import ActivityConfigForm from '../../../components/ai/course/ActivityConfigForm';
 import { RUN_TYPE_LABELS, isBusy } from '../../../utils/workflow';
@@ -22,24 +22,38 @@ const NEXT_STEP = {
 };
 
 export default function CourseOverviewPage() {
-  const { course, events, version, refresh } = useCourse();
+  const { course, workflow, events, version, refresh } = useCourse();
   const runs = useApi(() => getAgentRuns(course.id), [course.id, version]);
   const plan = useAction(generatePlan);
-  const busy = isBusy(course.status);
+  const busy = isBusy(course.status) || workflow?.status === 'RUNNING';
   const next = NEXT_STEP[course.status];
+  const progress = workflow?.progress || course?.progress;
+  const stage = workflow?.stage || course?.stage;
+
+  const failureEvent = events?.slice().reverse().find(
+    (e) => e.event === 'WORKFLOW_FAILED' || e.reason || (e.message && e.message.toLowerCase().includes('gagal')),
+  );
+  const failureMessage = failureEvent?.message || failureEvent?.reason || course?.processing_error_message;
 
   return (
     <div className="grid grid--2">
       <div className="stack">
         <Card title="Langkah berikutnya">
           <ErrorAlert error={plan.error} onClose={plan.clearError} />
+          {failureMessage && (
+            <div className="mb-3">
+              <Alert tone="danger">
+                <strong>Pemberitahuan alur kerja:</strong> {failureMessage}
+              </Alert>
+            </div>
+          )}
           {busy ? (
             <>
               <p>Agent sedang bekerja. Halaman ini diperbarui otomatis.</p>
-              {course.progress ? (
-                <ProgressBar completed={course.progress.completed} total={course.progress.total} label={course.stage ?? ''} />
+              {progress ? (
+                <ProgressBar completed={progress.completed} total={progress.total} label={stage ?? ''} />
               ) : (
-                <Spinner label={course.stage ?? 'Memproses…'} />
+                <Spinner label={stage ?? 'Memproses…'} />
               )}
             </>
           ) : next ? (
