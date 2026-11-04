@@ -11,7 +11,10 @@ export const MOODLE_SERVICE = import.meta.env.VITE_MOODLE_SERVICE || 'moodle_mob
 export const USE_MOODLE_MOCK = import.meta.env.VITE_MOODLE_MOCK === 'true';
 
 // ---- Backend capstone (fitur Generator Konten AI untuk dosen)
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+// Build produksi dilayani hosting statis (Vercel) tanpa proxy Vite; /api/v1 relatif di sana
+// menjawab 405. Dev/test tetap same-origin lewat proxy Vite (lihat vite.config.js).
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.PROD ? 'https://caps.njyn.foo/api/v1' : '/api/v1');
 
 // Default backend nyata; mock hanya bila VITE_USE_MOCK=true (dipakai test).
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
