@@ -6,6 +6,11 @@ import { AuthField, AuthLayout, AuthSubmitButton, GoogleLoginButton, PasswordFie
 import { SESSION_NOTICE, homePathFor } from '../../types/auth';
 import { MSG_LOGIN_FAILED, logTechnical } from '../../utils/userMessages';
 
+<<<<<<< HEAD
+/** Format error login dari backend API (design-api §18). */
+function describeLoginError(err) {
+  return { title: 'Login gagal', message: err?.message || 'Login gagal. Silakan coba lagi.' };
+=======
 // Kegagalan di belakang layar (layanan kursus) tidak disebut ke pengguna; detailnya hanya ke konsol.
 const ACCOUNT_NOT_READY = 'Akun Anda belum dapat digunakan untuk masuk. Hubungi admin.';
 const WRONG_CREDENTIALS = 'Username atau kata sandi salah. Periksa username, lalu ketik ulang kata sandi Anda.';
@@ -24,6 +29,7 @@ function describeLoginError(err) {
   }
   if (err?.status === 401) return { title: 'Login gagal', message: WRONG_CREDENTIALS };
   return { title: 'Login gagal', message: err?.message || MSG_LOGIN_FAILED };
+>>>>>>> develop
 }
 
 export default function LoginPage() {
