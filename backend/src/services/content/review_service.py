@@ -1,7 +1,9 @@
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from src.models.content import ContentStatus
+
+from src.models.content import ContentStatus, ContentType
 from src.models.course_plan_week import CoursePlanWeek
 from src.services.content.repository import ContentGenerationRepository
 from src.services.content.generate_service import generate_week_content
@@ -75,20 +77,27 @@ class ContentReviewService:
 
         return content
 
+
     async def retry_content(
         self,
         db: AsyncSession,
         content_id: str,
         additional_prompt: str = "",
+        emit_event=None,
+        record_trace=None,
     ):
         content = await self._get_content(db, content_id)
 
         if content.status not in RETRYABLE_STATUSES:
             raise InvalidStatusTransition(content.status, ContentStatus.DRAFT)
 
-        week = await db.get(CoursePlanWeek, content.course_plan_week_id)
+        week_number = await db.scalar(
+            select(CoursePlanWeek.week_number).where(
+                CoursePlanWeek.id == content.course_plan_week_id
+            )
+        )
 
-        if week is None:
+        if week_number is None:
             raise ContentNotFoundError(content.course_plan_week_id)
 
         reject_reason = getattr(content, "reject_reason", None)
@@ -100,9 +109,11 @@ class ContentReviewService:
 
         material = await generate_week_content(
             db,
-            week.course_plan_id,
-            week.week_number,
+            content.course_plan_week_id,
+            week_number,
             additional_prompt=additional_prompt,
+            emit_event=emit_event,
+            record_trace=record_trace,
         )
 
         try:
@@ -110,11 +121,13 @@ class ContentReviewService:
                 db,
                 content,
                 title=material.title,
-                content_type=material.content_type,
-                content_data=material.content_data,
+                content_type=ContentType(material.content_type.value),
+                content_data=material.content_data.model_dump(mode="json"),
                 content_markdown=f"# {material.title}\n\n_Markdown belum dirender._",
             )
+
             await db.commit()
+
         except SQLAlchemyError:
             await db.rollback()
             raise

@@ -27,10 +27,13 @@ from src.services.content.pipeline import (
     explain_validation_error,
     trace,
 )
+from src.models.content import Content, ContentStatus, ContentType
 from src.services.content.schema import CONTENT_OUTPUT_SCHEMA
 from src.services.llm import LLMService, OpenAIProvider
 from sqlalchemy.exc import SQLAlchemyError
 from src.models.course_plan import CoursePlan
+from sqlalchemy import select
+from src.models.course_plan_week import CoursePlanWeek
 
 logger = logging.getLogger(__name__)
 
@@ -77,33 +80,32 @@ class WeekResult:
 
 
 def _build_week_contexts(
-    plan: CoursePlan,
-    weeks: list[CoursePlanWeek],
+    rows,
 ) -> list[WeekContext]:
 
-    if not weeks:
+    if not rows:
         raise ContentGenerationError(
             "Course plan belum memiliki course plan weeks."
         )
 
     contexts = []
 
-    for week in weeks:
-        meta = week.metadata_ or {}
+    for row in rows:
+        metadata = row["metadata_"] or {}
 
         contexts.append(
             WeekContext(
-                course_plan_id=plan.id,
-                course_plan_week_id=week.id,
-                week_number=week.week_number,
+                course_plan_id=row["course_plan_id"],
+                course_plan_week_id=row["course_plan_week_id"],
+                week_number=row["week_number"],
                 week_data=WeeklyContentContext(
-                    week_number=week.week_number,
-                    week_type=meta.get("week_type", "regular"),
-                    title=week.title,
-                    learning_outcomes=week.learning_outcomes,
-                    topics=(week.topics or {}).get("items", []),
-                    methods=(week.methods or {}).get("items", []),
-                    assessment=week.assessment,
+                    week_number=row["week_number"],
+                    week_type=metadata.get("week_type", "regular"),
+                    title=row["title"],
+                    learning_outcomes=row["learning_outcomes"],
+                    topics=(row["topics"] or {}).get("items", []),
+                    methods=(row["methods"] or {}).get("items", []),
+                    assessment=row["assessment"],
                 ),
             )
         )
@@ -370,9 +372,9 @@ async def generate_contents(
             "Course plan tidak ditemukan."
         )
 
-    plan, weeks = data
+    # plan, weeks = data
 
-    contexts = _build_week_contexts(plan, weeks)
+    contexts = _build_week_contexts(data)
 
     contexts = [
         ctx
@@ -458,7 +460,7 @@ async def generate_contents(
                 markdown = "# TODO: markdown belum dirender"
                 
                 content_data = m.content_data.model_dump(mode="json")
-                content_type = m.content_type.value
+                content_type = ContentType(m.content_type.value)
 
                 existing = await ContentGenerationRepository.get_by_week_id(
                     db,
@@ -515,6 +517,7 @@ async def generate_contents(
     return results
 
 
+
 async def generate_week_content(
     db: AsyncSession,
     course_plan_week_id: str,
@@ -527,7 +530,17 @@ async def generate_week_content(
 ) -> GeneratedLearningMaterial:
 
     result = await db.execute(
-        select(CoursePlan, CoursePlanWeek)
+        select(
+            CoursePlan.id.label("course_plan_id"),
+            CoursePlanWeek.id.label("course_plan_week_id"),
+            CoursePlanWeek.week_number.label("week_number"),
+            CoursePlanWeek.title.label("title"),
+            CoursePlanWeek.learning_outcomes.label("learning_outcomes"),
+            CoursePlanWeek.topics.label("topics"),
+            CoursePlanWeek.methods.label("methods"),
+            CoursePlanWeek.assessment.label("assessment"),
+            CoursePlanWeek.metadata_.label("metadata_"),
+        )
         .join(
             CoursePlanWeek,
             CoursePlanWeek.course_plan_id == CoursePlan.id,
@@ -537,44 +550,36 @@ async def generate_week_content(
         )
     )
 
-    row = result.first()
+    row = result.mappings().one_or_none()
 
     if row is None:
         raise ContentGenerationError(
             f"Course plan week tidak ditemukan: {course_plan_week_id}"
         )
 
-    plan = row[0]
-
-    weeks_result = await db.execute(
-        select(CoursePlanWeek)
-        .where(
-            CoursePlanWeek.course_plan_id == plan.id
-        )
-    )
-
-    weeks = weeks_result.scalars().all()
-
-    contexts = _build_week_contexts(plan, weeks)
-
-    ctx = next(
-        (
-            context
-            for context in contexts
-            if context.week_number == week_number
-            and context.course_plan_week_id == course_plan_week_id
-        ),
-        None,
-    )
-
-    if ctx is None:
+    if row["week_number"] != week_number:
         raise ContentGenerationError(
-            f"Week {week_number} tidak ditemukan."
+            f"Nomor minggu tidak sesuai: {week_number}"
         )
 
-    week_type = ctx.week_data.week_type.lower()
+    metadata = row["metadata_"] or {}
 
-    if week_type != "regular":
+    ctx = WeekContext(
+        course_plan_id=row["course_plan_id"],
+        course_plan_week_id=row["course_plan_week_id"],
+        week_number=row["week_number"],
+        week_data=WeeklyContentContext(
+            week_number=row["week_number"],
+            week_type=metadata.get("week_type", "regular"),
+            title=row["title"],
+            learning_outcomes=row["learning_outcomes"],
+            topics=(row["topics"] or {}).get("items", []),
+            methods=(row["methods"] or {}).get("items", []),
+            assessment=row["assessment"],
+        ),
+    )
+
+    if ctx.week_data.week_type.lower() != "regular":
         raise ContentGenerationError(
             f"Week {week_number} bukan minggu pembelajaran reguler."
         )
