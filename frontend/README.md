@@ -382,6 +382,12 @@ benar-benar disimpan yang ditampilkan (`src/components/moodle/modedit/`):
 - **Quiz**: General (Name, Description) dan Timing (Open the quiz, Close the quiz).
 - **Text and media area**: General (Title in course index, Text dengan editor).
 
+Ketiganya punya bagian tambahan **Generator AI** (bukan bagian Moodle) di bagian bawah, terbuka secara
+bawaan, berisi **Prompt AI**: instruksi opsional (maks. 2000 karakter, dengan contoh isian sesuai jenis)
+untuk agent AI saat menyusun isi aktivitas. Prompt diteruskan oleh formulir ke `onSubmit` sebagai argumen
+ketiga `{ aiPrompt }`, terpisah dari isian aktivitas, sehingga tidak ikut terkirim ke kursus. Backend belum punya
+API pembuatan aktivitas dengan AI, jadi prompt belum diproses; formulir menyebutkannya.
+
 Pesan validasi Moodle: "You must supply a value here.", "Due date cannot be earlier
 than the allow submissions from date.", "Cut-off date cannot be earlier than the due
 date.", "The close date must be after the open date.", dan "Invalid grade value. This
