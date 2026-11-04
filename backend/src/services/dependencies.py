@@ -28,6 +28,7 @@ from src.config.settings import Settings, get_settings
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
+from src.services.course.service import CourseReadService
 from src.services.course_plan.service import CoursePlanService
 from src.services.instructor.service import InstructorSetupService
 from src.services.moodle_adapter_exceptions import MoodleWriteDisabledError
@@ -61,6 +62,7 @@ __all__ = [
     "get_auth_service",
     "get_course_plan_service",
     "get_course_planning_runner",
+    "get_course_service",
     "get_current_user",
     "get_db_session",
     "get_instructor_service",
@@ -129,6 +131,17 @@ def get_user_service(session: AsyncSession = Depends(get_db_session)) -> UserSer
 def get_auth_service(session: AsyncSession = Depends(get_db_session)) -> AuthService:
     """Auth Service untuk endpoint authentication."""
     return AuthService.from_session(session)
+
+
+def get_course_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> CourseReadService:
+    """Service baca course (plan + konten mingguan) untuk endpoint ``/courses``.
+
+    Read-only: generator course plan/konten tersedia lewat modul
+    ``course_plan``; endpoint ini hanya membaca data yang sudah tersimpan.
+    """
+    return CourseReadService.from_session(session)
 
 
 def get_course_plan_service(

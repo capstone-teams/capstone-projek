@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.services.auth.errors import AuthDomainError
+from src.services.course.errors import CourseDomainError
 from src.services.course_plan.errors import CoursePlanDomainError
 from src.services.instructor.errors import InstructorSetupError
 from src.services.llm.base import LLMProviderError
@@ -194,6 +195,21 @@ async def course_plan_error_handler(
     )
 
 
+async def course_error_handler(request: Request, exc: CourseDomainError) -> JSONResponse:
+    """Translate a course read failure into the standard API error format.
+
+    Course yang tidak ada dan course milik dosen lain sama-sama menjadi 404
+    ``RESOURCE_NOT_FOUND``, sehingga keberadaan course dosen lain tidak dapat
+    ditebak dari perbedaan status. Identifier hanya tercatat di log server-side.
+    """
+    logger.warning("Course failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+    )
+
+
 async def workflow_error_handler(
     request: Request, exc: WorkflowDomainError
 ) -> JSONResponse:
@@ -311,6 +327,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RPSDomainError, rps_error_handler)
     app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
     app.add_exception_handler(CoursePlanDomainError, course_plan_error_handler)
+    app.add_exception_handler(CourseDomainError, course_error_handler)
     app.add_exception_handler(WorkflowDomainError, workflow_error_handler)
     app.add_exception_handler(MoodleError, moodle_error_handler)
     app.add_exception_handler(MoodleIntegrationError, moodle_error_handler)
