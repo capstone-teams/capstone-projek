@@ -1,7 +1,7 @@
 import { api } from './apiClient';
 import { isWorkflowFinished } from '../utils/workflowStatus';
 
-// Monitoring workflow dan course target
+// Monitoring workflow dan course target (design-api §16, BE-11.3).
 
 export function listWorkflows() {
   return api.get('/workflows').then((data) => data.items);

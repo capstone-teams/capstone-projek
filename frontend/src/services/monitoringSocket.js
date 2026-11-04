@@ -65,14 +65,10 @@ function createChannel(path) {
       }
       [...channel.listeners].forEach((listener) => listener(frame));
     };
-    current.onclose = (event) => {
-      if (closed || socket !== current) return;
-      if (REJECTED_CODES.includes(event.code)) {
-        setStatus(SOCKET_STATUS.OFFLINE);
-        return;
-      }
-      setStatus(SOCKET_STATUS.RECONNECTING);
-      timer = setTimeout(connect, Math.min(1000 * 2 ** retry++, MAX_BACKOFF_MS));
+    socket.onclose = (event) => {
+      // 4401/4403/4404: ditolak saat handshake; mencoba lagi tidak akan berhasil.
+      if (closed || [4401, 4403, 4404].includes(event.code)) return;
+      timer = setTimeout(connect, Math.min(1000 * 2 ** retry++, 15000));
     };
   };
 

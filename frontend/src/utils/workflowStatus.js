@@ -162,66 +162,6 @@ export function eventTypeOf(event) {
   }
 }
 
-// ---- Event real-time (FE-10.2)
-
-/** Batas event yang disimpan per workflow di state aplikasi. */
-export const MAX_WORKFLOW_EVENTS = 500;
-
-const timeOf = (value) => {
-  const time = Date.parse(value);
-  return Number.isNaN(time) ? 0 : time;
-};
-
-/** Identitas sebuah event; frame WebSocket dan GET /workflows/{id}/events memuat field yang sama. */
-export const eventKey = (event) => `${event.timestamp}|${event.event}|${event.stage ?? ''}|${event.message ?? ''}`;
-
-/** Gabungkan dua daftar event tanpa duplikat, urut waktu (stabil), dan dibatasi MAX_WORKFLOW_EVENTS. */
-export function mergeEvents(current, incoming) {
-  const seen = new Set();
-  const merged = [...current, ...incoming].filter((event) => {
-    const key = eventKey(event);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return merged
-    .map((event, index) => ({ event, index }))
-    .sort((a, b) => timeOf(a.event.timestamp) - timeOf(b.event.timestamp) || a.index - b.index)
-    .map(({ event }) => event)
-    .slice(-MAX_WORKFLOW_EVENTS);
-}
-
-/**
- * Terapkan satu event ke snapshot workflow sehingga status, tahap, dan progres di layar langsung berubah.
- * Event yang lebih lama dari `updated_at` snapshot sudah tercermin di sana dan dilewati. Hasil ini
- * perkiraan sampai GET /workflows/{id} berikutnya, yang dipanggil setelah event akhir dan saat tersambung ulang.
- */
-export function applyWorkflowEvent(workflow, event) {
-  if (!workflow || !event) return workflow;
-  if (event.timestamp && workflow.updated_at && timeOf(event.timestamp) < timeOf(workflow.updated_at)) return workflow;
-  const next = { ...workflow, progress: event.progress ?? workflow.progress, updated_at: event.timestamp ?? workflow.updated_at };
-  switch (event.event) {
-    case WORKFLOW_EVENT.STARTED:
-      return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
-    case WORKFLOW_EVENT.STAGE_STARTED:
-    case WORKFLOW_EVENT.STAGE_PROGRESS:
-      return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: event.stage ?? workflow.stage };
-    case WORKFLOW_EVENT.STAGE_COMPLETED:
-      return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
-    case WORKFLOW_EVENT.RETRY:
-      return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: WORKFLOW_STAGE.RETRYING };
-    case WORKFLOW_EVENT.COMPLETED:
-      return { ...next, status: WORKFLOW_API_STATUS.COMPLETED, stage: null };
-    case WORKFLOW_EVENT.FAILED:
-      return { ...next, status: WORKFLOW_API_STATUS.FAILED, stage: null };
-    default:
-      return workflow;
-  }
-}
-
-/** Event yang mengakhiri workflow; setelahnya status akhir diambil lewat HTTP. */
-export const isFinalWorkflowEvent = (event) => [WORKFLOW_EVENT.COMPLETED, WORKFLOW_EVENT.FAILED].includes(event?.event);
-
 // ---- Indikator tahap
 
 /** Label tiap tahap pada indikator. */

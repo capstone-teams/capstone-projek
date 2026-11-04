@@ -3,7 +3,8 @@
 Membuktikan acceptance criteria BE-11.2 tanpa Docling maupun LLM:
 
 - satu workflow melewati ``PROCESSING_RPS`` → ``ANALYZING_RPS`` sampai hasil
-  analisis tersimpan (status ``ANALYZED``);
+  analisis tersimpan (status ``ANALYZED``), lalu menunggu di
+  ``WAITING_FOR_REVIEW`` (DL-012) alih-alih langsung ``COMPLETED``;
 - setiap perubahan tahap, aktivitas agent, retry, dan kegagalan tercatat sebagai
   ``WorkflowEvent``;
 - kegagalan tahap menghasilkan workflow ``FAILED`` (satu event kegagalan);
@@ -239,16 +240,17 @@ async def test_processing_workflow_runs_both_stages_and_records_events(
     loaded, events = await _workflow_and_events(db_session, workflow.id or "", owner_id)
     names = [event.event for event in events]
 
-    assert loaded.status.value == "COMPLETED"
+    assert loaded.status.value == "WAITING_FOR_REVIEW"
     assert (loaded.progress_completed, loaded.progress_total) == (2, 2)
     assert names[0] == "WORKFLOW_STARTED"
-    assert names[-1] == "WORKFLOW_COMPLETED"
+    assert names[-1] == "WORKFLOW_WAITING_FOR_REVIEW"
     assert names.count("WORKFLOW_STAGE_STARTED") == 2
     assert names.count("WORKFLOW_STAGE_COMPLETED") == 2
     assert [event.stage for event in events if event.event == "WORKFLOW_STAGE_STARTED"] == [
         "rps_processing",
         "rps_analysis",
     ]
+    assert events[-1].stage == "instructor_review"
 
     rps = await RPSService.from_session(db_session).get_rps(
         rps_id=workflow.rps_id, owner_id=owner_id
@@ -288,7 +290,7 @@ async def test_conversion_failure_marks_workflow_failed_with_one_error_event(
 
 
 @pytest.mark.asyncio
-async def test_analysis_retry_is_recorded_and_workflow_completes(
+async def test_analysis_retry_is_recorded_and_workflow_waits_for_review(
     db_session, owner_id, runner_env
 ):
     runner_env["analyzer"].retry = True
@@ -301,7 +303,7 @@ async def test_analysis_retry_is_recorded_and_workflow_completes(
     loaded, events = await _workflow_and_events(db_session, workflow.id or "", owner_id)
     retries = [event for event in events if event.event == "WORKFLOW_RETRY"]
 
-    assert loaded.status.value == "COMPLETED"
+    assert loaded.status.value == "WAITING_FOR_REVIEW"
     assert len(retries) == 1
     assert retries[0].event_type.value == "RETRY_FIX"
     assert retries[0].stage == "rps_analysis"
@@ -358,9 +360,9 @@ async def test_reanalyze_reuses_the_workflow_and_appends_events(
 
     loaded, events = await _workflow_and_events(db_session, workflow.id or "", owner_id)
 
-    assert loaded.status.value == "COMPLETED"
+    assert loaded.status.value == "WAITING_FOR_REVIEW"
     assert (loaded.progress_completed, loaded.progress_total) == (1, 1)
     assert len(events) > len(first_events)
     assert events[len(first_events)].event == "WORKFLOW_STARTED"
-    assert events[-1].event == "WORKFLOW_COMPLETED"
+    assert events[-1].event == "WORKFLOW_WAITING_FOR_REVIEW"
     assert runner_env["analyzer"].calls == 2

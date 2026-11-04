@@ -1,3 +1,4 @@
+
 import logging
 
 from fastapi import FastAPI, Request
@@ -5,8 +6,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.services.auth.errors import AuthDomainError
+from src.services.course_plan.errors import CoursePlanDomainError
 from src.services.instructor.errors import InstructorSetupError
 from src.services.llm.base import LLMProviderError
+from src.services.moodle_adapter_exceptions import (
+    MoodleEntityNotFoundError,
+    MoodleIntegrationError,
+    MoodleWriteDisabledError,
+)
+from src.services.moodle_error_category import normalize_moodle_error
+from src.services.moodle_exceptions import MoodleError
 from src.services.rps.errors import RPSDomainError
 from src.services.user.errors import UserNotFoundError
 from src.services.workflow.errors import WorkflowDomainError
@@ -167,6 +176,24 @@ async def instructor_setup_error_handler(
     )
 
 
+async def course_plan_error_handler(
+    request: Request, exc: CoursePlanDomainError
+) -> JSONResponse:
+    """Translate a course plan failure into the standard API error format (BE-14.2).
+
+    Rencana yang tidak ada atau milik workflow dosen lain menjadi 404
+    ``RESOURCE_NOT_FOUND``; review pada versi yang salah atau belum lolos
+    validasi menjadi 409 ``INVALID_REQUEST``; input tidak valid 422. Pesan
+    internal (mis. isi prompt atau identifier) hanya dicatat server-side.
+    """
+    logger.warning("Course plan failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+    )
+
+
 async def workflow_error_handler(
     request: Request, exc: WorkflowDomainError
 ) -> JSONResponse:
@@ -186,6 +213,47 @@ async def workflow_error_handler(
 
 
 ERROR_RESPONSE_SCHEMA_REF = "#/components/schemas/ErrorResponse"
+
+
+async def moodle_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Translate a Moodle failure into 4xx/5xx ``MOODLE_ERROR`` with a category.
+
+    The category (authentication, permission, validation, transient or
+    execution) and the Moodle error code are the only Moodle details the client
+    receives. The message is generic, so Moodle payloads and credentials cannot
+    leak through an error response.
+    """
+    normalized = normalize_moodle_error(exc)
+    logger.warning(
+        "Moodle failure on %s: category=%s code=%s",
+        request.url.path,
+        normalized.category.value,
+        normalized.moodle_code,
+    )
+    return _error_response(
+        status_code=normalized.status_code,
+        error_code="MOODLE_ERROR",
+        message=normalized.message,
+        details=[
+            {
+                "category": normalized.category.value,
+                "moodle_code": normalized.moodle_code,
+                "retryable": normalized.retryable,
+            }
+        ],
+    )
+
+
+async def moodle_not_found_error_handler(
+    request: Request, exc: MoodleEntityNotFoundError | MoodleWriteDisabledError
+) -> JSONResponse:
+    """Missing Moodle entity, or a write endpoint disabled outside development."""
+    logger.warning("Moodle resource unavailable on %s: %s", request.url.path, exc)
+    return _error_response(
+        status_code=404,
+        error_code="RESOURCE_NOT_FOUND",
+        message="Resource tidak ditemukan.",
+    )
 
 
 def _document_standard_validation_error(app: FastAPI) -> None:
@@ -242,5 +310,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(UserNotFoundError, user_not_found_error_handler)
     app.add_exception_handler(RPSDomainError, rps_error_handler)
     app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
+    app.add_exception_handler(CoursePlanDomainError, course_plan_error_handler)
     app.add_exception_handler(WorkflowDomainError, workflow_error_handler)
+    app.add_exception_handler(MoodleError, moodle_error_handler)
+    app.add_exception_handler(MoodleIntegrationError, moodle_error_handler)
+    app.add_exception_handler(MoodleEntityNotFoundError, moodle_not_found_error_handler)
+    app.add_exception_handler(MoodleWriteDisabledError, moodle_not_found_error_handler)
     _document_standard_validation_error(app)

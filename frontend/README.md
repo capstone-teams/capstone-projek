@@ -224,30 +224,9 @@ event-nya: selesai (event `WORKFLOW_STAGE_COMPLETED`), berjalan, **menunggu tind
 dan bentuk penanda (✕/↻). Tahap yang belum dijalankan backend (rencana, konten, review, pengiriman, verifikasi)
 tampil sebagai menunggu, atau "Belum dijalankan" bila workflow sudah berhenti.
 
-Saat ini orkestrator backend baru menjalankan dua tahap (pemrosesan dan analisis RPS), sehingga RETRYING dan
-WAITING_FOR_REVIEW baru teruji lewat data contoh di tes.
-
-### Event real-time 
-
-Status dan riwayat event workflow diperbarui otomatis lewat `WS /api/v1/ws/workflows/{id}`, dipusatkan di hook
-`useWorkflowMonitor(workflowId)` (`src/hooks/useWorkflowMonitor.js`):
-
-1. **Keadaan awal lewat HTTP** (`GET /workflows/{id}` dan `/events`), baru setelah itu berlangganan. Server hanya
-   mengirim event baru setelah tersambung, jadi data diambil ulang tiap koneksi tersambung (juga setelah terputus)
-   dan setelah event akhir (`WORKFLOW_COMPLETED`/`WORKFLOW_FAILED`) untuk status yang pasti.
-2. **Event diterapkan langsung** ke status, tahap, progres, dan daftar event (`applyWorkflowEvent`,
-   `mergeEvents` di `utils/workflowStatus.js`), tanpa permintaan HTTP per event. Event ganda antara riwayat HTTP dan
-   frame WebSocket dibuang, dan daftar dibatasi 500 event per workflow.
-3. **Autentikasi token** lewat query `?token=` (browser tidak dapat menyetel header pada WebSocket). Token dibaca
-   ulang pada tiap percobaan sambung. Penutupan 4401/4403/4404 tidak dicoba ulang dan beralih ke polling.
-4. **Reconnect otomatis** dengan jeda 1, 2, 4, ... maksimal 15 detik; segera mencoba lagi saat jaringan kembali
-   (`online`) atau tab dibuka lagi. Satu koneksi dipakai bersama semua komponen untuk workflow yang sama.
-5. **Fallback polling**: cepat (4 detik) selama WebSocket belum atau tidak tersambung, jarang (15 detik) sebagai
-   jaring pengaman saat tersambung, dan berhenti setelah workflow berhenti. Layar menampilkan keterangan singkat
-   ("Status diperbarui otomatis" / "menyambungkan ulang" / "diperbarui berkala").
-6. **State management (FE-03.1)**: snapshot, event, dan status koneksi tiap workflow disimpan di slice `workflows`
-   pada `AppStateProvider` (`src/state/appState.js`). Hook `useWorkflowMonitor` atau `useAppState().workflows[id]`
-   memberi data yang sama untuk halaman lain, mis. progres RPS (FE-08.2) dan dashboard (FE-11.1).
+Pembaruan otomatis: event WebSocket memicu pengambilan ulang, dan polling setiap 4-5 detik menjadi cadangan
+sampai workflow COMPLETED atau FAILED. Saat ini orkestrator backend baru menjalankan dua tahap (pemrosesan dan
+analisis RPS), sehingga RETRYING dan WAITING_FOR_REVIEW baru teruji lewat data contoh di tes.
 
 ### Hapus RPS yang gagal (dimatikan)
 

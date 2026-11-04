@@ -1,0 +1,4 @@
+name: rps_analysis
+version: v2
+required_variables:
+  - rps_yaml

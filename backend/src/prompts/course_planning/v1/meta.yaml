@@ -1,0 +1,13 @@
+name: course_planning
+version: v1
+description: Menyusun rencana pembelajaran mingguan (WeeklyPlan) dari RPS Structured Data.
+required_variables:
+  - rps_structured
+optional_variables:
+  - instructor_context
+  - activity_configuration
+  - previous_plan
+  - revision_notes
+  - instruction
+  - validation_feedback
+  - output_schema

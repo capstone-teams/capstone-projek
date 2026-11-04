@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     LLM_RETRY_MIN_WAIT: float | None = None
     LLM_RETRY_MAX_WAIT: float | None = None
 
+    content_generation_max_fix_attempts: int = 2
+    # Jumlah retry tambahan course planning setelah output tidak sesuai schema
+    # (BE-14.3). 0 berarti satu percobaan tanpa retry.
+    COURSE_PLANNING_MAX_FIX_ATTEMPTS: int = 1
     # --- RPS upload & Docling conversion (BE-05) ---------------------------
     # Seluruh nilai default-nya kosong; nilai bawaan diterapkan oleh property
     # ``rps_*`` di bawah (lihat DEFAULT_RPS_* pada modul ini). Kosong berarti

@@ -39,6 +39,7 @@ EVENT_STARTED = "WORKFLOW_STARTED"
 EVENT_STAGE_STARTED = "WORKFLOW_STAGE_STARTED"
 EVENT_STAGE_PROGRESS = "WORKFLOW_STAGE_PROGRESS"
 EVENT_STAGE_COMPLETED = "WORKFLOW_STAGE_COMPLETED"
+EVENT_WAITING_FOR_REVIEW = "WORKFLOW_WAITING_FOR_REVIEW"
 EVENT_RETRY = "WORKFLOW_RETRY"
 EVENT_COMPLETED = "WORKFLOW_COMPLETED"
 EVENT_FAILED = "WORKFLOW_FAILED"
@@ -229,6 +230,46 @@ class WorkflowService:
             event=EVENT_STAGE_COMPLETED,
             stage=stage_name(status),
             message=f"Tahap {_label(status)} selesai.",
+        )
+        return updated
+
+    async def claim_planning(
+        self, *, workflow_id: str, owner_id: str
+    ) -> WorkflowRecord | None:
+        """Klaim workflow untuk satu run course planning (BE-14.3).
+
+        ``None`` berarti workflow tidak ada, bukan milik dosen ini, atau sedang
+        berada pada status yang tidak mengizinkan perencanaan baru. Perubahan
+        status tidak menulis event di sini: orkestrator menulis
+        ``WORKFLOW_STARTED``/``WORKFLOW_STAGE_STARTED`` saat run benar-benar
+        dimulai, sehingga klaim yang gagal tidak meninggalkan event palsu.
+        """
+        claimed = await self._repository.claim_status(
+            workflow_id,
+            owner_id,
+            allowed=(WorkflowStatus.WAITING_FOR_REVIEW, WorkflowStatus.FAILED),
+            target=WorkflowStatus.PLANNING_COURSE,
+        )
+        if not claimed:
+            return None
+        return await self._repository.find_by_id_and_owner(workflow_id, owner_id)
+
+    async def wait_for_review(self, workflow: WorkflowRecord) -> WorkflowRecord:
+        """Tahap selesai; workflow menunggu tindakan dosen (DL-012).
+
+        Dipakai orkestrator setelah tahap terakhir sebuah run (analisis RPS,
+        perencanaan course, eksekusi) dan sebagai prasyarat endpoint review
+        course plan (BE-14.2). Status ``WAITING_FOR_REVIEW`` bukan status
+        terminal: run berikutnya memakai workflow yang sama.
+        """
+        workflow.wait_for_review()
+        updated = await self._update(workflow)
+        await self._record(
+            updated,
+            event_type=EventType.PERUBAHAN_TAHAP,
+            event=EVENT_WAITING_FOR_REVIEW,
+            stage=stage_name(WorkflowStatus.WAITING_FOR_REVIEW),
+            message="Workflow menunggu peninjauan dosen.",
         )
         return updated
 
