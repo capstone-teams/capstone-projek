@@ -11,33 +11,32 @@ from sqlalchemy.orm import joinedload, selectinload
 class ContentGenerationRepository:
 
     @staticmethod
-    async def get_context(
-        db: AsyncSession,
-        course_plan_id: str,
-    ):
+    async def get_context(db: AsyncSession, course_plan_id: str):
         result = await db.execute(
-            select(CoursePlan, CoursePlanWeek)
+            select(
+                CoursePlan.id.label("course_plan_id"),
+                CoursePlanWeek.id.label("course_plan_week_id"),
+                CoursePlanWeek.week_number,
+                CoursePlanWeek.title,
+                CoursePlanWeek.learning_outcomes,
+                CoursePlanWeek.topics,
+                CoursePlanWeek.methods,
+                CoursePlanWeek.assessment,
+                CoursePlanWeek.metadata_.label("metadata_"),
+            )
             .join(
                 CoursePlanWeek,
                 CoursePlanWeek.course_plan_id == CoursePlan.id,
             )
-            .where(
-                CoursePlan.id == course_plan_id
-            )
-            # .options(
-            #     joinedload(CoursePlan.rps_analysis)
-            # )
+            .where(CoursePlan.id == course_plan_id)
         )
 
-        rows = result.all()
+        rows = result.mappings().all()
 
         if not rows:
             return None
 
-        course_plan = rows[0][0]
-        weeks = [row[1] for row in rows]
-
-        return course_plan, weeks
+        return rows
     # async def get_context(
     #     db: AsyncSession,
     #     rps_id: str,
