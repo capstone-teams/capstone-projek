@@ -10,17 +10,10 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true, termasuk aksi Mode edit (hanya editingteacher) dan `resetMockMoodle()` untuk test |
 | apiClient.js | HTTP/mock backend, Bearer token, ApiError, handler 401 bila token ditolak, dan pemeriksaan respons |
 | authService.js | Login (`POST /auth/login`), current user (`GET /auth/me`), pemetaan role backend → UI, dan logout client |
-<<<<<<< HEAD
-| rpsService.js | RPS: validasi file di klien (PDF/DOCX, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
-| moodleIntegrationService.js | Status koneksi Moodle (`GET /integrations/moodle/status`) dan daftar kursus Moodle (`GET /integrations/moodle/courses`) via backend gateway (FE-09.1) |
-| workflowService.js | Status workflow, daftar, riwayat event, dan penyimpanan course target Moodle (`PUT /workflows/{id}/moodle-target`) (FE-09.2, BE-11.3) |
-| instructorService.js, courseService.js | Setup/preferensi dosen (BE-10) dan workflow backend |
-=======
 | rpsService.js | RPS: validasi file di klien (PDF, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
 | profileService.js | Instructor setup (`/instructors/me/setup`) dengan `instructor_profile` diratakan untuk form |
 | workflowService.js | Monitoring workflow dan course target Moodle |
 | courseService.js | API `/courses` untuk mode mock; backend belum menyediakannya |
->>>>>>> develop
 | coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
 | monitoringSocket.js | WebSocket dengan reconnect, status koneksi (`SOCKET_STATUS`), dan satu koneksi bersama per path: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
 | mock/ | State machine backend ketika VITE_USE_MOCK=true; auth mengikuti kontrak backend (role huruf besar, pesan error identik, kata sandi `<username>123`) |

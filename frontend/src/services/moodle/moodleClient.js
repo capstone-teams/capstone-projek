@@ -1,7 +1,4 @@
 /**
-<<<<<<< HEAD
- * Klien Moodle Web Service (REST).
-=======
  * Klien Web Service LMS (REST).
  *
  * STATUS: sementara, karena API backend belum menyediakan data ini. Frontend seharusnya hanya
@@ -15,7 +12,6 @@
  *    Site administration > Server > Web services > API Documentation.
  *
  * Kedua endpoint mengirim header Access-Control-Allow-Origin: *, jadi bisa dipanggil dari browser.
->>>>>>> develop
  */
 import { MOODLE_SERVICE, MOODLE_URL, USE_MOCK, USE_MOODLE_MOCK } from '../config';
 import { mockCallWs, mockRequestToken, mockUploadDraftFiles } from '../mock/mockMoodle';
@@ -173,12 +169,8 @@ export async function uploadDraftFiles(entries) {
 }
 
 /**
-<<<<<<< HEAD
- * Menyisipkan token akses pada URL file Moodle jika diperlukan.
-=======
  * URL file dari Web Service (webservice/pluginfile.php) butuh token.
  * Rujukan source Moodle: public/webservice/pluginfile.php.
->>>>>>> develop
  */
 export function withToken(url) {
   if (!url || !token || USE_MOODLE_MOCK) return url;
@@ -186,12 +178,3 @@ export function withToken(url) {
   const fixed = url.replace('/pluginfile.php', url.includes('/webservice/') ? '/pluginfile.php' : '/webservice/pluginfile.php');
   return `${fixed}${fixed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
 }
-<<<<<<< HEAD
-
-/** URL absolut di Moodle. */
-export function moodleUrl(path) {
-  if (!path) return MOODLE_URL;
-  return /^https?:/.test(path) ? path : `${MOODLE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
-}
-=======
->>>>>>> develop

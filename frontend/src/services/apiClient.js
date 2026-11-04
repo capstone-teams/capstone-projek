@@ -98,14 +98,10 @@ function defaultErrorCode(status) {
   return 'API_ERROR';
 }
 
-<<<<<<< HEAD
-function toApiError(status, payload) {
-=======
 // Pesan cadangan untuk pengguna; kode HTTP hanya dicatat ke konsol.
 const fallbackMessage = (status) => (status >= 500 || status === 0 ? MSG_UNAVAILABLE : MSG_REQUEST_FAILED);
 
 export function toApiError(status, payload) {
->>>>>>> develop
   if (payload?.error && typeof payload.error === 'object') {
     const err = payload.error;
     return new ApiError(
