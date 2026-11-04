@@ -455,17 +455,6 @@ const handlers = {
     return ok({ rps_id: rps.id, analyzed_at: rps.updated_at ?? rps.created_at, data: buildRpsStructuredData({ incomplete }) });
   },
 
-<<<<<<< HEAD
-  // Instructor setup
-  getInstructorSetup: () => ok(db.instructorSetup || db.profile),
-  getProfile: () => ok(db.instructorSetup || db.profile),
-
-  updateInstructorSetup(_p, { body }) {
-    if (!body || typeof body !== 'object') {
-      return fail(422, 'INVALID_REQUEST', 'Body request tidak valid.', [
-        { field: 'body', message: 'Body request harus berupa objek JSON.' },
-      ]);
-=======
   // design-api 7: instructor setup.
   getProfile: () => ok(publicSetup(db.profile)),
 
@@ -476,7 +465,6 @@ const handlers = {
     if (invalid.length) return fail(422, 'INVALID_REQUEST', 'Field profil harus berupa teks.', invalid);
     if (body?.additional_prompt && Array.from(body.additional_prompt).length > 1000) {
       return fail(422, 'INVALID_REQUEST', 'Prompt tambahan tidak boleh melebihi 1000 karakter.', ['additional_prompt']);
->>>>>>> develop
     }
 
     const issues = [];
@@ -496,72 +484,8 @@ const handlers = {
         }
       }
     }
-<<<<<<< HEAD
-
-    // Validasi additional_prompt jika ada
-    if (body.additional_prompt !== undefined && body.additional_prompt !== null) {
-      if (typeof body.additional_prompt !== 'string') {
-        issues.push({ field: 'additional_prompt', message: 'Field additional_prompt harus berupa teks.' });
-      } else if (Array.from(body.additional_prompt).length > 2000) {
-        issues.push({ field: 'additional_prompt', message: 'maksimal 2000 karakter' });
-      }
-    }
-
-    // Validasi activity_configuration jika ada
-    const currentConfig = db.instructorSetup?.activity_configuration || db.profile?.activity_configuration || {};
-    let candidateConfig = { ...currentConfig };
-    if (body.activity_configuration !== undefined) {
-      if (body.activity_configuration === null || typeof body.activity_configuration !== 'object') {
-        issues.push({ field: 'activity_configuration', message: 'Field activity_configuration harus berupa objek.' });
-      } else {
-        candidateConfig = { ...candidateConfig, ...body.activity_configuration };
-        if (!Object.values(candidateConfig).some(Boolean)) {
-          issues.push({ field: 'activity_configuration', message: 'Minimal satu jenis aktivitas pembelajaran harus aktif.' });
-        }
-      }
-    }
-
-    if (issues.length > 0) {
-      return fail(422, 'INVALID_REQUEST', 'Data request tidak valid.', issues);
-    }
-
-    // Update state
-    const setup = db.instructorSetup || db.profile;
-    if (profileData && typeof profileData === 'object') {
-      const target = setup.instructor_profile || setup;
-      ['teaching_style', 'expertise', 'delivery_preference', 'language_preference'].forEach((f) => {
-        if (profileData[f] !== undefined && profileData[f] !== null) {
-          target[f] = profileData[f].trim();
-          setup[f] = profileData[f].trim();
-        }
-      });
-      if (profileData.delivery_preference != null && profileData.content_preference == null) {
-        target.content_preference = profileData.delivery_preference.trim();
-        setup.content_preference = target.content_preference;
-      } else if (profileData.content_preference != null && profileData.delivery_preference == null) {
-        target.delivery_preference = profileData.content_preference.trim();
-        setup.delivery_preference = target.delivery_preference;
-      }
-    }
-
-    if (body.additional_prompt !== undefined && body.additional_prompt !== null) {
-      setup.additional_prompt = body.additional_prompt.trim();
-    }
-
-    if (body.activity_configuration && typeof body.activity_configuration === 'object') {
-      setup.activity_configuration = candidateConfig;
-    }
-
-    setup.updated_at = now();
-    return ok(setup);
-  },
-
-  updateProfile(p, ctx) {
-    return mockServer.updateInstructorSetup(p, ctx);
-=======
     db.profile.updated_at = now();
     return ok(publicSetup(db.profile));
->>>>>>> develop
   },
 
   // Course
@@ -896,19 +820,12 @@ const ROUTES = [
   ['POST', '/rps/:rpsId/process', 'processRps'],
   ['POST', '/rps/:rpsId/reanalyze', 'reanalyzeRps'],
   ['GET', '/rps/:rpsId/analysis', 'getRpsAnalysis'],
-<<<<<<< HEAD
-  ['GET', '/instructors/me/setup', 'getInstructorSetup'],
-  ['PUT', '/instructors/me/setup', 'updateInstructorSetup'],
-  ['GET', '/instructors/me/profile', 'getProfile'],
-  ['PUT', '/instructors/me/profile', 'updateProfile'],
-=======
   ['GET', '/workflows', 'listWorkflows'],
   ['GET', '/workflows/:workflowId', 'getWorkflow'],
   ['GET', '/workflows/:workflowId/events', 'getWorkflowEvents'],
   ['PUT', '/workflows/:workflowId/moodle-target', 'updateMoodleTarget'],
   ['GET', '/instructors/me/setup', 'getProfile'],
   ['PUT', '/instructors/me/setup', 'updateProfile'],
->>>>>>> develop
   ['GET', '/courses', 'listCourses'],
   ['POST', '/courses', 'createCourse'],
   ['GET', '/courses/:courseId', 'getCourse'],

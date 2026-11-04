@@ -42,13 +42,6 @@ function createChannel(path) {
   };
 
   const connect = () => {
-<<<<<<< HEAD
-    socket = new WebSocket(url);
-    socket.onerror = () => {
-      // Tangani error koneksi WebSocket tanpa melempar unhandled event di console
-    };
-    socket.onopen = () => {
-=======
     clearTimeout(timer);
     const token = getToken();
     if (!token) {
@@ -59,7 +52,6 @@ function createChannel(path) {
     socket = current;
     current.onopen = () => {
       if (socket !== current) return;
->>>>>>> develop
       retry = 0;
       setStatus(SOCKET_STATUS.CONNECTED);
     };
@@ -130,8 +122,6 @@ function subscribeChannel(path, onEvent, onStatus) {
 }
 
 /**
-<<<<<<< HEAD
-=======
  * Berlangganan event real-time satu course.
  * Panggil HTTP monitoring dulu untuk initial state, baru subscribe.
  * Mengembalikan fungsi unsubscribe.
@@ -145,7 +135,6 @@ export function subscribeCourseEvents(courseId, onEvent, onStatus) {
 }
 
 /**
->>>>>>> develop
  * Berlangganan event satu workflow (design-api §17: WS /ws/workflows/{workflow_id}).
  * Frame: { event: WORKFLOW_*, workflow_id, stage, progress, message, timestamp }. Server hanya mengirim
  * event baru setelah tersambung, jadi pemanggil mengambil keadaan awal lewat HTTP dan menyinkronkannya
