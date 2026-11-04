@@ -4,9 +4,16 @@ const OPTIONS = [
   { key: 'quiz', label: 'Quiz', hint: 'Kuis berkala dan ujian' },
 ];
 
-/** Checkbox konfigurasi aktivitas (design-api.md §8.3). */
+const DEFAULT_CONFIG = {
+  learning_material: true,
+  assignment: true,
+  quiz: true,
+};
+
+/** Checkbox konfigurasi aktivitas pembelajaran. */
 export default function ActivityConfigFields({ value, onChange, disabled = false }) {
-  const activeCount = OPTIONS.filter((o) => value[o.key]).length;
+  const safeValue = value || DEFAULT_CONFIG;
+  const activeCount = OPTIONS.filter((o) => safeValue[o.key]).length;
 
   return (
     <fieldset className="checks" disabled={disabled}>
@@ -15,10 +22,10 @@ export default function ActivityConfigFields({ value, onChange, disabled = false
         <label key={o.key} className="check">
           <input
             type="checkbox"
-            checked={!!value[o.key]}
+            checked={!!safeValue[o.key]}
             // Minimal satu aktivitas harus tetap aktif.
-            disabled={disabled || (value[o.key] && activeCount === 1)}
-            onChange={(e) => onChange({ ...value, [o.key]: e.target.checked })}
+            disabled={disabled || (safeValue[o.key] && activeCount === 1)}
+            onChange={(e) => onChange?.({ ...safeValue, [o.key]: e.target.checked })}
           />
           <span>
             {o.label}

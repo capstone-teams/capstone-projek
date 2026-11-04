@@ -4,7 +4,7 @@ import { findCourseByMoodleId, getMonitoring } from '../../../services/courseSer
 import { useApi } from '../../../hooks/useApi';
 import { useCourseEvents } from '../../../hooks/useCourseEvents';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
-import { ErrorAlert, Spinner, StatusBadge } from '../../../components/ui';
+import { ErrorAlert, ErrorBoundary, Spinner, StatusBadge } from '../../../components/ui';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 import AiProjectStart from '../../../components/ai/course/AiProjectStart';
 import { ForbiddenPage } from '../../StatusPage';
@@ -20,23 +20,24 @@ const TABS = [
 ];
 
 /**
- * Tab "Generator AI" di halaman kursus Moodle. Satu kursus memiliki satu project generator;
- * bila belum ada, tampilkan form untuk memulainya.
- * Sesuai design-api.md §17: ambil initial state via HTTP dulu, baru pakai event stream.
+ * Layout tab Generator AI pada kursus Moodle.
  */
 export default function AiCourseLayout() {
-  const { course: moodleCourse, isTeacher } = useMoodleCourse();
+  const moodleContext = useMoodleCourse();
+  const moodleCourse = moodleContext?.course;
+  const isTeacher = moodleContext?.isTeacher;
   const [events, setEvents] = useState([]);
   // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.
   const [version, setVersion] = useState(0);
 
   const { data: course, error, loading, reload } = useApi(async () => {
+    if (!moodleCourse?.id) return null;
     const project = await findCourseByMoodleId(moodleCourse.id);
     if (!project) return null;
-    const monitoring = await getMonitoring(project.id);
-    setEvents(monitoring.recent_events ?? []);
+    const monitoring = await getMonitoring(project.id).catch(() => ({ recent_events: [] }));
+    setEvents(monitoring?.recent_events ?? []);
     return project;
-  }, [moodleCourse.id]);
+  }, [moodleCourse?.id]);
 
   const onEvent = useCallback(
     (ev) => {
@@ -62,7 +63,7 @@ export default function AiCourseLayout() {
     <>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted">
-          Generator konten AI · RPS {course.code} — {course.name}
+          Generator konten AI · RPS {course.code ?? course.shortname} — {course.name ?? course.fullname}
         </p>
         <StatusBadge status={course.status} />
       </div>
@@ -76,7 +77,9 @@ export default function AiCourseLayout() {
         ))}
       </nav>
 
-      <Outlet context={{ course, events, version, refresh }} />
+      <ErrorBoundary>
+        <Outlet context={{ course, events, version, refresh }} />
+      </ErrorBoundary>
     </>
   );
 }

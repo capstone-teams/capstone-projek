@@ -5,6 +5,7 @@ export { Avatar } from './Avatar';
 export { Badge, StatusBadge } from './Badge';
 export { Card } from './Card';
 export { EmptyState } from './EmptyState';
+export { ErrorBoundary } from './ErrorBoundary';
 export { Field } from './Field';
 export { Modal } from './Modal';
 export { PageHeader } from './PageHeader';

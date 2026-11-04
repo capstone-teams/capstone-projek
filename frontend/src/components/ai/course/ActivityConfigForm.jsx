@@ -7,12 +7,19 @@ import { isBusy } from '../../../utils/workflow';
 
 const LOCKED_CONFIG = ['APPROVED', 'EXECUTING', 'EXECUTED', 'VERIFYING', 'COMPLETED'];
 
+const DEFAULT_CONFIG = {
+  learning_material: true,
+  assignment: true,
+  quiz: true,
+};
+
 export default function ActivityConfigForm({ course, onSaved }) {
-  const [value, setValue] = useState(course.activity_configuration);
+  const initialConfig = course?.activity_configuration || DEFAULT_CONFIG;
+  const [value, setValue] = useState(initialConfig);
   const [saved, setSaved] = useState(false);
   const save = useAction((cfg) => updateActivityConfiguration(course.id, cfg));
   const locked = LOCKED_CONFIG.includes(course.status) || isBusy(course.status);
-  const dirty = JSON.stringify(value) !== JSON.stringify(course.activity_configuration);
+  const dirty = JSON.stringify(value) !== JSON.stringify(course?.activity_configuration || DEFAULT_CONFIG);
 
   return (
     <div className="form">
@@ -31,7 +38,7 @@ export default function ActivityConfigForm({ course, onSaved }) {
       ) : (
         dirty && (
           <div className="form__actions">
-            <button type="button" className="btn btn--ghost" onClick={() => setValue(course.activity_configuration)}>
+            <button type="button" className="btn btn--ghost" onClick={() => setValue(course?.activity_configuration || DEFAULT_CONFIG)}>
               Batal
             </button>
             <button

@@ -4,6 +4,7 @@
 
 export const STATUS_LABELS = {
   CREATED: 'Dibuat',
+  DRAFT: 'Draft',
   PROCESSING_RPS: 'Memproses RPS',
   ANALYZING_RPS: 'Menganalisis RPS',
   PLANNING: 'Menyusun rencana',
@@ -37,7 +38,7 @@ export function isBusy(status) {
 }
 
 export const WORKFLOW_STEPS = [
-  { key: 'plan', label: 'Rencana', statuses: ['CREATED', 'PLANNING', 'WAITING_PLAN_REVIEW'] },
+  { key: 'plan', label: 'Rencana', statuses: ['CREATED', 'DRAFT', 'PLANNING', 'WAITING_PLAN_REVIEW'] },
   { key: 'content', label: 'Konten', statuses: ['PLAN_APPROVED', 'GENERATING_CONTENT', 'VALIDATING'] },
   { key: 'review', label: 'Review', statuses: ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'] },
   { key: 'execution', label: 'Eksekusi Moodle', statuses: ['APPROVED', 'EXECUTING'] },

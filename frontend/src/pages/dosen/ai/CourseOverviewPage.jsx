@@ -11,6 +11,7 @@ import { formatDateTime } from '../../../utils/format';
 // Langkah berikutnya yang perlu dilakukan dosen untuk tiap status.
 const NEXT_STEP = {
   CREATED: { text: 'Minta agent menyusun rencana 16 minggu dari RPS.' },
+  DRAFT: { text: 'Rencana dan konten course telah dibuat. Buka rencana untuk memeriksa.', to: 'plan', cta: 'Buka rencana' },
   WAITING_PLAN_REVIEW: { text: 'Rencana siap. Periksa lalu setujui atau minta revisi.', to: 'plan', cta: 'Review rencana' },
   PLAN_APPROVED: { text: 'Rencana disetujui. Lanjut generate konten mingguan.', to: 'content', cta: 'Generate konten' },
   WAITING_CONTENT_REVIEW: { text: 'Konten selesai divalidasi dan menunggu review Anda.', to: 'review', cta: 'Review konten' },
@@ -84,7 +85,7 @@ export default function CourseOverviewPage() {
           <ErrorAlert error={runs.error} />
           {runs.loading && !runs.data ? (
             <Spinner />
-          ) : runs.data?.runs.length ? (
+          ) : runs.data?.runs?.length ? (
             <ul className="list">
               {runs.data.runs.map((r) => (
                 <li key={r.id} className="list__split">
