@@ -30,7 +30,7 @@ export function errorMessage(error) {
   return error.message || 'Terjadi kesalahan.';
 }
 
-// ---- Timestamp Moodle (detik sejak epoch)
+// ---- Timestamp LMS (detik sejak epoch)
 const dayFormat = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const shortFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 const clockFormat = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -41,10 +41,6 @@ export function fromUnix(ts) {
 
 export function formatUnixDay(ts) {
   return ts ? dayFormat.format(fromUnix(ts)) : '-';
-}
-
-export function formatUnixDate(ts) {
-  return ts ? shortFormat.format(fromUnix(ts)) : '-';
 }
 
 export function formatUnixDateTime(ts) {
@@ -65,7 +61,7 @@ export function formatRelative(ts) {
   return `${Math.floor(diff / 86400)} hari lalu`;
 }
 
-/** Ambil cmid dari URL Moodle seperti .../mod/assign/view.php?id=42 */
+/** Ambil cmid dari URL aktivitas seperti .../mod/assign/view.php?id=42 */
 export function cmidFromUrl(url) {
   const m = /[?&]id=(\d+)/.exec(url ?? '');
   return m ? Number(m[1]) : null;

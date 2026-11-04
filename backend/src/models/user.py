@@ -10,8 +10,8 @@ Dua hal yang perlu diperhatikan:
 - ``password`` menyimpan **hash** bcrypt dari ``src.services.auth.passwords``,
   bukan password mentah. Password mentah hanya ada saat Moodle membuat user
   (parameter API Moodle) dan tidak pernah disimpan di sini.
-- ``username`` adalah atribut Moodle. Login aplikasi tetap memakai ``email``
-  sebagai identity attribute (lihat ``backend/README.md``).
+- ``username`` adalah atribut Moodle. Login aplikasi menerima ``username``
+  maupun ``email`` sebagai identifier (lihat ``backend/README.md``).
 
 Nilai role/status didefinisikan di sini karena sekaligus menjadi tipe kolom
 database (native enum PostgreSQL ``userrole``/``userstatus``) dan menjadi sumber

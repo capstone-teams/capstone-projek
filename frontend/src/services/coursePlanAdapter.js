@@ -10,7 +10,7 @@ function list(value) {
   return value;
 }
 
-/** Course Plan Schema §8, dengan alias untuk konsumen data Rakha sebelumnya. */
+/** Course Plan Schema §8; pertahankan alias field untuk pemilih minggu dan konten. */
 export function normalizeCoursePlan(data) {
   if (data == null) return null;
   if (!Array.isArray(data.weeks)) throw invalidPlan();
@@ -32,7 +32,7 @@ export function normalizeCoursePlan(data) {
       topics,
       teaching_methods: list(week.teaching_methods),
       planned_activities: activities,
-      // GeneratePanel tetap memakai week/topic dari implementasi Rakha.
+      // GeneratePanel memilih minggu menggunakan field week/topic.
       week: number,
       topic: title,
       sub_topics: topics,

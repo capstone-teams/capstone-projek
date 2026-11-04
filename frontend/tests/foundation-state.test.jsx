@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAction, useApi } from '../src/hooks/useApi';
 import { AuthContext } from '../src/context/authContext';
 import MyCoursesPage from '../src/pages/moodle/MyCoursesPage';
-import TeachingProfilePage from '../src/pages/ai/TeachingProfilePage';
+import TeachingPreferencesCard from '../src/components/ai/TeachingPreferencesCard';
 
 const services = vi.hoisted(() => ({ getCoursesByClassification: vi.fn(), getProfile: vi.fn(), updateProfile: vi.fn() }));
 vi.mock('../src/services/moodle/moodleApi', () => services);
 vi.mock('../src/services/profileService', () => services);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let node, root, state;
-const user = { id: 3, fullname: 'Rina Kartika', username: 'dosen', teacherCourseIds: [2], role: 'dosen' };
+const user = { id: 3, fullname: 'Rina Kartika', username: 'dosen', teacherCourseIds: [2], role: 'DOSEN' };
 const course = { id: 2, fullname: 'Pemrograman Web', shortname: 'IF2105' };
 function deferred() {
   let resolve, reject;
@@ -109,7 +109,7 @@ describe('FE-04.1 pages using shared states', () => {
     const pending = deferred();
     services.getProfile.mockResolvedValue({ teaching_style: 'Diskusi', language_preference: 'Bahasa Indonesia' });
     services.updateProfile.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ teaching_style: 'Diskusi' });
-    await render(<TeachingProfilePage />);
+    await render(<TeachingPreferencesCard />);
     await act(async () => node.querySelector('form').requestSubmit());
     expect(node.querySelector('button[type="submit"]').disabled).toBe(true);
     await act(async () => pending.reject(new Error('Tidak dapat menyimpan profil')));

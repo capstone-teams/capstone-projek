@@ -1,23 +1,3 @@
-export const DOSEN_PROFILE = {
-    name: 'Muchammad Chandra Cahyo Utomo, S. Kom., M. Kom.',
-    identifier: '198503152010122001',
-    role: 'dosen',
-    roleLabel: 'Dosen Pengampu',
-    prodi: 'Informatika · Jurusan Sains & Teknologi Informasi',
-    email: 'chandra.cahyo@itk.ac.id',
-    avatarInitial: 'MC',
-    teachingApproach: 'Berbasis proyek dan studi kasus bertahap.',
-    aiInstructions: 'Gunakan contoh nyata penerapan aljabar linear pada komputasi dan grafika, sertakan latihan bertingkat, dan hindari kuis mendadak.',
-};
-export const MAHASISWA_PROFILE = {
-    name: 'Noel Sipayung',
-    identifier: '11211045',
-    role: 'mahasiswa',
-    roleLabel: 'Mahasiswa',
-    prodi: 'Informatika 2021 · Semester 7',
-    email: '11211045@student.itk.ac.id',
-    avatarInitial: 'NS',
-};
 // Status autentikasi yang diekspos AuthProvider.
 export const AUTH_STATUS = {
     INITIALIZING: 'initializing',
@@ -27,4 +7,32 @@ export const AUTH_STATUS = {
 // Alasan sesi berakhir tanpa logout eksplisit.
 export const SESSION_NOTICE = {
     EXPIRED: 'expired',
+    // Sesi belum dapat dipulihkan karena server tidak terjangkau; token tetap disimpan.
+    UNAVAILABLE: 'unavailable',
 };
+// Role aplikasi mengikuti istilah proposal (DOSEN/MAHASISWA). Backend mengirim enum kanonik
+// INSTRUCTOR/STUDENT/ADMIN dari GET /auth/me; padanannya satu-satu (auth-api-integration.md, BE-06.4).
+export const ROLE = {
+    DOSEN: 'DOSEN',
+    MAHASISWA: 'MAHASISWA',
+    ADMIN: 'ADMIN',
+};
+export const ROLE_FROM_BACKEND = {
+    INSTRUCTOR: ROLE.DOSEN,
+    STUDENT: ROLE.MAHASISWA,
+    ADMIN: ROLE.ADMIN,
+};
+export const ROLE_LABEL = {
+    [ROLE.DOSEN]: 'Dosen',
+    [ROLE.MAHASISWA]: 'Mahasiswa',
+    [ROLE.ADMIN]: 'Admin',
+};
+// Halaman awal setelah login (Proposal §3.3.1): dosen ke dashboard, mahasiswa ke halaman course.
+export const HOME_PATH = {
+    [ROLE.DOSEN]: '/my',
+    [ROLE.MAHASISWA]: '/my/courses',
+    [ROLE.ADMIN]: '/my/courses',
+};
+export function homePathFor(role) {
+    return HOME_PATH[role] ?? '/my/courses';
+}

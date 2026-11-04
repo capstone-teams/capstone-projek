@@ -46,13 +46,14 @@ _EMAIL_PATTERN = re.compile(
 
 
 def normalize_username(value: object) -> str:
-    """Validasi username (atribut Moodle) dan buang spasi di tepi.
+    """Validasi username (atribut Moodle, juga identifier login aplikasi).
 
     Username wajib terisi dan tidak boleh mengandung spasi: kolomnya ``UNIQUE``
     dan dipakai Moodle sebagai identitas login user di sana, sehingga nilai
     ambigu (kosong/spasi) tidak berguna untuk keduanya. Case **tidak** dipaksa
     lowercase di sini — perbedaan besar-kecil huruf adalah kebijakan sistem
-    tujuan (Moodle), bukan aturan domain aplikasi ini.
+    tujuan (Moodle), bukan aturan domain aplikasi ini. Pencocokan login
+    case-insensitive ditangani repository sebagai fallback.
     """
     if not isinstance(value, str):
         raise UserValidationError("username", "harus berupa teks")
@@ -88,7 +89,7 @@ def normalize_lastname(value: object) -> str:
 def normalize_email(value: object) -> str:
     """Validasi email dan normalisasi ke huruf kecil.
 
-    Email adalah identity attribute authentication (``users.email`` UNIQUE).
+    Email adalah salah satu identifier login aplikasi (``users.email`` UNIQUE).
     PostgreSQL membandingkan string secara case-sensitive, sehingga normalisasi
     lowercase di domain mencegah ``Dosen@itk.ac.id`` dan ``dosen@itk.ac.id``
     menjadi dua user berbeda.

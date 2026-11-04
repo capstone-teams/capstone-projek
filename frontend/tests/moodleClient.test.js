@@ -95,7 +95,7 @@ describe('resolveSession', () => {
   const site = { sitename: 'Moodle ITK', siteurl: 'http://moodle.test', userid: 3, username: 'dosen', fullname: 'Rina Kartika', firstname: 'Rina', userissiteadmin: false };
   const courses = [{ id: 2 }, { id: 3 }];
 
-  it('dosen bila punya opsi administrasi course', async () => {
+  it('menghitung kursus yang diajar dari opsi administrasi course', async () => {
     setMoodleToken('tok');
     mockFetch(site, courses, {
       courses: [
@@ -104,15 +104,15 @@ describe('resolveSession', () => {
       ],
     });
     const { user } = await resolveSession();
-    expect(user.role).toBe('dosen');
     expect(user.teacherCourseIds).toEqual([2]);
   });
 
-  it('mahasiswa bila tidak punya opsi administrasi', async () => {
+  it('tidak menentukan role dari Moodle; role berasal dari GET /auth/me (FE-06.3)', async () => {
     setMoodleToken('tok');
     mockFetch(site, courses, { courses: courses.map((c) => ({ id: c.id, options: [{ name: 'badges', available: true }] })) });
     const { user } = await resolveSession();
-    expect(user.role).toBe('mahasiswa');
+    expect(user).not.toHaveProperty('role');
+    expect(user.teacherCourseIds).toEqual([]);
   });
 });
 

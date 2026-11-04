@@ -2,6 +2,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Union
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,46 @@ ROOT_DIR = BACKEND_DIR.parent
 
 # Accepted aliases for LLM_PROVIDER ("google" is a legacy spelling of "gemini").
 LLM_PROVIDER_ALIASES = {"google": "gemini"}
+
+# Mode TableFormer Docling yang didukung (BE-05.2). Didefinisikan di sini supaya
+# konfigurasi yang salah gagal saat startup — bukan saat request pertama —
+# sementara adapter Docling tetap memakai daftar yang sama (layer `services/`
+# boleh mengimpor `config/`, bukan sebaliknya).
+RPS_TABLE_MODES = ("accurate", "fast")
+
+# Nilai bawaan konfigurasi RPS (BE-05). Diletakkan di luar kelas ``Settings``
+# dengan sengaja: seluruh field Settings hanya berisi nilai yang benar-benar
+# dikonfigurasi (default-nya kosong), dan nilai bawaan diterapkan oleh property.
+# Konvensi ini menjaga ``tests/test_config.py`` (tidak ada nilai yang
+# ter-hardcode pada field Settings) sekaligus membuat tempat nilai bawaan hanya
+# satu.
+DEFAULT_RPS_STORAGE_DIR = BACKEND_DIR / "var" / "rps"
+DEFAULT_RPS_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+DEFAULT_RPS_ALLOWED_EXTENSIONS = "pdf"
+DEFAULT_RPS_CONVERTER = "docling"
+DEFAULT_RPS_CONVERTER_OCR = True
+DEFAULT_RPS_CONVERTER_TABLE_STRUCTURE = True
+DEFAULT_RPS_CONVERTER_TABLE_MODE = "accurate"
+# Batas waktu pemrosesan yang masih dianggap berjalan. Setelah ini, dokumen
+# berstatus PROCESSING boleh diproses ulang — jalan keluar bila proses server
+# berhenti di tengah konversi sehingga barisnya tidak pernah selesai.
+DEFAULT_RPS_PROCESSING_LEASE_SECONDS = 900
+
+# Nilai bawaan konfigurasi LLM timeout & retry
+DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
+DEFAULT_LLM_MAX_RETRIES = 3
+DEFAULT_LLM_RETRY_BACKOFF_FACTOR = 2.0
+DEFAULT_LLM_RETRY_MIN_WAIT = 0.5
+DEFAULT_LLM_RETRY_MAX_WAIT = 10.0
+
+# Nilai bawaan konfigurasi analisis RPS
+DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 2
+MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 5
+
+# Batas panjang Additional Prompt dosen (BE-10.2). Prompt ini ikut dikirim ke
+# LLM bersama konteks RPS, sehingga panjangnya dibatasi agar konteks akademik
+# tidak tergeser oleh instruksi tambahan.
+DEFAULT_INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH = 2000
 
 
 class Settings(BaseSettings):
@@ -59,6 +100,59 @@ class Settings(BaseSettings):
     # Ollama (http://localhost:11434/v1). Empty means the official OpenAI API.
     OPENAI_BASE_URL: str = ""
 
+    # LLM timeout & retry configuration (read from environment)
+    LLM_TIMEOUT_SECONDS: float | None = None
+    OPENAI_TIMEOUT_SECONDS: float | None = None
+    GEMINI_TIMEOUT_SECONDS: float | None = None
+    LLM_MAX_RETRIES: int | None = None
+    LLM_RETRY_BACKOFF_FACTOR: float | None = None
+    LLM_RETRY_MIN_WAIT: float | None = None
+    LLM_RETRY_MAX_WAIT: float | None = None
+
+    content_generation_max_fix_attempts: int = 2
+    # Jumlah retry tambahan course planning setelah output tidak sesuai schema
+    # (BE-14.3). 0 berarti satu percobaan tanpa retry.
+    COURSE_PLANNING_MAX_FIX_ATTEMPTS: int = 1
+    # --- RPS upload & Docling conversion (BE-05) ---------------------------
+    # Seluruh nilai default-nya kosong; nilai bawaan diterapkan oleh property
+    # ``rps_*`` di bawah (lihat DEFAULT_RPS_* pada modul ini). Kosong berarti
+    # "tidak dikonfigurasi", bukan "nonaktif".
+    #
+    # Direktori penyimpanan dokumen RPS; kosong berarti DEFAULT_RPS_STORAGE_DIR
+    # (backend/var/rps). Isi folder ini tidak masuk repository.
+    RPS_STORAGE_DIR: str = ""
+    # Batas ukuran berkas RPS yang diterima (byte). RPS berupa dokumen teks, dan
+    # batas ini melindungi server dari unggahan tak wajar.
+    RPS_MAX_UPLOAD_BYTES: int | None = None
+    # Ekstensi yang diterima, dipisah koma. Bawaannya hanya PDF sesuai cakupan
+    # M02 (issue BE-05); design-api §6.1 juga mengizinkan DOCX, yang dapat
+    # diaktifkan lewat konfigurasi tanpa mengubah kode.
+    RPS_ALLOWED_EXTENSIONS: str = ""
+    # Nama konverter dokumen; lihat src/services/rps/factory.py.
+    RPS_CONVERTER: str = ""
+    # OCR untuk halaman tanpa lapisan teks (RPS hasil pindai). Bawaannya aktif
+    # mengikuti default Docling; menonaktifkannya mempercepat PDF digital.
+    RPS_CONVERTER_OCR: bool | None = None
+    # Ekstraksi struktur tabel. Bawaannya aktif: tabel RPS (distribusi mingguan,
+    # bobot penilaian) adalah data akademik yang tidak boleh hilang.
+    RPS_CONVERTER_TABLE_STRUCTURE: bool | None = None
+    # "accurate" atau "fast" (mode TableFormer Docling).
+    RPS_CONVERTER_TABLE_MODE: str = ""
+    # Direktori model Docling yang sudah diunduh lebih dulu (deployment offline).
+    RPS_CONVERTER_ARTIFACTS_PATH: str = ""
+    # Batas waktu (detik) sebuah pemrosesan dianggap masih berjalan. Dokumen
+    # berstatus PROCESSING yang lebih tua dari ini boleh diproses ulang, sehingga
+    # konversi yang terputus (server dimatikan) tidak mengunci dokumen selamanya.
+    RPS_PROCESSING_LEASE_SECONDS: int | None = None
+
+    # Batas retry dapat diubah melalui konfigurasi dengan kode di bawah ini.
+    RPS_ANALYSIS_MAX_FIX_ATTEMPTS: int | None = None
+
+    # --- Instructor Setup (BE-10.2) ---------------------------------------
+    # Batas panjang Additional Prompt (karakter). Kosong berarti nilai bawaan
+    # DEFAULT_INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH.
+    INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH: int | None = None
+
     model_config = SettingsConfigDict(
         # Urutan penting: pydantic-settings menggabungkan file-file ini secara
         # berurutan dan file TERAKHIR yang menang. ``.env.example`` diletakkan
@@ -79,21 +173,201 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
     def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str):
-            v = v.strip()
-            if v.startswith("[") and v.endswith("]"):
-                try:
-                    return json.loads(v)
-                except json.JSONDecodeError:
-                    pass
-            return [item.strip() for item in v.split(",") if item.strip()]
+        """Normalisasi daftar origin frontend yang diizinkan (BE-06.2).
+
+        Menerima JSON array (``["http://localhost:3000"]``) maupun daftar yang
+        dipisah koma. Setiap origin divalidasi dan dinormalisasi (tanpa spasi di
+        tepi, tanpa garis miring di akhir, huruf kecil) supaya cocok persis
+        dengan nilai header ``Origin`` yang dikirim browser. Konfigurasi yang
+        salah gagal saat startup, bukan ketika browser pertama kali mengirim
+        preflight.
+        """
+        return _normalize_cors_origins(v)
+
+    @field_validator("RPS_CONVERTER_TABLE_MODE", mode="after")
+    @classmethod
+    def parse_rps_table_mode(cls, v: str) -> str:
+        """Mode tabel tidak dikenal gagal saat startup, bukan saat request pertama."""
+        mode = (v or "").strip().lower()
+        if mode and mode not in RPS_TABLE_MODES:
+            raise ValueError(
+                f"RPS_CONVERTER_TABLE_MODE harus salah satu dari: {', '.join(RPS_TABLE_MODES)}"
+            )
+        return mode
+
+    @field_validator("RPS_MAX_UPLOAD_BYTES", mode="after")
+    @classmethod
+    def parse_rps_max_upload_bytes(cls, v: int | None) -> int | None:
+        """Batas 0 atau negatif akan menolak seluruh unggahan tanpa penjelasan jelas."""
+        if v is not None and v <= 0:
+            raise ValueError("RPS_MAX_UPLOAD_BYTES harus lebih besar dari 0")
         return v
+
+    @field_validator("RPS_PROCESSING_LEASE_SECONDS", mode="after")
+    @classmethod
+    def parse_rps_processing_lease(cls, v: int | None) -> int | None:
+        """Lease 0/negatif akan menganggap setiap pemrosesan sudah terlantar."""
+        if v is not None and v <= 0:
+            raise ValueError("RPS_PROCESSING_LEASE_SECONDS harus lebih besar dari 0")
+        return v
+
+    @field_validator("RPS_ALLOWED_EXTENSIONS", mode="after")
+    @classmethod
+    def parse_rps_allowed_extensions(cls, v: str) -> str:
+        """Daftar berisi pemisah saja (mis. ``,,``) adalah salah konfigurasi."""
+        if (v or "").strip() and not _split_extensions(v):
+            raise ValueError(
+                "RPS_ALLOWED_EXTENSIONS tidak boleh kosong; contoh: pdf atau pdf,docx"
+            )
+        return v
+
+    @field_validator("RPS_ANALYSIS_MAX_FIX_ATTEMPTS", mode="after")
+    @classmethod
+    def parse_rps_analysis_max_fix_attempts(cls, v: int | None) -> int | None:
+        """Nilai di luar rentang gagal saat startup, bukan saat analisis berjalan."""
+        if v is not None and not 0 <= v <= MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS:
+            raise ValueError(
+                "RPS_ANALYSIS_MAX_FIX_ATTEMPTS harus antara 0 dan "
+                f"{MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS}"
+            )
+        return v
+
+    @field_validator("INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH", mode="after")
+    @classmethod
+    def parse_instructor_prompt_max_length(cls, v: int | None) -> int | None:
+        """Batas 0/negatif akan menolak setiap prompt tanpa penjelasan jelas."""
+        if v is not None and v <= 0:
+            raise ValueError(
+                "INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH harus lebih besar dari 0"
+            )
+        return v
+
+    @property
+    def rps_storage_path(self) -> Path:
+        """Direktori absolut penyimpanan dokumen RPS."""
+        raw = (self.RPS_STORAGE_DIR or "").strip()
+        return Path(raw).expanduser() if raw else DEFAULT_RPS_STORAGE_DIR
+
+    @property
+    def rps_max_upload_bytes(self) -> int:
+        """Batas ukuran unggahan yang berlaku (byte)."""
+        return (
+            DEFAULT_RPS_MAX_UPLOAD_BYTES
+            if self.RPS_MAX_UPLOAD_BYTES is None
+            else self.RPS_MAX_UPLOAD_BYTES
+        )
+
+    @property
+    def rps_allowed_extensions(self) -> tuple[str, ...]:
+        """Ekstensi yang diterima, huruf kecil tanpa titik."""
+        return _split_extensions(self.RPS_ALLOWED_EXTENSIONS) or (
+            DEFAULT_RPS_ALLOWED_EXTENSIONS,
+        )
+
+    @property
+    def rps_converter(self) -> str:
+        """Nama konverter dokumen yang aktif."""
+        return (self.RPS_CONVERTER or "").strip().lower() or DEFAULT_RPS_CONVERTER
+
+    @property
+    def rps_converter_ocr(self) -> bool:
+        """Apakah OCR dijalankan untuk halaman tanpa lapisan teks."""
+        return (
+            DEFAULT_RPS_CONVERTER_OCR
+            if self.RPS_CONVERTER_OCR is None
+            else self.RPS_CONVERTER_OCR
+        )
+
+    @property
+    def rps_converter_table_structure(self) -> bool:
+        """Apakah struktur tabel diekstrak."""
+        return (
+            DEFAULT_RPS_CONVERTER_TABLE_STRUCTURE
+            if self.RPS_CONVERTER_TABLE_STRUCTURE is None
+            else self.RPS_CONVERTER_TABLE_STRUCTURE
+        )
+
+    @property
+    def rps_converter_table_mode(self) -> str:
+        """Mode TableFormer yang berlaku."""
+        return (self.RPS_CONVERTER_TABLE_MODE or "").strip().lower() or (
+            DEFAULT_RPS_CONVERTER_TABLE_MODE
+        )
+
+    @property
+    def rps_converter_artifacts_path(self) -> str | None:
+        """Direktori model Docling, atau ``None`` bila memakai cache bawaan."""
+        return (self.RPS_CONVERTER_ARTIFACTS_PATH or "").strip() or None
+
+    @property
+    def rps_processing_lease_seconds(self) -> int:
+        """Batas waktu pemrosesan yang dianggap masih berjalan (detik)."""
+        return (
+            DEFAULT_RPS_PROCESSING_LEASE_SECONDS
+            if self.RPS_PROCESSING_LEASE_SECONDS is None
+            else self.RPS_PROCESSING_LEASE_SECONDS
+        )
+
+    @property
+    def rps_analysis_max_fix_attempts(self) -> int:
+        """Jumlah retry tambahan analisis RPS yang berlaku."""
+        return (
+            DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS
+            if self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS is None
+            else self.RPS_ANALYSIS_MAX_FIX_ATTEMPTS
+        )
+
+    @property
+    def instructor_additional_prompt_max_length(self) -> int:
+        """Batas panjang Additional Prompt yang berlaku (karakter)."""
+        return (
+            DEFAULT_INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH
+            if self.INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH is None
+            else self.INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH
+        )
 
     @property
     def llm_provider(self) -> str:
         """Canonical name of the provider selected through LLM_PROVIDER."""
         name = (self.LLM_PROVIDER or "").strip().lower()
         return LLM_PROVIDER_ALIASES.get(name, name)
+
+    @property
+    def llm_max_retries(self) -> int:
+        return DEFAULT_LLM_MAX_RETRIES if self.LLM_MAX_RETRIES is None else self.LLM_MAX_RETRIES
+
+    @property
+    def llm_retry_backoff_factor(self) -> float:
+        return (
+            DEFAULT_LLM_RETRY_BACKOFF_FACTOR
+            if self.LLM_RETRY_BACKOFF_FACTOR is None
+            else self.LLM_RETRY_BACKOFF_FACTOR
+        )
+
+    @property
+    def llm_retry_min_wait(self) -> float:
+        return (
+            DEFAULT_LLM_RETRY_MIN_WAIT
+            if self.LLM_RETRY_MIN_WAIT is None
+            else self.LLM_RETRY_MIN_WAIT
+        )
+
+    @property
+    def llm_retry_max_wait(self) -> float:
+        return (
+            DEFAULT_LLM_RETRY_MAX_WAIT
+            if self.LLM_RETRY_MAX_WAIT is None
+            else self.LLM_RETRY_MAX_WAIT
+        )
+
+    def llm_timeout_for(self, provider: str) -> float:
+        """Resolve timeout in seconds for a provider from environment."""
+        own = getattr(self, f"{provider.upper()}_TIMEOUT_SECONDS", None)
+        if own is not None:
+            return float(own)
+        if self.LLM_TIMEOUT_SECONDS is not None:
+            return float(self.LLM_TIMEOUT_SECONDS)
+        return DEFAULT_LLM_TIMEOUT_SECONDS
 
     def _llm_setting_for(self, provider: str, suffix: str) -> str:
         """Provider-specific value, else the shared value for the active provider.
@@ -128,6 +402,91 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+def _split_extensions(value: str) -> tuple[str, ...]:
+    """Ubah ``"pdf, .DOCX"`` menjadi ``("pdf", "docx")``."""
+    parts = (part.strip().lower().lstrip(".") for part in (value or "").split(","))
+    return tuple(part for part in parts if part)
+
+
+def _normalize_cors_origins(value: Union[str, List[str]]) -> List[str]:
+    """Ubah konfigurasi CORS menjadi daftar origin kanonik tanpa duplikat.
+
+    ``CORS_ORIGINS`` boleh berupa JSON array atau string dipisah koma. Origin
+    harus eksplisit (``scheme://host[:port]``); wildcard dan URL dengan path
+    ditolak, sehingga "origin yang tidak terdaftar ditolak" tetap dapat
+    dibuktikan dan tidak ada konfigurasi development yang terbawa ke produksi
+    secara tidak sengaja.
+    """
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "CORS_ORIGINS harus berupa JSON array yang valid atau daftar "
+                    "origin yang dipisah koma"
+                ) from exc
+            if not isinstance(parsed, list):
+                raise ValueError("CORS_ORIGINS JSON harus berupa array string")
+            items: list[object] = parsed
+        else:
+            items = raw.split(",")
+    else:
+        items = list(value)
+
+    origins: List[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            raise ValueError("Setiap CORS origin harus berupa string")
+        origin = _normalize_cors_origin(item)
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+def _normalize_cors_origin(value: str) -> str:
+    """Validasi satu origin dan kembalikan bentuk kanoniknya.
+
+    Nilai kosong diabaikan (mis. sisa koma pada daftar). Origin kosong secara
+    total tetap diperbolehkan: artinya tidak ada frontend yang diizinkan, bukan
+    "izinkan semua".
+    """
+    candidate = value.strip()
+    if not candidate:
+        return ""
+    if candidate == "*":
+        raise ValueError(
+            "CORS_ORIGINS tidak boleh memakai wildcard '*'; daftarkan origin "
+            "frontend secara eksplisit"
+        )
+
+    normalized = candidate.rstrip("/")
+    parts = urlsplit(normalized)
+    if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+        raise ValueError(
+            f"CORS origin tidak valid: {candidate!r}; gunakan format "
+            "scheme://host[:port], contoh http://localhost:3000"
+        )
+    if parts.path or parts.query or parts.fragment:
+        raise ValueError(
+            f"CORS origin tidak boleh memuat path/query/fragment: {candidate!r}"
+        )
+    if parts.username or parts.password:
+        raise ValueError(f"CORS origin tidak boleh memuat credential: {candidate!r}")
+    try:
+        # Port yang tidak valid (mis. ":abc") baru terdeteksi saat diakses.
+        parts.port
+    except ValueError as exc:
+        raise ValueError(f"CORS origin memuat port tidak valid: {candidate!r}") from exc
+
+    # Browser mengirim scheme dan host dalam huruf kecil; normalisasi yang sama
+    # membuat pencocokan di middleware bersifat persis (exact match).
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"
 
 
 settings = get_settings()

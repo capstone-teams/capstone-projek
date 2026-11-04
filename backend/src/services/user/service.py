@@ -8,8 +8,9 @@ Pemakaian oleh authentication (BE-03.3) cukup dengan menyediakan session:
 ``UserService.from_session(session)`` — tanpa perlu menyentuh database langsung.
 
 Field identity mengikuti atribut user Moodle (``username``, ``firstname``,
-``lastname``, ``email``, ``password``); ``password`` selalu berupa hash, dan
-``email`` tetap menjadi identity attribute untuk login aplikasi.
+``lastname``, ``email``, ``password``); ``password`` selalu berupa hash.
+Authentication (BE-03.3) dapat memakai ``username`` maupun ``email`` sebagai
+identifier login, sehingga service ini menyediakan lookup untuk keduanya.
 """
 
 from __future__ import annotations
@@ -96,6 +97,14 @@ class UserService:
     async def get_user_by_email(self, email: str) -> User:
         """Ambil user berdasarkan email atau lempar :class:`UserNotFoundError`."""
         return _require_found(await self.find_user_by_email(email), email)
+
+    async def find_user_by_username(self, username: str) -> User | None:
+        """Cari user berdasarkan username (atribut Moodle); ``None`` bila tidak ada."""
+        return await self._repository.find_by_username(username)
+
+    async def get_user_by_username(self, username: str) -> User:
+        """Ambil user berdasarkan username atau lempar :class:`UserNotFoundError`."""
+        return _require_found(await self.find_user_by_username(username), username)
 
     async def update_user(
         self,

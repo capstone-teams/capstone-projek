@@ -12,7 +12,7 @@ test('Moodle session restores the same account after reload', async ({ page }) =
   await page.getByLabel('Username', { exact: true }).fill('mahasiswa');
   await page.getByLabel('Kata sandi', { exact: true }).fill('mahasiswa123');
   await page.getByRole('button', { name: 'Masuk', exact: true }).click();
-  await expect(page.getByText('Ringkasan belajar', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Kursus saya', exact: true })).toBeVisible();
   const token = await page.evaluate(() => localStorage.getItem('agentic-lms.moodle-session'));
   await page.reload();
   await expect(page.getByRole('button', { name: 'Menu pengguna' })).toContainText('Andi Saputra');
@@ -31,7 +31,7 @@ test('expired Moodle token returns to login and clears storage', async ({ page }
 test('course search exposes empty state and recovers to real mock data', async ({ page }) => {
   await seed(page);
   await page.goto('/my/courses');
-  await expect(page.getByRole('link', { name: /Pemrograman Web/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /^IF2105 Pemrograman Web/ })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Cari kursus' }).fill('course-tidak-ada');
   await expect(page.getByText('Tidak ada kursus yang cocok dengan pencarian.', { exact: true })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Cari kursus' }).fill('Basis Data');
@@ -62,14 +62,15 @@ test('menu links and browser history keep the current route consistent', async (
 
 test('revision dialog prevents background focus and Escape returns it to the trigger', async ({ page }) => {
   await seed(page);
-  await page.goto('/ai/courses/course_project_002/plan');
+  await page.goto('/course/4/ai/plan');
   const trigger = page.getByRole('button', { name: 'Minta revisi', exact: true });
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Minta revisi rencana' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Regenerasi rencana', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Regenerasi rencana', exact: true }).click();
+  await expect(dialog.getByText('Instruksi perbaikan wajib diisi.', { exact: true })).toBeVisible();
   await dialog.getByRole('textbox').fill('Perjelas contoh minggu pertama.');
-  await expect(dialog.getByRole('button', { name: 'Regenerasi rencana', exact: true })).toBeEnabled();
+  await expect(dialog.getByText('Instruksi perbaikan wajib diisi.', { exact: true })).toHaveCount(0);
   for (const key of ['Tab', 'Shift+Tab']) {
     for (let i = 0; i < 6; i++) {
       await page.keyboard.press(key);
@@ -90,30 +91,31 @@ test('revision dialog prevents background focus and Escape returns it to the tri
 
 test('profile save updates shared data and shows success feedback', async ({ page }) => {
   await seed(page);
-  await page.goto('/ai/profile');
+  await page.goto('/user/profile');
   await page.getByLabel('Gaya mengajar', { exact: false }).fill('Diskusi studi kasus untuk pengujian FE-04.1');
   await page.getByRole('button', { name: 'Simpan profil', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Profil tersimpan.');
-  await page.getByRole('link', { name: 'Project', exact: true }).click();
-  await page.getByRole('link', { name: 'Preferensi mengajar', exact: true }).click();
+  await page.getByRole('button', { name: 'Menu pengguna' }).click();
+  await page.getByRole('menuitem', { name: 'Kursus saya', exact: true }).click();
+  await page.getByRole('button', { name: 'Menu pengguna' }).click();
+  await page.getByRole('menuitem', { name: 'Profil', exact: true }).click();
   await expect(page.getByLabel('Gaya mengajar', { exact: false })).toHaveValue('Diskusi studi kasus untuk pengujian FE-04.1');
 });
 
-test('backend errors are visible while the independent Moodle session stays usable', async ({ page }) => {
+test('expired backend token returns to login and clears both sessions', async ({ page }) => {
   await seed(page, 'mock-3-test', 'expired-backend-token');
-  await page.goto('/ai/profile');
-  await expect(page.getByRole('alert')).toBeVisible();
-  await page.getByRole('button', { name: 'Menu pengguna' }).click();
-  await page.getByRole('menuitem', { name: 'Kursus saya', exact: true }).click();
-  await expect(page.getByRole('link', { name: /Pemrograman Web/ })).toBeVisible();
+  await page.goto('/user/profile');
+  await expect(page.getByRole('heading', { name: 'Masuk ke akun Anda' })).toBeVisible();
+  await expect(page.getByText('Sesi Anda telah berakhir. Silakan masuk kembali.', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => [localStorage.getItem('agentic-lms.moodle-session'), localStorage.getItem('agentic-lms.token')])).toEqual([null, null]);
 });
 
 const layouts = [
   ['/my/courses', 'Kursus saya'],
-  ['/ai/profile', 'Profil Dosen'],
-  ['/ai/courses/new', 'Course baru'],
+  ['/user/profile', 'Preferensi mengajar (Generator AI)'],
+  ['/course/3/ai', '2. Mulai generator AI'],
   ['/course/2/participants', 'Pemrograman Web'],
-  ['/ai/courses/course_project_001/plan', 'IF2105 — Pemrograman Web'],
+  ['/course/2/ai/plan', 'Pemrograman Web'],
 ];
 for (const width of [375, 768, 1440]) {
   for (const [route, title] of layouts) {
@@ -122,7 +124,8 @@ for (const width of [375, 768, 1440]) {
       await seed(page);
       await page.goto(route);
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-      await expect(page.locator('main [role="status"]')).toHaveCount(0);
+      // Spinner loading sudah selesai (alert status biasa, mis. "rencana disetujui", boleh tampil).
+      await expect(page.locator('main [role="status"]', { has: page.locator('.animate-spin') })).toHaveCount(0);
       const main = await page.locator('main').boundingBox();
       expect(main.x).toBeGreaterThanOrEqual(0);
       expect(main.x + main.width).toBeLessThanOrEqual(width + 1);

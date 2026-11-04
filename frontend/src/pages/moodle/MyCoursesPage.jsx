@@ -3,7 +3,9 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { usePreference } from '../../hooks/useAppState';
 import { useApi } from '../../hooks/useApi';
 import { getCoursesByClassification } from '../../services/moodle/moodleApi';
-import { PageContainer } from '../../components/MoodleLayout';
+import { COURSE_API_AVAILABLE } from '../../services/config';
+import { listCourses } from '../../services/courseService';
+import { PageContainer } from '../../components/layout/MoodleLayout';
 import { EmptyState, ErrorAlert, Spinner } from '../../components/ui';
 import CourseCard from '../../components/moodle/CourseCard';
 
@@ -15,12 +17,16 @@ const FILTERS = [
 ];
 
 export default function MyCoursesPage() {
-  const { isTeacherOf } = useCurrentUser();
-  // Filter diingat per user, seperti blok "Ikhtisar kursus" Moodle.
+  const { isTeacherOf, isDosen } = useCurrentUser();
+  // Filter diingat per pengguna. Rujukan: blok "Course overview" di Moodle.
   const [storedClassification, setClassification] = usePreference('myCourses.classification', 'all');
   const classification = FILTERS.some((f) => f.value === storedClassification) ? storedClassification : 'all';
   const [query, setQuery] = useState('');
   const { data, error, loading } = useApi(() => getCoursesByClassification(classification), [classification]);
+  // Status generator AI per kursus (dosen saja). Backend AI tidak tersedia -> badge disembunyikan.
+  const ai = useApi(() => (isDosen && COURSE_API_AVAILABLE ? listCourses().catch(() => null) : null), [isDosen]);
+  const aiByMoodleId = new Map((ai.data?.courses ?? []).map((p) => [String(p.moodle_course_id), p.status]));
+  const aiStatusOf = (courseId) => (ai.data && isTeacherOf(courseId) ? aiByMoodleId.get(String(courseId)) ?? null : undefined);
 
   const q = query.trim().toLowerCase();
   const courses = (data ?? []).filter((c) => !q || `${c.fullname} ${c.shortname}`.toLowerCase().includes(q));
@@ -49,7 +55,7 @@ export default function MyCoursesPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {courses.map((c) => (
-              <CourseCard key={c.id} course={c} isTeacher={isTeacherOf(c.id)} />
+              <CourseCard key={c.id} course={c} isTeacher={isTeacherOf(c.id)} aiStatus={aiStatusOf(c.id)} />
             ))}
           </div>
         )}

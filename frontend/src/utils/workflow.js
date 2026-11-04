@@ -50,14 +50,6 @@ export function currentStepIndex(status) {
   return i === -1 ? 0 : i;
 }
 
-export const RPS_STATUS_LABELS = {
-  uploaded: 'Diunggah',
-  processing: 'Diproses',
-  analyzing: 'Dianalisis',
-  processed: 'Siap',
-  failed: 'Gagal',
-};
-
 export const RUN_TYPE_LABELS = {
   rps_processing: 'Pemrosesan RPS',
   course_planning: 'Perencanaan course',
@@ -91,6 +83,8 @@ export const EVENT_LABELS = {
 };
 
 export function describeEvent(ev) {
+  // Event workflow (design-api §17) membawa pesan siap tampil dari backend.
+  if (ev.event?.startsWith('WORKFLOW_') && ev.message) return ev.message;
   const label = EVENT_LABELS[ev.event] ?? ev.event;
   if (ev.event === 'STATUS_CHANGED') return `${label}: ${STATUS_LABELS[ev.status] ?? ev.status}`;
   if (ev.week) return `${label} — minggu ${ev.week}`;

@@ -1,5 +1,9 @@
 from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
 from pydantic_core import PydanticUndefined
+
 from src.config.settings import Settings, get_settings
 
 ENV_PATH = Path(__file__).parent.parent / ".env"
@@ -37,6 +41,53 @@ def test_cors_origins_parsing(monkeypatch):
     monkeypatch.setenv("CORS_ORIGINS", '["http://localhost:3000", "http://127.0.0.1:3000"]')
     settings = Settings()
     assert settings.CORS_ORIGINS == ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def test_cors_origins_are_normalized_for_exact_origin_matching(monkeypatch):
+    """Browser mengirim origin lowercase tanpa trailing slash."""
+    monkeypatch.setenv(
+        "CORS_ORIGINS",
+        " HTTP://LOCALHOST:3000/ , http://localhost:3000 , http://127.0.0.1:3000/ ",
+    )
+
+    settings = Settings()
+
+    assert settings.CORS_ORIGINS == ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def test_empty_cors_origins_means_no_frontend_is_allowed(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", "  ")
+
+    assert Settings().CORS_ORIGINS == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "*",
+        "http://localhost:3000/api",
+        "localhost:3000",
+        "ftp://localhost:3000",
+        "http://localhost:abc",
+        '["http://localhost:3000"',
+        '{"origin": "http://localhost:3000"}',
+    ],
+    ids=[
+        "wildcard",
+        "path",
+        "missing-scheme",
+        "unsupported-scheme",
+        "invalid-port",
+        "invalid-json",
+        "not-an-array",
+    ],
+)
+def test_invalid_cors_configuration_fails_at_startup(monkeypatch, value):
+    """Konfigurasi salah harus gagal saat startup, bukan saat preflight pertama."""
+    monkeypatch.setenv("CORS_ORIGINS", value)
+
+    with pytest.raises(ValidationError):
+        Settings()
 
 
 def test_env_keys_match_settings():

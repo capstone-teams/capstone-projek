@@ -1,0 +1,480 @@
+{
+  "schema_version": "2.0",
+  "course": {
+    "study_program": null,
+    "name": "Matematika Diskrit",
+    "code": null,
+    "credits": null,
+    "semester": null,
+    "description": "Mata kuliah ini membahas struktur diskrit sebagai fondasi informatika, meliputi logika, proposisi, ekuivalensi, predikat dan quantifier, aturan penarikan kesimpulan, metode pembuktian, induksi matematika, teori himpunan, relasi dan fungsi, aljabar Boolean, kombinatorial, dan teori bilangan.",
+    "course_cluster": null,
+    "prerequisites": [],
+    "prepared_at": null,
+    "lecturers": [],
+    "authorization": null
+  },
+  "cpl": [],
+  "cpmk": [
+    {
+      "code": "CPMK-1",
+      "description": "Mahasiswa mampu menerapkan konsep proposisi, ekuivalensi, predikat dan quantifier pada suatu pernyataan.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-2",
+      "description": "Mahasiswa mampu menganalisis suatu kesimpulan dari beberapa pernyataan matematika.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-3",
+      "description": "Mahasiswa mampu mengimplementasikan teknik-teknik pembuktian pada sebuah pernyataan.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-4",
+      "description": "Mahasiswa mampu menerapkan dan mengimplementasikan konsep himpunan.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-5",
+      "description": "Mahasiswa mampu menerapkan dan mengimplementasikan relasi dan fungsi.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-6",
+      "description": "Mahasiswa mampu menerapkan konsep induksi matematika.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-7",
+      "description": "Mahasiswa mampu menerapkan rekursi dan relasi rekurens.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-8",
+      "description": "Mahasiswa mampu menerapkan dan mengaplikasikan konsep aljabar Boolean.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-9",
+      "description": "Mahasiswa mampu menganalisis dan menerapkan konsep teori bilangan.",
+      "cpl_refs": []
+    },
+    {
+      "code": "CPMK-10",
+      "description": "Mahasiswa mampu menerapkan dan menganalisis konsep kombinatorial pada sebuah kasus.",
+      "cpl_refs": []
+    }
+  ],
+  "sub_cpmk": [],
+  "study_materials": [],
+  "weekly_plan": [
+    {
+      "week": 1,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Konsep logika proposisi",
+        "TOP-2: Konsep ekuivalensi"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 2,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Konsep predikat dan quantifier",
+        "TOP-2: Aturan penarikan kesimpulan"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 3,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Pembuktian secara langsung",
+        "TOP-2: Pembuktian dengan kontraposisi",
+        "TOP-3: Pembuktian dengan kontradiksi"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 4,
+      "week_type": "kuis",
+      "topics": [],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [],
+      "media": [],
+      "assessment": null
+    },
+    {
+      "week": 5,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Definisi himpunan",
+        "TOP-2: Cara penyajian himpunan",
+        "TOP-3: Operasi pada himpunan",
+        "TOP-4: Hukum-hukum himpunan",
+        "TOP-5: Prinsip inklusi-eksklusi"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal",
+        "Uji kompetensi"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 6,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Definisi relasi",
+        "TOP-2: Representasi relasi",
+        "TOP-3: Sifat-sifat relasi"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal",
+        "Uji kompetensi"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 7,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Definisi fungsi",
+        "TOP-2: Komposisi dua fungsi"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal",
+        "Uji kompetensi"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 8,
+      "week_type": "uts",
+      "topics": [],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [],
+      "media": [],
+      "assessment": null
+    },
+    {
+      "week": 9,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Induksi matematika",
+        "TOP-2: Induksi matematika kuat"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal",
+        "Uji kompetensi"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 10,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Rekursi dan fungsi rekursif",
+        "TOP-2: Relasi rekurens"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal",
+        "Uji kompetensi"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 11,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Aljabar Boolean",
+        "TOP-2: Peta Karnaugh"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 12,
+      "week_type": "kuis",
+      "topics": [],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [],
+      "media": [],
+      "assessment": null
+    },
+    {
+      "week": 13,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Algoritma Euclidean",
+        "TOP-2: Aritmatika modulo",
+        "TOP-3: Sistem kekongruenan linier"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 14,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Bilangan prima",
+        "TOP-2: Teorema Fermat",
+        "TOP-3: Aplikasi teori bilangan"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 15,
+      "week_type": "regular",
+      "topics": [
+        "TOP-1: Koefisien binomial dan identitas",
+        "TOP-2: Pigeonhole Principle"
+      ],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [
+        "Kuliah/ceramah",
+        "Diskusi",
+        "Latihan soal"
+      ],
+      "media": [],
+      "assessment": {
+        "type": "object",
+        "description": "Ketepatan dalam menjawab",
+        "weight_percent": 100
+      }
+    },
+    {
+      "week": 16,
+      "week_type": "uas",
+      "topics": [],
+      "cpmk": [],
+      "sub_cpmk": [],
+      "teaching_method": [],
+      "media": [],
+      "assessment": null
+    }
+  ],
+  "assessments": [
+    {
+      "component": "Kehadiran",
+      "weight_percent": 10,
+      "cpmk_refs": []
+    },
+    {
+      "component": "Tugas",
+      "weight_percent": 15,
+      "cpmk_refs": []
+    },
+    {
+      "component": "Kuis",
+      "weight_percent": 20,
+      "cpmk_refs": []
+    },
+    {
+      "component": "UTS",
+      "weight_percent": 25,
+      "cpmk_refs": []
+    },
+    {
+      "component": "UAS",
+      "weight_percent": 30,
+      "cpmk_refs": []
+    }
+  ],
+  "references": {
+    "main": [
+      "Rosen, K. H. Discrete Mathematics and Its Applications, 8th ed. Boston: McGraw-Hill."
+    ],
+    "supporting": [
+      "Grossman, P. (2009). Discrete Mathematics for Computing. Basingstoke: Palgrave Macmillan.",
+      "Epp, S. S. (2010). Discrete Mathematics with Application, 4th ed. Brooks/Cole."
+    ]
+  },
+  "media": {
+    "software": [],
+    "hardware": []
+  },
+  "extraction": {
+    "sections": {
+      "course": "found",
+      "cpl": "not_found",
+      "cpmk": "found",
+      "sub_cpmk": "not_found",
+      "study_materials": "not_found",
+      "weekly_plan": "found",
+      "assessments": "found",
+      "references": "found",
+      "media": "found"
+    },
+    "warnings": [
+      "cpl: tidak ditemukan pada RPS.",
+      "sub_cpmk: tidak ditemukan pada RPS.",
+      "course.code: tidak ditemukan pada RPS.",
+      "course.credits: tidak ditemukan pada RPS.",
+      "course.semester: tidak ditemukan pada RPS.",
+      "study_materials: tidak ditemukan pada RPS.",
+      "weeks[].cpmk: RPS tidak memuat pemetaan minggu ke CPMK.",
+      "weeks[].sub_cpmk: RPS tidak memuat pemetaan minggu ke Sub CPMK.",
+      "media: tidak ditemukan pada RPS."
+    ],
+    "source_pages": {
+      "course": [],
+      "cpl": [],
+      "cpmk": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "sub_cpmk": [],
+      "study_materials": [],
+      "weekly_plan": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "assessments": [],
+      "references": [],
+      "media": []
+    }
+  }
+}

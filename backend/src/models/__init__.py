@@ -1,5 +1,6 @@
 from src.models.base import Base, BaseModel
 from src.models.activity import Activity, ActivityStatus, ActivityType
+from src.models.activity_configuration import ActivityConfiguration
 from src.models.agent_event import AgentEvent
 from src.models.agent_run import AgentRun, AgentRunStatus, AgentRunType
 from src.models.content import Content, ContentStatus, ContentType
@@ -20,9 +21,12 @@ from src.models.validation_result import (
 )
 from src.models.verification import Verification, VerificationStatus
 from src.models.category import Category
+from src.models.workflow import Workflow, WorkflowStatus
+from src.models.workflow_event import EventType, WorkflowEvent
 
 __all__ = [ "Base",
             "Activity",
+            "ActivityConfiguration",
             "ActivityStatus",
             "ActivityType",
             "AgentEvent",
@@ -39,6 +43,7 @@ __all__ = [ "Base",
             "CoursePlan",
             "CoursePlanStatus",
             "CoursePlanWeek",
+            "EventType",
             "InstructorProfile",
             "MoodleEntityMapping",
             "MoodleExecution",
@@ -57,4 +62,7 @@ __all__ = [ "Base",
             "ValidationTargetType",
             "Verification",
             "VerificationStatus",
+            "Workflow",
+            "WorkflowEvent",
+            "WorkflowStatus",
            ]

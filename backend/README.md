@@ -19,18 +19,31 @@ backend/
 │   ├── routes/                   # Definition Endpoint API & HTTP Router (FastAPI)
 │   │   ├── admin.py              # GET /admin/users (ADMIN only)
 │   │   ├── auth.py               # POST /auth/login, GET /auth/me
+│   │   ├── rps.py                # POST /rps, GET /rps/{id}, POST /rps/{id}/process, POST /rps/{id}/reanalyze
+│   │   ├── instructors.py        # GET/PUT /instructors/me/setup (INSTRUCTOR only)
+│   │   ├── workflows.py          # Workflow monitoring + WS /ws/workflows/{id} (BE-11.3)
+│   │   ├── course_plans.py       # Baca/review/generate course plan (BE-14)
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
 │   ├── services/                 # Core Business Logic, Data Access, & External APIs
 │   │   ├── auth/                 # Authentication & authorization: kredensial, token, AuthService, RolePolicy
+│   │   ├── rps/                  # Unggah, konversi (BE-05), & analisis dokumen RPS (BE-08.2)
+│   │   ├── instructor/           # Setup dosen: profil, aktivitas, konteks agent (BE-10)
+│   │   ├── workflow/             # State machine, event, & orkestrator (BE-11)
+│   │   ├── course_plan/          # Course plan berversi, review, & planner (BE-14)
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
 │   │   └── dependencies.py       # Dependency provider untuk routes (+ require_roles)
 │   ├── models/                   # Database Entities / ORM Models (SQLAlchemy)
 │   ├── schemas/                  # Request & Response DTOs / Data Validation (Pydantic)
 │   │   ├── admin.py              # DTO operasi administrasi
-│   │   └── auth.py
+│   │   ├── auth.py
+│   │   ├── rps.py                # DTO endpoint RPS
+│   │   ├── instructor.py         # DTO setup dosen (BE-10)
+│   │   ├── workflow.py           # DTO monitoring workflow & event (BE-11.3)
+│   │   ├── course_plan.py        # Kontrak output + DTO course plan (BE-14)
+│   │   └── rps_structured.py     # Kontrak RPS Structured Data (BE-05.3)
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
 │   │   └── error_handlers.py     # Pemetaan error domain → response HTTP
 │   ├── utils/                    # Helper functions & pure utilities
@@ -185,7 +198,7 @@ Authentication menjawab **"siapa User ini?"**. Keputusan boleh/tidaknya sebuah o
 | `POST` | `/api/v1/auth/login` | Verifikasi kredensial; mengembalikan `access_token`, `token_type`, dan identitas (`id`, `role`) |
 | `GET` | `/api/v1/auth/me` | Mengembalikan current user (`id`, `username`, `firstname`, `lastname`, `email`, `role`); membutuhkan header `Authorization: Bearer <access_token>` |
 
-`username` pada login adalah **email** user (email adalah identity attribute untuk login aplikasi). Kolom `users.username` adalah atribut user Moodle — dipakai saat user dibuat/di-sinkronkan ke Moodle (BE-04) — dan **tidak** dipakai untuk login lokal.
+Field `username` pada body login adalah **identifier login** dan boleh berisi **username** maupun **email** user. Email dicocokkan tanpa membedakan kapitalisasi; username dicocokkan persis terlebih dahulu, lalu tanpa membedakan kapitalisasi bila hasilnya tunggal. Kolom `users.username` adalah atribut user Moodle — dipakai saat user dibuat/di-sinkronkan ke Moodle (BE-04) — dan sekarang juga dapat dipakai untuk login lokal. Bila sebuah nilai cocok dengan email user A sekaligus username user B, email diutamakan.
 
 Field identity user (`username`, `firstname`, `lastname`, `email`, `password`) sengaja memakai nama atribut Moodle (`core_user_create_users`) supaya sinkronisasi tidak memerlukan tabel pemetaan tersendiri. `password` menyimpan **hash** bcrypt (lihat `src/services/auth/passwords.py`); password mentah tidak pernah disimpan.
 
@@ -305,6 +318,590 @@ Respons kegagalan mengikuti design-api §18/§19:
 
 ---
 
+## 📘 Dokumentasi API Authentication (BE-06.1)
+
+Frontend dapat memakai endpoint authentication tanpa membaca source code
+backend. Dokumentasi tersedia otomatis dari OpenAPI saat server development
+berjalan:
+
+| URL | Isi |
+| :--- | :--- |
+| `http://localhost:8000/docs` | Swagger UI dengan contoh request/response dan tombol **Try it out** |
+| `http://localhost:8000/redoc` | ReDoc |
+| `http://localhost:8000/openapi.json` | Dokumen OpenAPI mentah |
+
+Panduan integrasi lengkap — contoh login dan current user, format/masa berlaku
+token, perilaku token kedaluwarsa, matriks role, format error §18, serta
+walkthrough `curl` — berada di
+[`docs/02. design/auth-api-integration.md`](../docs/02.%20design/auth-api-integration.md).
+
+Ringkasan kontrak:
+
+| Endpoint | Sukses | Gagal |
+| :--- | :--- | :--- |
+| `POST /api/v1/auth/login` | `200` + `access_token`, `token_type`, `user.id`, `user.role` | `401 AUTHENTICATION_FAILED`, `422 VALIDATION_FAILED` |
+| `GET /api/v1/auth/me` | `200` + identity user dan role | `401 AUTHENTICATION_FAILED` (+ `WWW-Authenticate: Bearer`) |
+
+Token adalah JWT `HS256` dengan klaim `sub`/`iat`/`exp`; role **tidak** menjadi
+klaim token dan selalu dibaca ulang dari database. Masa berlaku mengikuti
+`ACCESS_TOKEN_EXPIRE_MINUTES` (default 30 menit). Tidak ada endpoint
+refresh/logout — logout dilakukan client dengan menghapus token.
+
+Semua error memakai amplop design-api §18. Sejak BE-06.1, error validasi request
+juga memakai amplop tersebut (`422 VALIDATION_FAILED`) alih-alih bentuk default
+FastAPI, dan nilai input (termasuk password) tidak pernah di-echo.
+
+Dokumentasi ini diuji otomatis oleh `tests/test_auth_documentation.py`, termasuk
+ketersediaan `/docs`, `/redoc`, `/openapi.json`, kelengkapan contoh, security
+scheme Bearer, dan format error.
+
+---
+
+## 📄 RPS Upload & Docling Conversion (BE-05)
+
+Modul ini menyediakan alur awal pemrosesan RPS: mengunggah dan menyimpan dokumen
+RPS, mengonversinya menjadi **JSON Docling** (teks, heading, tabel, dan nomor
+halaman) beserta struktur tabel turunan, dan menetapkan **RPS Structured Data
+Schema** yang menjadi kontrak data untuk tahap ekstraksi pada BE-08. Markdown
+tidak dibentuk dari RPS: DL-008 menetapkan JSON sebagai satu-satunya format hasil
+konversi, sedangkan YAML baru diserialisasi BE-08.1 saat dibutuhkan (DL-006).
+
+```text
+RPS PDF ──▶ unggah (file_hash) ──▶ simpan berkas asli
+                                        │
+                                        ▼
+                     POST /rps/{id}/process  ──▶ 202 PROCESSING (dijadwalkan)
+                                        │                      │
+                                        │              GET /rps/{id}  ← polling
+                                        ▼
+                        Docling ────────┴──▶ source_document  (JSONB: JSON Docling)
+                                             ├─ document.json  ┐
+                                             ├─ tables.json    ├─ artefak di
+                                             └─ conversion.json┘  samping berkas
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/rps` | `INSTRUCTOR` | Unggah RPS (`multipart/form-data`, field `file`). `201` untuk dokumen baru, `200` + `deduplicated: true` bila isi yang sama sudah pernah diunggah |
+| `GET` | `/api/v1/rps/{rps_id}` | `INSTRUCTOR` | Detail dokumen beserta status pemrosesan dan indikator `has_source_document` |
+| `POST` | `/api/v1/rps/{rps_id}/process` | `INSTRUCTOR` | **Menjadwalkan** konversi: `202` + `PROCESSING`, atau `200` + `reused: true` bila sudah pernah diproses. Body opsional `{"schema_version": "..."}` |
+
+Authorization mengikuti design-api §22 (Student: `No` untuk seluruh operasi RPS).
+Seluruh endpoint memakai satu policy `instructor_only`.
+
+Respons kegagalan mengikuti design-api §18/§19:
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Ekstensi/ukuran/isi berkas tidak sah | 400 | `INVALID_FILE` |
+| Nilai domain tidak valid (mis. hash cacat) | 422 | `INVALID_REQUEST` |
+| RPS tidak ada atau milik instructor lain | 404 | `RESOURCE_NOT_FOUND` |
+| Status RPS tidak mengizinkan operasi (mis. sedang diproses request lain) | 409 | `INVALID_REQUEST` |
+| Konversi gagal (dokumen rusak, hasil kosong, model tidak tersedia) | 500 | `RPS_PROCESSING_FAILED` |
+| Penyimpanan berkas gagal | 500 | `INTERNAL_ERROR` |
+
+### Pemrosesan berjalan di background
+
+`POST /rps/{id}/process` tidak menahan request: endpoint menandai dokumen
+`PROCESSING`, menjadwalkan konversi, lalu menjawab `202` (design-api §6.3).
+Konversinya dijalankan oleh `src/services/rps/runner.py` **setelah** response
+dikirim, memakai session database sendiri — session milik request sudah tertutup
+saat itu.
+
+```bash
+# 1. jadwalkan
+curl -X POST /api/v1/rps/{id}/process -H "Authorization: Bearer $TOKEN"
+# → 202 {"status": "PROCESSING", "reused": false}
+
+# 2. pantau
+curl /api/v1/rps/{id} -H "Authorization: Bearer $TOKEN"
+# → 200 {"status": "PROCESSED", "has_source_document": true, "processing_duration_ms": 8421}
+```
+
+Kegagalan konversi **tidak** muncul pada response `process` (tidak ada client
+yang menunggu pekerjaan background). Kegagalannya terlihat saat polling:
+`status: FAILED` beserta `processing_error_code` (`RPS_PROCESSING_FAILED`) dan
+`processing_error_message` — alasan publik yang aman ditampilkan, sedangkan
+penyebab teknisnya hanya ada di log server-side.
+
+Runner berjalan *in-process* (Starlette `BackgroundTasks`), sehingga belum tahan
+terhadap proses yang mati di tengah konversi. Dua bentengnya: dokumen yang
+terlantar boleh diproses ulang setelah `RPS_PROCESSING_LEASE_SECONDS` (default
+900 detik), dan antrean pekerjaan yang durable menyusul bersama Agent Run pada
+BE-08.
+
+### Idempotency: `file_hash` + `schema_version`
+
+Dokumen dengan `file_hash` dan `schema_version` yang sama **tidak diproses ulang**
+selama hasilnya sudah berupa JSON pada `source_document`. Baris lama yang hanya
+memiliki Markdown (format sebelum BE-13) otomatis dikonversi ulang:
+
+1. unggahan ulang dokumen identik mengembalikan baris yang sudah ada
+   (`200`, `deduplicated: true`) alih-alih membuat baris kedua;
+2. pemrosesan dokumen yang sudah `PROCESSED` untuk versi skema yang sama
+   dijawab `200` + `reused: true` tanpa menjadwalkan konversi lagi.
+
+Meminta pemrosesan dengan `schema_version` **berbeda** justru memproses ulang:
+hasil lama tidak berlaku untuk skema baru, dan dokumen mencatat versi yang
+benar-benar dipakai.
+
+Untuk memproses ulang **seluruh** data lama sekaligus (bukan satu per satu lewat
+API), gunakan script BE-13:
+
+```bash
+uv run python -m scripts.reprocess_rps --dry-run  # hitung dokumen lama
+uv run python -m scripts.reprocess_rps            # konversi ulang semuanya
+uv run python -m scripts.reprocess_rps --limit 5  # bertahap
+```
+
+Script hanya memilih baris `PROCESSED` yang belum memiliki `source_document`,
+memakai session baru per dokumen, dan melaporkan dokumen yang gagal tanpa
+menghentikan sisanya.
+
+Konversi yang masih berjalan tidak dapat dijadwalkan ulang (409
+`INVALID_REQUEST`), kecuali barisnya sudah lebih tua dari lease — jalan keluar
+untuk pemrosesan yang terputus.
+
+### Docling adalah dependensi opsional
+
+Docling menarik `torch` dan model ML (unduhan model pertama kali ±0,5 GB),
+sehingga dipasang sebagai *extra* — bukan beban wajib seluruh tim:
+
+```bash
+uv sync --extra docling                                  # host
+UV_SYNC_ARGS="--extra docling" docker compose build backend   # container
+```
+
+Tanpa extra tersebut aplikasi tetap berjalan; `POST /rps/{id}/process` gagal
+dengan 500 `RPS_PROCESSING_FAILED` dan pesan server-side yang menyebutkan
+perintah pemasangannya. Modul `src/services/rps/docling_converter.py` mengimpor
+Docling secara *lazy*, sehingga tidak ada layer lain yang perlu tahu hal ini.
+
+Konfigurasi terkait ada pada `.env.example` (`RPS_*`). Untuk deployment offline,
+unduh model lebih dulu dan arahkan `RPS_CONVERTER_ARTIFACTS_PATH`:
+
+```bash
+docling-tools models download --output-dir ./var/docling-models
+```
+
+### RPS Structured Data Schema (BE-05.3)
+
+`src/schemas/rps_structured.py` adalah kontrak bersama backend dan AI untuk
+tahap ekstraksi (BE-08), mengikuti content-schema §6.1/§6.2:
+
+- hierarki capaian pembelajaran eksplisit: **CPL → CPMK → Sub-CPMK**
+  (`cpl`/`cpmk`/`sub_cpmk`), karena itulah yang tercantum pada template RPS
+  program studi;
+- rencana mingguan dengan `week_type` (`regular`/`uts`/`uas`), media
+  pembelajaran, dan bobot penilaian `weight_percent` (0–100);
+- `extraction` mencatat bagaimana data diperoleh (konverter, model, halaman
+  sumber, keyakinan, peringatan);
+- seluruh field akademik **opsional** — RPS antar-program studi berbeda-beda,
+  dan sistem tidak boleh mengarang nilai yang tidak ada di dokumen;
+- `extra="forbid"` pada setiap object: field di luar kontrak adalah kegagalan
+  validasi, bukan data yang dibuang diam-diam (§3.2/§3.4);
+- `validate_references()` melaporkan rujukan silang yang tidak menemukan sasaran
+  (Sub-CPMK → CPMK → CPL dan rujukan mingguan) sebagai **temuan, bukan error**
+  (§3.3);
+- `RPS_SCHEMA_VERSION` (kini `"2.0"`) menjadi versi skema — terpisah dari content
+  version dan dipakai pada kunci idempotency. Naik dari 1.0 ke 2.0 bersifat
+  *breaking* (§44): padanan field lamanya `learning_outcomes` → `cpmk` dan
+  `objectives` → `sub_cpmk`;
+- `to_rps_analysis_payload()` memetakan hasil ekstraksi ke kolom `rps_analyses`
+  (data-model §9): CPMK → `learning_outcomes`, Sub-CPMK → `objectives`,
+  sedangkan CPL/media/metadata ekstraksi tersimpan utuh pada `raw_analysis`;
+- `RPSStructuredData.model_json_schema()` dapat dibagikan ke tim AI sebagai
+  JSON Schema (§45).
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Berkas disimpan berdasarkan isinya (content-addressed).**
+   Path-nya `<owner_id>/<hash[:2]>/<hash>.<ext>` di bawah `RPS_STORAGE_DIR`
+   (default `backend/var/rps`, tidak masuk repository). Nama file dari client
+   hanya menjadi metadata; ia tidak pernah dipakai membentuk path, dan path
+   relatif yang tersimpan di `rps.file_path` diperiksa ulang agar tidak dapat
+   keluar dari direktori penyimpanan.
+2. **Berkas asli dipertahankan** agar hasil dapat dilacak ke sumbernya
+   (data-model §8), dan `source_document` (JSON Docling) disimpan pada kolom
+   `rps` supaya dapat dibaca tanpa menyentuh filesystem.
+3. **Artefak konversi berada di samping dokumennya**
+   (`<hash>/conversion/`): `document.json`, `tables.json`, dan `conversion.json`
+   (manifest: versi konverter, jumlah tabel/halaman, waktu konversi). Tidak ada
+   artefak Markdown/YAML. Artefak ditulis **sebelum** status berubah menjadi
+   `PROCESSED`.
+4. **Tabel dipisahkan, bukan diratakan.** Tabel RPS (distribusi mingguan, bobot
+   penilaian) adalah data akademik; `tables.json` menyimpan baris/kolom beserta
+   nomor halamannya sehingga BE-08 dapat membacanya tanpa menelusuri ulang
+   struktur JSON.
+5. **Pemrosesan asynchronous (design-api §6.3).** `POST /process` menjawab
+   `202` + `PROCESSING` dan konversinya berjalan di background; client memantau
+   `GET /rps/{id}`. `agent_run_id` belum ada pada response karena tabel
+   `agent_runs` mensyaratkan `course_id` yang baru ada setelah RPS dianalisis
+   (data-model §10) — Agent Run menyusul pada BE-08.
+6. **Kegagalan konversi tidak menghapus dokumen.** Status menjadi `FAILED`,
+   dokumen dapat diproses ulang, dan penyebab sebenarnya hanya dicatat
+   server-side. Yang dibaca client saat polling adalah
+   `processing_error_code` + `processing_error_message` — alasan publik yang
+   ditulis pada titik kegagalannya, bukan pesan library mentah.
+7. **Dokumen milik instructor lain menghasilkan 404**, bukan 403 — keberadaan
+   RPS orang lain tidak dapat disimpulkan dari perbedaan response.
+8. **Validasi berkas berlapis:** ekstensi (mengikuti `RPS_ALLOWED_EXTENSIONS`),
+   ukuran (`RPS_MAX_UPLOAD_BYTES`), dan isi (magic bytes) diperiksa sebelum
+   apa pun disimpan, sesuai design-api §23.8.
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Domain dokumen + lifecycle (`RPSDocument`) | `src/services/rps/domain.py` |
+| Operasi aplikasi (unggah, ambil, proses) | `src/services/rps/service.py` |
+| Akses tabel `rps` | `src/services/rps/repository.py` |
+| Validasi & normalisasi (murni) | `src/services/rps/validation.py` |
+| Penyimpanan berkas (port + adapter lokal) | `src/services/rps/storage.py` |
+| Port konversi dokumen | `src/services/rps/converter.py` |
+| Adapter Docling | `src/services/rps/docling_converter.py` |
+| Pemilihan konverter & penyimpanan | `src/services/rps/factory.py` |
+| Runner pemrosesan background | `src/services/rps/runner.py` |
+| Error domain + kontrak HTTP-nya | `src/services/rps/errors.py` |
+| DTO endpoint RPS | `src/schemas/rps.py` |
+| RPS Structured Data Schema | `src/schemas/rps_structured.py` |
+| Endpoint HTTP | `src/routes/rps.py` |
+| Kolom `rps` (`schema_version`, `source_document`, `processing_*`) | `src/models/rps.py` + migrasi `b3c9e14a7f52_*.py`, `c8f4a1d27e93_*.py`, `e1a7c4b9d2f6_*.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_rps_structured_schema.py   # kontrak schema (BE-05.3)
+uv run pytest tests/test_rps_domain.py              # domain + validasi berkas
+uv run pytest tests/test_rps_storage.py             # penyimpanan & path traversal
+uv run pytest tests/test_rps_service.py             # unggah, idempotency, kegagalan
+uv run pytest tests/test_rps_routes.py              # endpoint (butuh PostgreSQL)
+uv run pytest tests/test_rps_runner.py              # runner background (butuh PostgreSQL)
+uv run pytest tests/test_reprocess_rps_script.py    # proses ulang data lama (butuh PostgreSQL)
+uv run pytest tests/test_rps_docling_converter.py   # adapter Docling
+
+# Konversi Docling sungguhan (opt-in; memakai tests/fixtures/test.pdf dan
+# mengunduh model ±0,5 GB saat pertama kali):
+RPS_DOCLING_LIVE_TEST=1 uv run pytest tests/test_rps_docling_converter.py -v -s
+# Ganti dokumennya bila perlu:
+RPS_DOCLING_LIVE_TEST=1 RPS_DOCLING_TEST_PDF=/path/ke/rps.pdf uv run pytest tests/test_rps_docling_converter.py
+```
+
+`tests/fixtures/test.pdf` adalah RPS 16 halaman bertemplate program studi yang
+dipakai test live di atas; ia juga menjadi bahan verifikasi manual alur
+unggah → proses.
+
+`tests/test_rps_routes.py` memakai PostgreSQL (fixture `conftest.db_session`,
+default `TEST_DATABASE_URL`), sehingga native enum `rps_status` dan kolom JSONB
+benar-benar terpakai. Konverter diganti konverter palsu di sana agar suite tetap
+ringan dan deterministik.
+
+---
+
+## 🧪 RPS Analysis Result & Read API (BE-08.2, BE-08.3)
+
+Analisis adalah tahap kedua alur data RPS (content-schema §54):
+`PROCESSED → ANALYZING → ANALYZED` (atau `FAILED` pada kedua tahap). Hasilnya
+disimpan pada `rps.structured_data` (DL-009) beserta `rps.analyzed_at` dan
+`rps.workflow_id`. Input analisis adalah **YAML yang dibentuk dari
+`source_document`** (BE-08.1), sehingga reanalyze tidak menjalankan Docling lagi.
+
+```text
+rps.source_document (JSON Docling)
+        │  document_to_yaml()        (BE-08.1)
+        ▼
+prompt rps_analysis/v1 ──▶ analyze_rps()  (BE-09.2)
+        │
+        ▼
+RPSStructuredData ──▶ rps.structured_data + rps.analyzed_at  → status ANALYZED
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/rps/{rps_id}/reanalyze` | `INSTRUCTOR` | **Menjadwalkan** analisis ulang dari `source_document`: `202` + `ANALYZING` + `workflow_id`. Tanpa body |
+| `GET` | `/api/v1/rps` | `INSTRUCTOR` | Daftar RPS milik dosen yang login: `status`, `workflow_id`, `has_source_document`, timestamp. Hanya dokumen sendiri |
+| `GET` | `/api/v1/rps/{rps_id}/analysis` | `INSTRUCTOR` | RPS Structured Data utuh + `analyzed_at` untuk RPS `ANALYZED`; `422 INVALID_REQUEST` bila belum dianalisis |
+
+Status bernilai `ANALYZING` pada response reanalyze; client memantau
+`GET /rps/{rps_id}` sampai `ANALYZED`/`FAILED`, lalu membaca hasilnya lewat
+`GET /rps/{rps_id}/analysis`. RPS yang sudah `ANALYZED` **tidak** dianalisis
+ulang secara implisit — satu-satunya jalan adalah endpoint reanalyze.
+Pemanggil non-HTTP (orkestrator BE-11.2) memakai
+`RPSService.begin_analysis(force=False)` sehingga dokumen yang sudah dianalisis
+dilaporkan `scheduled=False` tanpa memanggil model.
+
+Reanalyze dijalankan `src/services/rps/analysis_runner.py` **setelah** response
+dikirim, memakai session database sendiri. Kegagalan tidak menghentikan server:
+dokumen berstatus `FAILED` dengan `processing_error_code`
+(`LLM_GENERATION_FAILED`) dan `processing_error_message` — alasan publik yang
+dapat dipahami. Hasil analisis lama tidak dihapus saat reanalyze gagal.
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Dokumen belum dikonversi (`source_document` kosong) | 422 | `INVALID_REQUEST` |
+| Dokumen sedang `PROCESSING`/`ANALYZING` | 409 | `INVALID_REQUEST` |
+| RPS tidak ada atau milik instructor lain | 404 | `RESOURCE_NOT_FOUND` |
+| Mahasiswa | 403 | `AUTHORIZATION_DENIED` |
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Transisi status analisis (`start/complete/fail_analysis`) | `src/services/rps/domain.py` |
+| Operasi aplikasi (analisis, reanalyze) | `src/services/rps/service.py` |
+| Port analisis + adapter BE-09.2 | `src/services/rps/analyzer.py` |
+| Runner analisis background | `src/services/rps/analysis_runner.py` |
+| Error analisis (`LLM_GENERATION_FAILED`) | `src/services/rps/errors.py` |
+| DTO `RPSReanalyzeResponse`, `RPSListResponse`, `RPSAnalysisResponse` | `src/schemas/rps.py` |
+| Endpoint HTTP | `src/routes/rps.py` |
+| Kolom `analyzed_at`, `workflow_id`, enum `ANALYZING`/`ANALYZED` | `src/models/rps.py` + migrasi `7c2f9a41e6b3_*.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_rps_analysis_persistence.py   # domain + endpoint reanalyze (butuh PostgreSQL)
+uv run pytest tests/test_rps_list_analysis.py          # daftar RPS + hasil analisis (butuh PostgreSQL)
+```
+
+---
+
+## 🎓 Instructor Setup (BE-10)
+
+Setup dosen adalah konteks tambahan untuk agent: gaya mengajar, keahlian,
+preferensi penyampaian, jenis aktivitas yang boleh dibuat, dan additional prompt.
+Nilai ini **tidak** menggantikan informasi akademik RPS (PRD FR-010); agent hanya
+mengubah penyajian, bukan fakta akademik.
+
+```text
+instructor_profiles         (0..1 per dosen)  ──┐
+activity_configurations     (0..1 per dosen)  ──┴──▶ konteks agent (YAML)
+                                                     ＋ YAML RPS ──▶ prompt
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/instructors/me/setup` | `INSTRUCTOR` | Seluruh setup dosen. Dosen baru menerima nilai default (learning material aktif), bukan 404 |
+| `PUT` | `/api/v1/instructors/me/setup` | `INSTRUCTOR` | Ubah **sebagian** setup: hanya field yang dikirim yang berubah. Response berbentuk sama dengan `GET` |
+
+`PUT` mengikuti kontrak design-api §7.2 (terbit pada BE-06.4). `null` pada field
+`instructor_profile` berarti "tidak diubah"; `additional_prompt` dikosongkan
+dengan mengirim `""`. Body `{}` mengembalikan setup saat ini tanpa menulis apa pun.
+
+Respons kegagalan (design-api §7.2):
+
+| Kondisi | Status | `error.code` |
+| :--- | :--- | :--- |
+| Additional Prompt melebihi batas, tidak ada jenis aktivitas aktif, atau tipe data salah | 422 | `INVALID_REQUEST` (dengan `details` per field) |
+| Role bukan `INSTRUCTOR` | 403 | `AUTHORIZATION_DENIED` |
+| Tanpa access token | 401 | `AUTHENTICATION_FAILED` |
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Tabel `instructor_profiles`, `activity_configurations` | `src/models/instructor_profile.py`, `src/models/activity_configuration.py` |
+| Aturan nilai (batas panjang, minimal satu jenis konten aktif) | `src/services/instructor/domain.py` |
+| Ambil/simpan setup, seed default, konteks agent | `src/services/instructor/service.py` |
+| Serialisasi konteks ke YAML (BE-10.3) | `src/services/instructor/context.py` |
+| DTO request/response (dipindahkan dari kontrak BE-06.4) | `src/schemas/instructor.py` |
+| Endpoint | `src/routes/instructors.py` |
+
+### Ketetapan yang berlaku untuk modul ini
+
+1. **Batas Additional Prompt berasal dari environment**
+   (`INSTRUCTOR_ADDITIONAL_PROMPT_MAX_LENGTH`, default 2000 karakter), bukan
+   di-hardcode pada schema — prompt ini dikirim ke LLM bersama konteks RPS.
+2. **Seluruh kesalahan input → 422 `INVALID_REQUEST`.** Kontrak §7.2 memakai
+   code itu, bukan `VALIDATION_FAILED` milik handler global, sehingga kesalahan
+   tipe body pun diterjemahkan oleh `_InvalidRequestRoute` pada
+   `src/routes/instructors.py`. Pelanggaran dikumpulkan sekaligus (satu
+   `details` per field) supaya form dapat menandai semua field bermasalah dalam
+   satu kali simpan.
+3. **Tidak ada yang tersimpan bila satu field tidak valid**: hasil penggabungan
+   parsial divalidasi sebelum database disentuh, sehingga mematikan aktivitas
+   terakhir yang masih aktif tetap ditolak.
+4. **Agent tidak query database.** Konteks dosen diberikan sebagai payload/YAML
+   oleh `InstructorSetupService`, dan selalu membawa penanda
+   `context_role: supporting` + `academic_source_of_truth: rps`.
+5. **Seed tidak menimpa setup dosen.** `scripts/seed_test_accounts.py` hanya
+   membuat setup default untuk akun dosen uji bila belum ada.
+
+---
+
+## 🔁 Workflow Orchestrator & Monitoring (BE-11)
+
+Setiap pemrosesan RPS adalah satu **workflow** yang status dan event-nya
+tersimpan. Orchestrator mengendalikan urutan tahap dan transisi status; LLM
+tidak dapat mengubah status workflow. Pada sprint ini rangkaiannya:
+
+```text
+POST /rps/{id}/process ──▶ workflow QUEUED
+                              │
+                              ▼
+                     PROCESSING_RPS  (Docling, BE-05.2)
+                              │
+                              ▼
+                     ANALYZING_RPS   (BE-08.1 → BE-09.2 → BE-08.2)
+                              │
+                              ▼
+                  WAITING_FOR_REVIEW / FAILED   (DL-012)
+```
+
+Endpoint `POST /rps/{id}/process` membuat workflow, menautkannya ke
+`rps.workflow_id`, lalu menjalankan kedua tahap di background. `POST
+/rps/{id}/reanalyze` memakai **workflow yang sama** mulai dari `ANALYZING_RPS`,
+sehingga event baru menempel pada riwayat workflow tersebut.
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/workflows` | `INSTRUCTOR` | Workflow milik dosen login; status lifecycle + tahap + progress |
+| `GET` | `/api/v1/workflows/{workflow_id}` | `INSTRUCTOR` | Detail beserta `moodle_course_id` |
+| `GET` | `/api/v1/workflows/{workflow_id}/events` | `INSTRUCTOR` | Riwayat event, dari yang paling lama |
+| `PUT` | `/api/v1/workflows/{workflow_id}/moodle-target` | `INSTRUCTOR` | Simpan course target Moodle (`null` mengosongkan) |
+| `WS` | `/api/v1/ws/workflows/{workflow_id}` | `INSTRUCTOR` | Frame event real-time; token lewat query `?token=` |
+
+`status` pada API adalah enum lifecycle `QUEUED`/`RUNNING`/`COMPLETED`/`FAILED`;
+tahap yang sedang berjalan dibaca dari `stage` (`rps_processing`,
+`rps_analysis`, ...). Status tahap internal tidak bocor ke kontrak.
+
+### Event
+
+Setiap perubahan tahap, aktivitas agent, retry, dan kegagalan tercatat pada
+`workflow_events` sebagai kategori (`PERUBAHAN_TAHAP`, `AKTIVITAS_AGENT`,
+`OPERASI_MOODLE`, `RETRY_FIX`, `ERROR_FAILURE`) sekaligus nama event publik
+`WORKFLOW_*` (`WORKFLOW_STARTED`, `WORKFLOW_STAGE_STARTED`,
+`WORKFLOW_STAGE_PROGRESS`, `WORKFLOW_STAGE_COMPLETED`,
+`WORKFLOW_WAITING_FOR_REVIEW`, `WORKFLOW_RETRY`, `WORKFLOW_COMPLETED`,
+`WORKFLOW_FAILED`, serta `WORKFLOW_PLAN_*` untuk course plan). Bentuk frame
+WebSocket sama dengan item riwayat HTTP, dan event tidak pernah memuat
+credential, API key, atau isi prompt.
+
+`WAITING_FOR_REVIEW` adalah status tunggu DL-012: rangkaian tahap yang selesai
+berhenti di sini sampai dosen menjalankan tahap berikutnya (review rencana,
+generate konten, eksekusi). Status API tetap `RUNNING` dengan `stage`
+`instructor_review`.
+
+WebSocket hanya mengirim event **baru**; client mengambil keadaan awal dan
+riwayat lewat HTTP sebelum/ketika berlangganan. Penolakan handshake memakai
+close code `4401` (token), `4403` (bukan dosen), dan `4404` (bukan workflow
+peminta).
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Tabel `workflows`, `workflow_events` | `src/models/workflow.py`, `src/models/workflow_event.py` |
+| State machine + aturan bentuk | `src/services/workflow/domain.py`, `src/services/workflow/validation.py` |
+| Transisi status + penulisan event | `src/services/workflow/service.py` |
+| Urutan tahap + entry point background | `src/services/workflow/orchestrator.py` |
+| Fan-out event ke WebSocket | `src/services/workflow/broker.py` |
+| Akses data | `src/services/workflow/repository.py` |
+| DTO monitoring | `src/schemas/workflow.py` |
+| Endpoint REST + WebSocket | `src/routes/workflows.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_workflow_repository.py   # model + repository (butuh PostgreSQL)
+uv run pytest tests/test_workflow_orchestrator.py # tahap, event, retry, reanalyze
+uv run pytest tests/test_workflow_api.py          # REST, course target, WebSocket
+```
+
+> **Batas deployment.** Broker event berjalan di dalam satu proses. Beberapa
+> worker uvicorn atau restart server memutus langganan dan event dari worker
+> lain tidak terkirim ke klien; riwayat HTTP tetap lengkap dan menjadi sumber
+> kebenaran. Ganti dengan Redis pub/sub bila deployment horizontal dibutuhkan.
+
+---
+
+## 🗂️ Course Plan Data & Review (BE-14)
+
+Rencana pembelajaran disimpan **berversi** per workflow. Regenerasi menambah
+versi baru; versi lama — termasuk yang ditolak — tidak pernah ditimpa, sehingga
+riwayat keputusan dosen tetap dapat ditelusuri (DL-012, proposal §3.5.2).
+
+```text
+POST /workflows/{id}/plan
+        │  PLANNING_COURSE → VALIDATING
+        ▼
+  course_plans v1 (DRAFT)
+        │
+        ▼
+  WAITING_FOR_REVIEW ──▶ POST .../plan/approve  → APPROVED (final, satu per workflow)
+        │
+        └──────────────▶ POST .../plan/reject   → REJECTED + catatan revisi
+                                 │
+                                 ▼
+                       POST .../plan/regenerate → v2 (DRAFT)
+```
+
+### Endpoint
+
+| Method | Path | Role | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/workflows/{workflow_id}/plan` | `INSTRUCTOR` | Versi terbaru + weekly plan + hasil validasi |
+| `GET` | `/api/v1/workflows/{workflow_id}/plan/versions` | `INSTRUCTOR` | Riwayat versi (terbaru dulu) |
+| `GET` | `/api/v1/workflows/{workflow_id}/plan/versions/{version}` | `INSTRUCTOR` | Detail satu versi |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan` | `INSTRUCTOR` | **Jadwalkan** generate versi pertama (`202`) |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan/regenerate` | `INSTRUCTOR` | **Jadwalkan** regenerasi setelah reject (`202`) |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan/approve` | `INSTRUCTOR` | Setujui versi terbaru |
+| `POST` | `/api/v1/workflows/{workflow_id}/plan/reject` | `INSTRUCTOR` | Tolak dengan catatan revisi wajib |
+
+### Aturan yang dijaga
+
+1. **Generate hanya untuk RPS `ANALYZED` dan workflow yang belum punya rencana.**
+   Regenerate hanya setelah versi terbaru `REJECTED`; instruksinya opsional dan
+   jatuh kembali ke catatan penolakan terakhir.
+2. **Tidak ada generate ganda.** Workflow diklaim dengan update bersyarat
+   (`WAITING_FOR_REVIEW`/`FAILED` → `PLANNING_COURSE`) sebelum background
+   dijadwalkan, sehingga dua request bersamaan tidak memulai dua run.
+3. **Approve hanya untuk versi terbaru `DRAFT` yang lolos validasi.** Versi
+   lama tidak pernah disetujui lewat endpoint ini; reject tanpa catatan
+   menghasilkan `422 INVALID_REQUEST`.
+4. **Hanya satu versi `APPROVED` per workflow**, dijaga service dan partial
+   unique index `uq_course_plans_workflow_approved`.
+5. **Konteks generasi**: RPS Structured Data (BE-08.1), konteks dosen
+   (BE-10.3, termasuk Activity Configuration), serta versi sebelumnya + catatan
+   revisi/instruksi pada regenerasi.
+6. **Validasi hasil** (content-schema §8–§9): nomor minggu mengikuti RPS, kode
+   Sub-CPMK dikenal dan seluruhnya tercakup, minggu UTS/UAS tanpa materi baru,
+   dan aktivitas hanya dari jenis yang aktif. Temuan disimpan di
+   `course_plans.validation_result`; rencana dengan temuan tidak dapat
+   disetujui tetapi tetap tersimpan untuk ditinjau/diregenerasi.
+
+### Di mana komponennya berada
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Tabel `course_plans`, `course_plan_weeks` | `src/models/course_plan.py`, `src/models/course_plan_week.py` + migrasi `f3a1c9d2b7e4` |
+| Kontrak output agent + DTO review | `src/schemas/course_plan.py` |
+| Aturan versi, approve/reject, generate | `src/services/course_plan/service.py` |
+| Akses data versi | `src/services/course_plan/repository.py` |
+| Validasi akademik | `src/services/course_plan/validation.py` |
+| Course Planning Service (adapter LLM + retry) | `src/services/course_plan/planner.py`, prompt `src/prompts/course_planning/v1` |
+| Tahap orkestrator `PLANNING_COURSE` → `VALIDATING` | `src/services/workflow/orchestrator.py` |
+| Endpoint HTTP | `src/routes/course_plans.py` |
+
+### Pengujian
+
+```bash
+uv run pytest tests/test_course_plan_repository.py      # model + versi + invariant APPROVED
+uv run pytest tests/test_course_plan_api.py             # baca/review, otorisasi, event
+uv run pytest tests/test_course_planning_orchestrator.py # tahap, regenerasi, retry, gagal
+uv run pytest tests/test_course_planning_api.py         # prasyarat + endpoint generate
+uv run pytest tests/test_course_planning_service.py     # prompt, retry schema, validasi
+```
+
+---
+
 ## ✅ Contoh Penerapan Boundary (Benar vs Salah)
 
 **1. Route handler — benar (tipis, hanya urusan HTTP):**
@@ -410,6 +1007,83 @@ Pengujian yang membutuhkan PostgreSQL (`tests/test_auth_postgres.py`) dijalankan
 
 ---
 
+## 🌐 CORS & Akses Frontend Development (BE-06.2)
+
+Frontend Vite development berjalan di `http://localhost:3000`, sedangkan backend
+di `http://localhost:8000`. Daftar origin yang boleh memanggil API berasal dari
+environment, bukan di-hardcode:
+
+```dotenv
+# backend/.env
+CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+```
+
+Nilai default `backend/.env.example` sudah mencakup origin Vite tersebut.
+`CORS_ORIGINS` menerima JSON array atau daftar dipisah koma. Origin harus
+eksplisit `scheme://host[:port]`; wildcard (`*`), path, dan credential ditolak
+saat startup. Setiap origin dinormalisasi (lowercase, tanpa trailing slash) agar
+cocok persis dengan header `Origin` browser.
+
+| Kebutuhan | Development |
+| :--- | :--- |
+| Base URL API | `http://localhost:8000/api/v1` |
+| Port backend | `8000` (`APP_PORT` pada Docker Compose) |
+| Port frontend | `3000` (Vite `strictPort`) |
+| Origin yang diizinkan | `http://localhost:3000`, `http://127.0.0.1:3000` |
+
+Perilaku middleware:
+
+- preflight dari origin terdaftar → `200` + `Access-Control-Allow-Origin`,
+  `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`;
+- preflight dari origin tidak terdaftar → `400 Disallowed CORS origin`;
+- request sederhana dari origin tidak terdaftar tetap diproses server, tetapi
+  **tanpa** header CORS sehingga browser memblokir responsnya;
+- header CORS tetap ada pada response error (`401`, `422`, dst.);
+- `allow_credentials=False` karena authentication memakai bearer token, bukan
+  cookie;
+- `Idempotency-Key` dan `Authorization` diizinkan sejak awal, dan
+  `WWW-Authenticate` diekspos agar frontend dapat membaca challenge 401.
+
+Frontend memakai dua mode:
+
+```dotenv
+# Default: lewat proxy Vite, same-origin, tidak perlu CORS.
+VITE_API_BASE_URL=/api/v1
+VITE_BACKEND_URL=http://localhost:8000
+
+# Memanggil backend langsung: cross-origin, CORS wajib cocok.
+VITE_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+Verifikasi cepat dari terminal:
+
+```bash
+# Preflight dari origin frontend -> 200 + allow-origin
+curl -i -X OPTIONS http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Origin: http://localhost:3000" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization,content-type"
+
+# Origin yang tidak terdaftar -> 400
+curl -i -X OPTIONS http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Origin: http://evil.example" \
+  -H "Access-Control-Request-Method: POST"
+```
+
+Origin production ditentukan pada environment deployment; jangan menambahkan
+origin production ke `.env.example`. Panduan lengkap, termasuk env frontend dan
+troubleshooting, ada di
+[`docs/03. quality-plan/cors-development.md`](../docs/03.%20quality-plan/cors-development.md).
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Middleware CORS | `src/middlewares/cors.py` |
+| Parsing/validasi `CORS_ORIGINS` | `src/config/settings.py` |
+| Pemasangan pada aplikasi | `src/main.py` (`create_app`) |
+| Pengujian | `tests/test_cors.py`, `tests/test_config.py` |
+
+---
+
 ## 🐳 Menjalankan dengan Docker
 
 `docker-compose.yml` di root repository menjalankan **PostgreSQL 16 + backend** dengan konfigurasi yang sama untuk seluruh tim, termasuk migrasi Alembic yang dijalankan otomatis saat container start.
@@ -449,3 +1123,91 @@ Catatan:
 2. Kredensial default mengikuti `backend/.env.example`. Bila menjalankan backend langsung di host, siapkan `backend/.env` dan pastikan `DB_PORT` sama dengan port yang dipublikasikan compose.
 3. `./backend/src` dan `./backend/tests` di-mount ke container sehingga perubahan kode langsung terpakai (uvicorn `--reload`); `.venv` di dalam image tidak tertimpa.
 4. Port yang sudah dipakai dapat ditimpa: `DB_PORT=5433 APP_PORT=8001 docker compose up -d`.
+
+---
+
+## 🌱 Seed Akun Uji (BE-06.3)
+
+Tim frontend dan backend memakai akun uji yang sama untuk authentication dan
+authorization. Seed membuat akun berikut:
+
+| Role | Username | Email | Password |
+| :--- | :--- | :--- | :--- |
+| `INSTRUCTOR` | `dosen.demo` | `dosen.demo@itk.ac.id` | Dari environment/argumen — **tidak** di-commit |
+| `STUDENT` | `11231023` | `11231023@student.itk.ac.id` | Dari environment/argumen — **tidak** di-commit |
+
+Identitas mengikuti konvensi ITK: mahasiswa memakai NIM sebagai username dan
+`<NIM>@student.itk.ac.id` sebagai email; dosen memakai alamat berbasis nama,
+bukan `<NIP>@dosen.itk.ac.id`.
+
+Password akun uji dibagikan melalui kanal internal tim. Repository tidak
+menyimpan password, hash, maupun nilai default-nya.
+
+### Menjalankan seed (backend di host)
+
+Prasyarat: database berjalan dan migrasi sudah diterapkan.
+
+```bash
+cd backend
+uv run alembic upgrade head
+
+# Disarankan: password lewat environment, tidak muncul di shell history/process list
+SEED_INSTRUCTOR_PASSWORD='<password-internal>' \
+SEED_STUDENT_PASSWORD='<password-internal>' \
+uv run python -m scripts.seed_test_accounts
+
+# Alternatif: script membuatkan password acak dan menampilkannya sekali
+uv run python -m scripts.seed_test_accounts --generate-passwords
+
+# Alternatif lain (password dapat terlihat di process list)
+uv run python -m scripts.seed_test_accounts \
+  --instructor-password '<password-internal>' \
+  --student-password '<password-internal>'
+```
+
+### Menjalankan seed (Docker Compose)
+
+```bash
+docker compose exec backend uv run python -m scripts.seed_test_accounts --generate-passwords
+
+# atau berikan password lewat environment container
+docker compose exec \
+  -e SEED_INSTRUCTOR_PASSWORD='<password-internal>' \
+  -e SEED_STUDENT_PASSWORD='<password-internal>' \
+  backend uv run python -m scripts.seed_test_accounts
+```
+
+Script aman dijalankan berulang:
+
+- akun dicari berdasarkan email (unik dan stabil), bukan dibuat ulang;
+- field yang sudah sesuai tidak diubah;
+- password hanya di-hash ulang bila nilainya berbeda dari hash tersimpan;
+- role/nama/username yang berbeda diperbarui dan user non-aktif diaktifkan;
+- percobaan kedua melaporkan `unchanged` untuk kedua akun.
+
+Konflik identitas tidak ditimpa: bila username akun uji sudah dipakai user lain,
+seed berhenti dengan pesan yang aman (tanpa credential) alih-alih mengubah user
+tersebut.
+
+### Verifikasi login
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"11231023@student.itk.ac.id","password":"<password-internal>"}'
+```
+
+Identifier dapat berupa username (`11231023`) maupun email
+(`11231023@student.itk.ac.id`). Response `200` memuat `access_token`,
+`token_type`, dan `user.role` (untuk akun di atas: `INSTRUCTOR` / `STUDENT`).
+Panduan authentication lengkap ada di
+[`docs/02. design/auth-api-integration.md`](../docs/02.%20design/auth-api-integration.md).
+
+| Komponen | Lokasi |
+| :--- | :--- |
+| Definisi akun dan operasi seed idempotent | `src/services/seed/test_accounts.py` |
+| CLI (environment/argumen/generate password) | `scripts/seed_test_accounts.py` |
+| Pengujian, termasuk login melalui API | `tests/test_seed_test_accounts.py` |
+
+Exit code script: `0` berhasil, `1` kegagalan database/seed, `2` konfigurasi
+password tidak valid.

@@ -264,16 +264,34 @@ Conceptual fields:
 | file_path       | String    | Stored document location                   |
 | file_hash       | String    | Integrity/deduplication hash               |
 | status          | Enum      | Uploaded / Processing / Processed / Failed |
-| source_document | JSONB     | Hasil konversi Docling dalam format JSON (teks, heading, tabel, halaman); input pemetaan field (DL-008) |
-| structured_data | JSONB     | Hasil RPS Analysis yang valid (Content Schema §6); sumber tunggal untuk REST API dan input LLM course planning (DL-006, DL-009) |
-| schema_version  | String    | Versi RPS Structured Data Schema yang digunakan saat ekstraksi |
-| processed_at    | Timestamp | Waktu document processing selesai          |
+| source_markdown | Text      | Normalized Markdown representation         |
+| structured_data | JSONB     | Extracted structured data                  |
 | created_at      | Timestamp | Upload time                                |
 | updated_at      | Timestamp | Last update                                |
 
 The original file should be retained when practical so the generated result remains traceable to its source.
 
 Document processing dijalankan satu kali per `file_hash`. Backend memanggil ulang `structured_data` untuk kebutuhan berikutnya dan hanya memproses ulang dokumen apabila file atau `schema_version` berubah (DL-006).
+
+Catatan:
+
+1. **`file_hash` + `schema_version` adalah kunci idempotency pemrosesan.**
+   Dokumen dengan keduanya sama tidak diproses ulang; permintaan dengan
+   `schema_version` berbeda memproses ulang dokumen tersebut.
+2. **`source_document` adalah satu-satunya hasil konversi.** Kolom ini
+   menyimpan JSON hasil Docling (teks, heading, tabel, nomor halaman) sehingga
+   tahap pemetaan field pada BE-08 tidak perlu menjalankan Docling ulang.
+   Markdown tidak disimpan (DL-008, BE-13); YAML baru diserialisasi BE-08.1 dari
+   `source_document` ketika dibutuhkan sebagai input LLM (DL-006). Baris lama
+   yang hanya memiliki Markdown akan dikonversi ulang saat `POST /process`
+   dipanggil.
+3. **`processing_error_code` dan `processing_error` hanya terisi ketika
+   `status` = Failed.** Karena konversi berjalan di background (API
+   Specification §6.3), kegagalan tidak dapat muncul pada response request —
+   client membacanya lewat polling. Kolomnya hanya memuat kode error dan alasan
+   publik yang aman ditampilkan; penyebab teknisnya hanya ada di log server-side.
+4. **`processing_duration_ms`** mendukung evaluasi performa dan bernilai NULL
+   selama dokumen belum pernah selesai diproses.
 
 ---
 
@@ -889,6 +907,7 @@ email UNIQUE
 
 ```text
 file_hash INDEX
+status INDEX
 owner_id FOREIGN KEY
 ```
 

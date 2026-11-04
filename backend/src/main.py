@@ -13,6 +13,7 @@ from fastapi import FastAPI
 
 from src.config.database import dispose_engine
 from src.config.settings import settings
+from src.middlewares.cors import register_cors
 from src.middlewares.error_handlers import register_exception_handlers
 from src.routes import api_router, health_router
 from src.services.auth.tokens import warn_if_secret_is_weak
@@ -37,6 +38,9 @@ def create_app() -> FastAPI:
         debug=settings.DEBUG,
         lifespan=lifespan,
     )
+    # CORS dipasang sebelum router/exception handler lain dieksekusi, sehingga
+    # header CORS tetap ada pada response sukses maupun error (401/422).
+    register_cors(application)
     register_exception_handlers(application)
     application.include_router(health_router)
     application.include_router(api_router)

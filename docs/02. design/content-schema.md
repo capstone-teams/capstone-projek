@@ -1249,11 +1249,11 @@ Rules:
 
 Schema dapat berubah selama development.
 
-Versioning dapat diperkenalkan:
+Versioning menggunakan:
 
 ```json id="y7v5e1"
 {
-  "schema_version": "1.0"
+  "schema_version": "2.0"
 }
 ```
 
@@ -1270,6 +1270,18 @@ Jika backward-compatible:
 ```
 
 Schema version tidak sama dengan content version.
+
+## Riwayat versi RPS Structured Data
+
+| Versi | Perubahan |
+| --- | --- |
+| 1.0 | Bentuk awal §6/§7 dengan `learning_outcomes`/`objectives` generik |
+| 2.0 | Hierarki capaian pembelajaran eksplisit (`cpl`/`cpmk`/`sub_cpmk`), `week_type`, `weight_percent` (sebelumnya `weight`), serta `media` dan `extraction`. *Breaking* terhadap 1.0 |
+
+`schema_version` disimpan pada kolom `rps.schema_version` dan menjadi bagian
+dari kunci idempotency pemrosesan (Data Model §8): dokumen dengan `file_hash`
+**dan** `schema_version` yang sama tidak diproses ulang, sedangkan permintaan
+dengan versi berbeda memproses ulang dokumen tersebut.
 
 ---
 

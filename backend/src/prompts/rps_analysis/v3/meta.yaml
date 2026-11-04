@@ -1,0 +1,6 @@
+name: rps_analysis
+version: v3
+description: RPS Analysis and Content Generation.
+
+required_variables:
+  - rps_yaml

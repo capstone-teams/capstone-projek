@@ -1,0 +1,62 @@
+name: Deploy develop
+
+# Deploy otomatis ke server demo (thinkpad) setiap kali develop diperbarui.
+# Runner `self-hosted` terpasang di server itu sendiri, jadi workflow ini tidak
+# menyimpan SSH key atau secret apa pun di GitHub.
+#
+# Pengganti langkah manual: `git pull --ff-only` lalu `docker compose up -d
+# --build` di server. Hanya push ke develop yang memicu deploy — branch lain
+# dan pull request tidak menyentuh server.
+#
+# Catatan keamanan: server adalah milik tim, jangan tambahkan trigger
+# `pull_request` ke workflow ini (kode dari fork akan jalan di server).
+
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-develop
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, thinkpad]
+    timeout-minutes: 30
+    steps:
+      - name: Tarik kode develop
+        run: |
+          set -euo pipefail
+          cd "$HOME/capstone-projek"
+          git checkout develop
+          # --ff-only: deploy berhenti dan gagal bila server punya perubahan
+          # lokal yang belum di-commit, bukannya menimpanya diam-diam.
+          git fetch --prune origin develop
+          git merge --ff-only origin/develop
+          git log -1 --oneline
+
+      - name: Bangun ulang dan jalankan container
+        run: |
+          set -euo pipefail
+          cd "$HOME/capstone-projek"
+          # --build sekaligus menjalankan migrasi baru (entrypoint backend) saat
+          # image berubah; perubahan backend/src tetap terpakai lewat --reload.
+          docker compose up -d --build
+
+      - name: Tunggu backend sehat
+        run: |
+          set -euo pipefail
+          cd "$HOME/capstone-projek"
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+              echo "backend sehat setelah ${i} percobaan"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "backend tidak sehat setelah 120 detik; log terakhir:"
+          docker compose logs --tail=80 backend
+          exit 1

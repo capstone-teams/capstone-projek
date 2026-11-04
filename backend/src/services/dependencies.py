@@ -24,19 +24,54 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.database import get_session_factory
+from src.config.settings import Settings, get_settings
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
+from src.services.course_plan.service import CoursePlanService
+from src.services.instructor.service import InstructorSetupService
+from src.services.moodle_adapter_exceptions import MoodleWriteDisabledError
+from src.services.moodle_client import MoodleClient
+from src.services.moodle_integration_service import MoodleIntegrationService
+from src.services.rps.service import RPSService
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.service import UserService
+from src.services.workflow.orchestrator import (
+    run_course_planning_workflow,
+    run_rps_analysis_workflow,
+    run_rps_processing_workflow,
+)
+from src.services.workflow.service import WorkflowService
+
+#: Bentuk callable yang menjalankan pemrosesan RPS (beserta analisisnya) di
+#: background. Signature sengaja tidak berubah dari BE-05 agar pemanggil dan
+#: pengujian lama tetap bekerja: runner membaca workflow dari ``rps.workflow_id``.
+RPSProcessingRunner = Callable[..., Awaitable[None]]
+
+#: Bentuk callable yang menjalankan analisis RPS di background.
+RPSAnalysisRunner = Callable[..., Awaitable[None]]
+
+#: Bentuk callable yang menjalankan generate/regenerate course plan di background.
+CoursePlanningRunner = Callable[..., Awaitable[None]]
 
 __all__ = [
     "bearer_scheme",
+    "CoursePlanningRunner",
     "get_auth_service",
+    "get_course_plan_service",
+    "get_course_planning_runner",
     "get_current_user",
     "get_db_session",
+    "get_instructor_service",
+    "get_moodle_client",
+    "get_moodle_integration_service",
+    "get_rps_analysis_runner",
+    "get_rps_processing_runner",
+    "get_rps_service",
     "get_user_service",
+    "get_workflow_service",
+    "require_development_environment",
     "require_roles",
 ]
 
@@ -60,6 +95,32 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
             raise
 
 
+async def get_moodle_client() -> AsyncIterator[MoodleClient]:
+    """Moodle client per request; ditutup setelah request selesai (BE-04.7)."""
+    client = MoodleClient.from_settings(get_settings())
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+def get_moodle_integration_service(
+    client: MoodleClient = Depends(get_moodle_client),
+) -> MoodleIntegrationService:
+    """Service endpoint integrasi Moodle internal (BE-04.7)."""
+    return MoodleIntegrationService(client)
+
+
+def require_development_environment(
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Guard endpoint write Moodle: hanya aktif bila ``APP_ENV=development``."""
+    if (settings.APP_ENV or "").strip().lower() != "development":
+        raise MoodleWriteDisabledError(
+            "endpoint write Moodle hanya aktif pada development"
+        )
+
+
 def get_user_service(session: AsyncSession = Depends(get_db_session)) -> UserService:
     """User Service untuk endpoint yang menjalankan operasi User."""
     return UserService.from_session(session)
@@ -68,6 +129,71 @@ def get_user_service(session: AsyncSession = Depends(get_db_session)) -> UserSer
 def get_auth_service(session: AsyncSession = Depends(get_db_session)) -> AuthService:
     """Auth Service untuk endpoint authentication."""
     return AuthService.from_session(session)
+
+
+def get_course_plan_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> CoursePlanService:
+    """Course Plan Service untuk endpoint review rencana (BE-14.2)."""
+    return CoursePlanService.from_session(session)
+
+
+def get_instructor_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> InstructorSetupService:
+    """Instructor Setup Service untuk endpoint setup dosen (BE-10.2).
+
+    Batas panjang Additional Prompt dibaca dari environment di dalam service,
+    sehingga route tidak perlu mengetahui konfigurasi tersebut.
+    """
+    return InstructorSetupService.from_session(session)
+
+
+def get_rps_service(session: AsyncSession = Depends(get_db_session)) -> RPSService:
+    """RPS Service untuk endpoint unggah/pemrosesan dokumen RPS (BE-05).
+
+    Service dibangun per request di atas satu ``AsyncSession``, sedangkan
+    penyimpanan berkas dan konverter dokumen yang mahal (Docling memuat model)
+    diambil dari factory yang meng-cache-nya per proses.
+    """
+    return RPSService.from_session(session)
+
+
+def get_course_planning_runner() -> CoursePlanningRunner:
+    """Runner generate/regenerate course plan di background (BE-14.3).
+
+    Route mengklaim workflow lebih dulu; runner hanya menjalankan tahap
+    ``PLANNING_COURSE`` → ``VALIDATING`` pada workflow yang sudah diklaim.
+    """
+    return run_course_planning_workflow
+
+
+def get_rps_processing_runner() -> RPSProcessingRunner:
+    """Runner orkestrasi pemrosesan + analisis RPS di background (BE-11.2).
+
+    Nama dependency dan signature-nya dipertahankan dari BE-05.2 supaya
+    pengujian yang mengganti runner tidak perlu berubah: runner membaca workflow
+    yang sudah ditautkan route pada ``rps.workflow_id``. Sejak BE-11.2 pekerjaan
+    yang dijalankan bukan hanya konversi, melainkan seluruh tahap
+    ``PROCESSING_RPS`` → ``ANALYZING_RPS``.
+    """
+    return run_rps_processing_workflow
+
+
+def get_rps_analysis_runner() -> RPSAnalysisRunner:
+    """Runner analisis (ulang) pada workflow yang sama di background (BE-11.2).
+
+    Endpoint reanalyze memakai workflow yang sudah tercatat pada RPS, sehingga
+    event baru ditambahkan ke riwayat workflow yang sama (issue BE-11.2).
+    """
+    return run_rps_analysis_workflow
+
+
+def get_workflow_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> WorkflowService:
+    """Workflow Service untuk endpoint monitoring dan orkestrasi (BE-11.2/11.3)."""
+    return WorkflowService.from_session(session)
 
 
 async def get_current_user(

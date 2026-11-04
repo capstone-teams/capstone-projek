@@ -184,6 +184,23 @@ async def test_login_and_me_flow_against_real_database(client, service):
 
 
 @pytest.mark.asyncio
+async def test_login_accepts_username_or_email_in_real_database(client, service):
+    created = await create_user(service, role=UserRole.INSTRUCTOR)
+
+    by_email = await client.post(
+        LOGIN_URL, json={"username": created.email.upper(), "password": PASSWORD}
+    )
+    by_username = await client.post(
+        LOGIN_URL, json={"username": created.username.upper(), "password": PASSWORD}
+    )
+
+    assert by_email.status_code == 200
+    assert by_username.status_code == 200
+    assert by_email.json()["user"] == by_username.json()["user"]
+    assert by_email.json()["user"] == {"id": str(created.id), "role": "INSTRUCTOR"}
+
+
+@pytest.mark.asyncio
 async def test_login_failure_and_inactive_user_are_rejected_in_real_database(client, service):
     created = await create_user(service)
 

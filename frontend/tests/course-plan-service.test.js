@@ -22,7 +22,7 @@ describe('Course Plan service contract', () => {
     expect(plan.weeks[0]).toMatchObject({ week_number: 2, week: 2, title: 'Model data', topic: 'Model data', learning_outcomes: ['LO-1'], learning_objectives: ['OBJ-1'], teaching_methods: ['Diskusi'] });
   });
 
-  it('accepts Rakha data without inventing missing outcomes or teaching methods', async () => {
+  it('accepts the previous response format without inventing missing outcomes or teaching methods', async () => {
     response({ version: 3, status: 'approved', weeks: [{ week: 1, topic: 'HTML', sub_topics: ['Semantik'], learning_objectives: ['Membuat dokumen'], planned_activities: ['learning_material'], note: 'Revisi' }] });
     const plan = await getPlan('project-1');
     expect(plan).toMatchObject({ version: 3, status: 'approved' });

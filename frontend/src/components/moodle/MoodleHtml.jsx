@@ -4,7 +4,7 @@ import { MOODLE_URL } from '../../services/config';
 import { withToken } from '../../services/moodle/moodleClient';
 
 /**
- * Menampilkan HTML dari Moodle (summary, intro, isi page).
+ * Menampilkan HTML isi kursus (summary, intro, isi halaman).
  * HTML disanitasi dulu, lalu URL file pluginfile diberi token agar gambar/lampiran bisa dimuat.
  */
 export default function MoodleHtml({ html, className = '' }) {

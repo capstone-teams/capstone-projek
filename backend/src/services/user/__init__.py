@@ -16,8 +16,8 @@ database, maupun HTTP layer:
 domain dipetakan ke HTTP oleh ``src.routes`` atau ``src.middlewares``.
 
 Field identity (``username``, ``firstname``, ``lastname``, ``email``,
-``password``) memakai nama atribut user Moodle; ``email`` tetap menjadi identity
-attribute untuk login aplikasi.
+``password``) memakai nama atribut user Moodle. Login aplikasi (BE-03.3)
+menerima ``username`` maupun ``email`` sebagai identifier.
 """
 
 from src.services.user.domain import User

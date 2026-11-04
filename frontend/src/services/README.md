@@ -1,26 +1,38 @@
-# Service aktif mengikuti Rakha
+# Service frontend
 
-Acuan: `origin/feature/frontend-setup` pada commit `accbc21`.
+Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah.
 
-- `moodle/moodleClient.js`: token Moodle dan Web Service transport.
-- `moodle/moodleApi.js`: session/peran, kursus, peserta, nilai, aktivitas, profil.
-- `moodle/mockMoodle.js`: fixture Moodle ketika VITE_MOODLE_MOCK=true.
-- `apiClient.js`: facade HTTP/mock backend, Bearer token, ApiError.
-- `authService.js`: login backend terpisah untuk fitur AI.
-- `rpsService.js`, `profileService.js`, `courseService.js`: fitur backend aktif.
-- `monitoringSocket.js`: event workflow yang digunakan layout project.
-- `mock/`: state machine backend ketika VITE_USE_MOCK=true.
+| Modul | Tanggung jawab |
+| --- | --- |
+| moodle/moodleClient.js | Token Moodle, REST/form transport, invalid-token handler, dan URL file |
+| moodle/moodleApi.js | Pemulihan sesi/peran, kursus, peserta, nilai, aktivitas, dan profil |
+| moodle/courseEditing.js | Mode edit kursus: aksi `core_courseformat_update_course`, ubah nama `core_update_inplace_editable`, dan URL halaman edit Moodle |
+| mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true, termasuk aksi Mode edit (hanya editingteacher) dan `resetMockMoodle()` untuk test |
+| apiClient.js | HTTP/mock backend, Bearer token, ApiError, handler 401 bila token ditolak, dan pemeriksaan respons |
+| authService.js | Login (`POST /auth/login`), current user (`GET /auth/me`), pemetaan role backend → UI, dan logout client |
+| rpsService.js | RPS: validasi file di klien (PDF, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
+| profileService.js | Instructor setup (`/instructors/me/setup`) dengan `instructor_profile` diratakan untuk form |
+| workflowService.js | Monitoring workflow dan course target Moodle |
+| courseService.js | API `/courses` untuk mode mock; backend belum menyediakannya |
+| coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
+| monitoringSocket.js | WebSocket dengan reconnect: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
+| mock/ | State machine backend ketika VITE_USE_MOCK=true; auth mengikuti kontrak backend (role huruf besar, pesan error identik, kata sandi `<username>123`) |
+| config.js | URL, mode mock, dan kunci penyimpanan dari environment |
 
-AuthProvider login melalui Moodle lalu mencoba backend untuk akun dosen.
-Seluruh halaman aktif di src/pages memanggil service Rakha; tidak ada adapter
-presentation fixture tambahan. Aksi generate/approve/review/execute/verify
-menggunakan shared mock backend atau HTTP sesuai flag.
+AuthProvider login melalui backend (`authService.login` lalu `getCurrentUser`),
+kemudian Moodle dengan username dari backend; kegagalan salah satunya membatalkan
+login. Peran berasal dari backend, sedangkan hak mengajar per kursus dari Moodle.
+Token backend dan Moodle disimpan terpisah dan keduanya diperlukan untuk
+memulihkan sesi. apiClient memanggil handler unauthorized hanya bila request
+membawa token, sehingga password salah saat login tidak mengakhiri sesi. Guard
+generasi sesi mencegah request lama memulihkan sesi atau menyimpan token setelah
+logout. Kontrak endpoint: `docs/02. design/auth-api-integration.md`.
 
-File `index.js`, `mockCourseService.js`, `apiError.js`, `useServiceResource.js`
-dan `ServiceStatus.jsx` adalah implementasi sebelumnya yang tidak dipakai runtime
-aktif. Jangan gunakan facade itu untuk fitur baru. File dipertahankan sebagai
-referensi agar pekerjaan sebelumnya tetap tersedia.
+Kursus LMS dibaca langsung melalui service Moodle. Generate, approve, review,
+execute, dan verify konten AI menggunakan backend HTTP atau shared mock backend.
+Transport serta alias payload tetap sama pada kedua mode. Mock backend berada di
+memori dan kembali ke fixture awal saat reload.
 
-Login Moodle dan backend nyata belum diuji. Khusus backend, credential dan role
-perlu cocok dengan server capstone; provider Rakha tidak menjamin dua sistem akun
-tersebut otomatis sama. Mock backend hilang saat reload.
+Login terhadap backend dan publikasi nyata belum diverifikasi pada server yang
+berjalan. Akun backend dan Moodle harus memiliki username dan kata sandi yang
+sama; keduanya tidak otomatis merupakan satu sistem akun. Lihat [konfigurasi frontend](../../README.md).
