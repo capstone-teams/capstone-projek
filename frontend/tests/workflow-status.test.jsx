@@ -203,7 +203,8 @@ describe('FE-10.1 tampilan status', () => {
       expect(container.querySelector('[data-stage="rps_analysis"]').dataset.state).toBe('running');
 
       current = wf({ id: 'wfA', status: 'COMPLETED', stage: null, progress: { completed: 2, total: 2 } });
-      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+      // Socket mock dianggap tersambung, jadi polling detail jarang (LIVE_POLL_MS); daftar memolling tiap 5 detik.
+      await act(async () => { await vi.advanceTimersByTimeAsync(16000); });
       expect(container.querySelector('[data-marker="done"]')).not.toBeNull();
       const calls = detail.mock.calls.length;
       await act(async () => { await vi.advanceTimersByTimeAsync(20000); });

@@ -11,6 +11,10 @@ const ACCOUNT_NOT_READY = 'Akun Anda belum dapat digunakan untuk masuk. Hubungi 
 const WRONG_CREDENTIALS = 'Username atau kata sandi salah. Periksa username, lalu ketik ulang kata sandi Anda.';
 const SERVICE_DOWN_CODES = ['networkerror', 'invalidresponse', 'enablewsdescription', 'servicenotavailable'];
 
+// Spasi, baris baru, NBSP, dan karakter lebar-nol di tepi password biasanya terbawa dari salin-tempel dan
+// tidak terlihat di kolom, tetapi membuat backend menolak password yang tampak benar.
+const EDGE_NOISE = /^[\s\u200b-\u200d\u2060\ufeff]+|[\s\u200b-\u200d\u2060\ufeff]+$/g;
+
 /** Pesan backend yang sudah ramah (kontrak §18) ditampilkan apa adanya; sisanya dibuat umum. */
 function describeLoginError(err) {
   if (err?.source === 'moodle') {

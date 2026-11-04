@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { findWorkflowForCourse } from '../../../services/workflowService';
 import { useApi } from '../../../hooks/useApi';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
-import { useWorkflowEvents } from '../../../hooks/useWorkflowEvents';
+import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
 import { ErrorAlert, Spinner } from '../../../components/ui';
 import AiProjectStart from '../../../components/ai/course/AiProjectStart';
 import { ForbiddenPage } from '../../StatusPage';
@@ -32,12 +32,14 @@ export default function WorkflowLayout() {
     setVersion((v) => v + 1);
     return reload({ silent: true });
   }, [reload]);
-  useWorkflowEvents([workflow?.id], refresh);
+  // Status dan event workflow kursus ini diperbarui real-time (FE-10.2) dan dibagikan ke halaman di bawahnya.
+  const monitor = useWorkflowMonitor(workflow?.id);
+  const live = monitor.workflow ?? workflow;
 
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !workflow) return <Spinner />;
   if (error && !workflow) return <ErrorAlert error={error} />;
-  if (!workflow && (rpsId || onStatusPage)) return <Outlet context={{ course: { rps_id: rpsId }, events: [], version, refresh }} />;
+  if (!workflow && (rpsId || onStatusPage)) return <Outlet context={{ course: { rps_id: rpsId }, events: [], connection: null, version, refresh }} />;
   if (!workflow) return <AiProjectStart moodleCourse={moodleCourse} onCreated={() => reload()} />;
 
   return (
@@ -49,7 +51,7 @@ export default function WorkflowLayout() {
           </NavLink>
         ))}
       </nav>
-      <Outlet context={{ course: workflow, events: [], version, refresh }} />
+      <Outlet context={{ course: live, events: monitor.events, connection: monitor.connection, version, refresh }} />
     </>
   );
 }
