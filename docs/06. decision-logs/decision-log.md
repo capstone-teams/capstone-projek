@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** Decision Log
-**Version:** 0.6
+**Version:** 0.8
 **Status:** Active
 **Owner:** Project Manager (Noel)
 **Related Documents:** `project-charter.md`, `prd.md`, `quality-plan.md`, `moodle-integration.md`, `design-system.md`, `design-api.md`, `agent-design.md`, `content-schema.md`, `data-model.md`
@@ -50,6 +50,7 @@ Keputusan berstatus `Accepted` tidak diedit isinya. Jika arah berubah, buat entr
 | DL-009 | 2026-10-14 | Field akademik RPS dihasilkan oleh RPS Analysis berbasis LLM sesuai proposal | Architecture, Scope | Accepted | Project Manager   |
 | DL-010 | 2026-10-19 | Pemadatan jadwal menjadi 4 minggu dengan milestone M02–M05      | Schedule, Scope    | Accepted | Project Manager   |
 | DL-011 | 2026-10-19 | Istilah proposal (Workflow, role DOSEN/MAHASISWA) dan endpoint M02 | Architecture, API | Accepted | Project Manager   |
+| DL-012 | 2026-10-19 | Eksekusi Moodle bertahap dan status workflow saat menunggu tindakan dosen | Architecture, Workflow | Proposed | Project Manager   |
 
 ---
 
@@ -549,8 +550,48 @@ Agent Design, Data Model, dan API Specification menggunakan istilah Agent Run, A
 
 | Area   | Dampak                                                                                           |
 | ------ | ------------------------------------------------------------------------------------------------ |
-| Task   | BE-14 dan FE-13 menyeragamkan role; BE-11 mengimplementasikan Workflow dan WorkflowEvent.        |
+| Task   | Nilai role diverifikasi pada BE-06 dan diterapkan frontend pada FE-06.3; BE-11 mengimplementasikan Workflow dan WorkflowEvent. |
 | Docs   | API Specification v0.5, Data Model v0.4, dan Agent Design v0.2 diperbarui.                       |
+
+---
+
+### DL-012 — Eksekusi Moodle bertahap dan status workflow saat menunggu tindakan dosen
+
+| Field    | Value                         |
+| -------- | ----------------------------- |
+| Tanggal  | 2026-10-19                    |
+| Kategori | Architecture, Workflow        |
+| Status   | Proposed                      |
+| Owner    | Project Manager               |
+| Target   | Sprint Planning Sprint 2 (2026-10-26) |
+
+**Konteks**
+
+M03 mencakup course planning dan eksekusi struktur course ke Moodle, sedangkan Proposal §3.3.7 dan §3.4.7 menempatkan eksekusi setelah konten disetujui. Selain itu, `WorkflowStatus` pada proposal tidak memiliki status untuk kondisi ketika satu tahap telah selesai dan sistem menunggu dosen memulai tahap berikutnya (mis. setelah course plan disetujui dan sebelum Generate Weekly Content dijalankan).
+
+**Keputusan yang diusulkan**
+
+1. Eksekusi Moodle dijalankan oleh satu execution service dengan dua cakupan:
+
+| Cakupan     | Isi                                                        | Syarat                                         | Milestone |
+| ----------- | ---------------------------------------------------------- | ---------------------------------------------- | --------- |
+| `STRUCTURE` | Section mingguan berdasarkan course plan                   | Course plan `APPROVED` dan course target tersimpan | M03   |
+| `FULL`      | Section mingguan dan seluruh konten yang disetujui         | Konten `APPROVED` (Proposal §3.3.7)            | M04       |
+
+2. `FULL` menjadi alur produk akhir sesuai proposal. `STRUCTURE` digunakan pada M03 untuk membangun dan menguji eksekusi struktur, dan tetap dapat dijalankan ulang secara idempotent.
+3. `WorkflowStatus` tetap menggunakan 11 nilai proposal. `WAITING_FOR_REVIEW` digunakan untuk setiap kondisi menunggu tindakan dosen (review course plan, memulai generate konten, review konten, memulai eksekusi). Tindakan yang ditunggu dibedakan melalui WorkflowEvent serta status course plan, konten, dan eksekusi.
+4. Selama eksekusi, workflow berstatus `EXECUTING_TO_MOODLE`. Setelah eksekusi `STRUCTURE` berhasil, workflow kembali ke `WAITING_FOR_REVIEW`. `COMPLETED` hanya ditetapkan setelah eksekusi `FULL` dan verification berhasil.
+
+**Alternatif yang dipertimbangkan**
+
+Menambahkan status baru (mis. `PLAN_APPROVED`) pada `WorkflowStatus`. Tidak dipilih karena menyimpang dari class diagram proposal.
+
+**Dampak**
+
+| Area | Dampak |
+| ---- | ------ |
+| Task | Orchestrator (M03) dan halaman eksekusi menerapkan cakupan `STRUCTURE`; M04 menambahkan cakupan `FULL`. |
+| Docs | API Specification §9 dan §13 diselaraskan menjadi endpoint `/workflows/{workflow_id}/...` setelah keputusan diterima. |
 
 ---
 
@@ -564,6 +605,7 @@ Keputusan berikut belum diambil dan menjadi bagian dari exit criteria milestone.
 | Model OpenAI untuk MVP                     | 2026-10-25   | M02       | DL-007, Agent Design §39, Quality Plan §16 |
 | Document processing final (Docling atau alternatif) | 2026-10-25 | M02 | Project Charter §22.3     |
 | Mekanisme structured output dan tool calling | 2026-10-25 | M02       | Agent Design §52           |
+| Eksekusi bertahap dan status tunggu workflow | 2026-10-26 | M03     | DL-012                     |
 | Retry limit dan validation threshold      | 2026-11-08   | M04       | Agent Design §30, Quality Plan §66 |
 
 ---
@@ -574,7 +616,7 @@ Keputusan berikut belum diambil dan menjadi bagian dari exit criteria milestone.
 | ------------ | -------------------------------------- |
 | Document     | Decision Log                           |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.6                                    |
+| Version      | 0.8                                    |
 | Status       | Active                                 |
 | Owner        | Project Manager                        |
 | Last Updated | 2026-10-19                             |
@@ -589,3 +631,5 @@ Keputusan berikut belum diambil dan menjadi bagian dari exit criteria milestone.
 | 0.4     | 2026-10-14 | Penambahan DL-008 | Project Manager |
 | 0.5     | 2026-10-14 | Penambahan DL-009 | Project Manager |
 | 0.6     | 2026-10-19 | Penambahan DL-010 dan DL-011 | Project Manager |
+| 0.7     | 2026-10-19 | Penyesuaian referensi task DL-011 dengan issue M02 yang sudah ada | Project Manager |
+| 0.8     | 2026-10-19 | Penambahan DL-012 (Proposed) untuk M03 | Project Manager |
