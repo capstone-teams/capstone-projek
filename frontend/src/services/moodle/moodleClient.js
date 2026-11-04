@@ -1,13 +1,5 @@
 /**
  * Klien Moodle Web Service (REST).
- *
- * Mengikuti dokumentasi Moodle:
- *  - Token   : POST {MOODLE_URL}/login/token.php            (moodle/public/login/token.php)
- *  - Fungsi  : POST {MOODLE_URL}/webservice/rest/server.php (moodle/public/webservice/rest/server.php)
- *  - Daftar fungsi & parameter: moodle/public/lib/db/services.php dan db/services.php tiap plugin,
- *    atau Site administration > Server > Web services > API Documentation di instance Moodle.
- *
- * Kedua endpoint mengirim header Access-Control-Allow-Origin: *, jadi bisa dipanggil dari browser.
  */
 import { MOODLE_SERVICE, MOODLE_URL, USE_MOODLE_MOCK } from '../config';
 import { mockCallWs, mockRequestToken, mockUploadDraftFiles } from '../mock/mockMoodle';
@@ -83,8 +75,8 @@ export async function requestToken(username, password) {
 
 /** Panggil satu fungsi Moodle Web Service, mis. callWs('core_webservice_get_site_info'). */
 export async function callWs(wsfunction, params = {}) {
-  if (!token) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
-  const requestToken = token;
+  const requestToken = token || (USE_MOODLE_MOCK ? 'mock-3-session' : null);
+  if (!requestToken) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
   const generation = tokenGeneration;
 
   const data = USE_MOODLE_MOCK
@@ -107,11 +99,12 @@ export async function callWs(wsfunction, params = {}) {
  */
 async function uploadToDraft(files, itemid, filepath) {
   let data;
+  const activeToken = token || (USE_MOODLE_MOCK ? 'mock-3-session' : null);
   if (USE_MOODLE_MOCK) {
-    data = await mockUploadDraftFiles(token, files, { itemid, filepath });
+    data = await mockUploadDraftFiles(activeToken, files, { itemid, filepath });
   } else {
     const form = new FormData();
-    form.append('token', token);
+    form.append('token', activeToken);
     form.append('filearea', 'draft');
     form.append('itemid', String(itemid));
     form.append('filepath', filepath);
@@ -146,7 +139,8 @@ async function toUploadable(entry) {
  * Tanpa entri, draft kosong dari core_files_get_unused_draft_itemid dipakai untuk mengosongkan area file.
  */
 export async function uploadDraftFiles(entries) {
-  if (!token) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
+  const requestToken = token || (USE_MOODLE_MOCK ? 'mock-3-session' : null);
+  if (!requestToken) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
   if (!entries.length) return (await callWs('core_files_get_unused_draft_itemid', {})).itemid;
   const byPath = new Map();
   entries.forEach((entry) => byPath.set(entry.filepath ?? '/', [...(byPath.get(entry.filepath ?? '/') ?? []), entry]));
@@ -158,8 +152,7 @@ export async function uploadDraftFiles(entries) {
 }
 
 /**
- * URL file Moodle dari Web Service (webservice/pluginfile.php) butuh token.
- * Lihat moodle/public/webservice/pluginfile.php.
+ * Menyisipkan token akses pada URL file Moodle jika diperlukan.
  */
 export function withToken(url) {
   if (!url || !token || USE_MOODLE_MOCK) return url;
@@ -168,7 +161,7 @@ export function withToken(url) {
   return `${fixed}${fixed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
 }
 
-/** URL absolut di Moodle (dipakai untuk URL file/tautan konten; bukan untuk mengarahkan pengguna ke Moodle). */
+/** URL absolut di Moodle. */
 export function moodleUrl(path) {
   if (!path) return MOODLE_URL;
   return /^https?:/.test(path) ? path : `${MOODLE_URL}${path.startsWith('/') ? '' : '/'}${path}`;

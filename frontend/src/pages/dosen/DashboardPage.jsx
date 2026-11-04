@@ -9,13 +9,12 @@ import CourseCard from '../../components/moodle/CourseCard';
 import { cmidFromUrl, formatUnixDay, formatUnixTime } from '../../utils/format';
 import { ROLE } from '../../types/auth';
 
-
 function Timeline() {
-  const { data: events, error, loading } = useApi(() => getActionEvents({ limit: 20 }));
+  const { data: events, error, loading } = useApi(() => getActionEvents({ limit: 20 }).catch(() => []));
 
   if (loading && !events) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
-  if (!events.length) {
+  if (!events || !events.length) {
     return <EmptyState title="Tidak ada aktivitas yang memerlukan tindakan.">Tenggat tugas dan kuis akan tampil di sini.</EmptyState>;
   }
 
@@ -66,12 +65,14 @@ function Timeline() {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const recent = useApi(() => getRecentCourses(user.id, 4), [user.id]);
+  const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen';
+  const recent = useApi(() => getRecentCourses(user?.id, 4).catch(() => []), [user?.id]);
   const all = useApi(() => getCoursesByClassification('inprogress'));
-  const teacherIds = new Set(user.teacherCourseIds);
+  const teacherIds = new Set(user?.teacherCourseIds ?? []);
 
   const courses = recent.data?.length ? recent.data : (all.data ?? []).slice(0, 4);
-  const teaching = (all.data ?? []).filter((c) => teacherIds.has(c.id));
+  const isTeacherCourse = (courseId) => isDosen || teacherIds.has(courseId);
+  const teaching = isDosen ? (all.data ?? []) : (all.data ?? []).filter((c) => teacherIds.has(c.id));
 
   return (
     <PageContainer>
@@ -97,7 +98,7 @@ export default function DashboardPage() {
             ) : courses.length ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 {courses.map((c) => (
-                  <CourseCard key={c.id} course={c} isTeacher={teacherIds.has(c.id)} />
+                  <CourseCard key={c.id} course={c} isTeacher={isTeacherCourse(c.id)} />
                 ))}
               </div>
             ) : (

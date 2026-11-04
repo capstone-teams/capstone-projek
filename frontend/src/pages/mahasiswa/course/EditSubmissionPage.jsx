@@ -121,10 +121,10 @@ export default function EditSubmissionPage() {
   const navigate = useNavigate();
   const [now] = useState(() => Math.floor(Date.now() / 1000));
   const { course, sections } = useMoodleCourse();
-  const section = sections.find((s) => s.modules.some((m) => m.id === Number(cmid)));
-  const mod = section?.modules.find((m) => m.id === Number(cmid));
+  const section = sections.find((s) => (s.modules ?? []).some((m) => String(m.id) === String(cmid)));
+  const mod = section?.modules?.find((m) => String(m.id) === String(cmid));
   const { data, error, loading } = useApi(async () => {
-    const assign = (await getAssignments([course.id])).find((a) => a.cmid === Number(cmid));
+    const assign = (await getAssignments([course.id])).find((a) => String(a.cmid) === String(cmid));
     return { assign, status: assign ? await getSubmissionStatus(assign.id) : null };
   }, [course.id, cmid]);
 

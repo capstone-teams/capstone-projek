@@ -12,8 +12,8 @@ import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsStatus';
 import { formatDateTime } from '../../../utils/format';
 
-// Course planning (FE-05) baru tersedia di backend pada M03; di mode mock sudah dapat dicoba.
-const COURSE_PLANNING_AVAILABLE = USE_MOCK;
+
+const COURSE_PLANNING_AVAILABLE = true;
 const POLL_MS = 3000;
 
 /**
@@ -59,7 +59,7 @@ function RpsNotAnalyzed({ rps, onChanged }) {
   );
 }
 
-/** Hasil Analisis RPS (FE-08.3): diperiksa dosen sebelum melanjutkan ke course planning. */
+/** Hasil analisis RPS. */
 export default function CourseRpsPage() {
   const { course } = useCourse();
   const rpsId = course.rps_id;

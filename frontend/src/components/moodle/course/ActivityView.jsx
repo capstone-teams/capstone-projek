@@ -13,7 +13,7 @@ function PageContent({ course, mod }) {
   const { data, error, loading } = useApi(() => getPages([course.id]), [course.id]);
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
-  const page = data.find((p) => p.coursemodule === mod.id);
+  const page = data.find((p) => String(p.coursemodule) === String(mod.id));
   if (!page) return <EmptyState title="Halaman tidak ditemukan." />;
   return (
     <Card>
@@ -26,7 +26,7 @@ function AssignContent({ course, mod, renderAssign }) {
   const { data, error, loading } = useApi(() => getAssignments([course.id]), [course.id]);
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
-  const assign = data.find((a) => a.cmid === mod.id);
+  const assign = data.find((a) => String(a.cmid) === String(mod.id));
   if (!assign) return <EmptyState title="Tugas tidak ditemukan." />;
 
   return (
@@ -74,8 +74,8 @@ function ExternalContent({ mod }) {
 export default function ActivityView({ renderAssign }) {
   const { cmid } = useParams();
   const { course, sections } = useMoodleCourse();
-  const section = sections.find((s) => s.modules.some((m) => m.id === Number(cmid)));
-  const mod = section?.modules.find((m) => m.id === Number(cmid));
+  const section = sections.find((s) => (s.modules ?? []).some((m) => String(m.id) === String(cmid)));
+  const mod = section?.modules?.find((m) => String(m.id) === String(cmid));
 
   if (!mod) {
     return (

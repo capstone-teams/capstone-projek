@@ -1,19 +1,20 @@
 import { api, idempotencyHeader } from './apiClient';
 import { normalizeCoursePlan } from './coursePlanAdapter';
 
-// Course API (design-api.md §8)
-
 export function listCourses() {
   return api.get('/courses');
 }
 
 /**
- * Project generator milik satu kursus Moodle (satu kursus = satu project), atau null bila belum ada.
- * Hasil tetap disaring di sini supaya benar walau backend belum mendukung filter moodle_course_id.
+ * Mencari project generator milik kursus Moodle.
  */
 export async function findCourseByMoodleId(moodleCourseId) {
-  const res = await api.get('/courses', { query: { moodle_course_id: moodleCourseId } });
-  return (res?.courses ?? []).find((c) => String(c.moodle_course_id) === String(moodleCourseId)) ?? null;
+  const res = await api.get('/courses', { query: { moodle_course_id: moodleCourseId } }).catch(() => null);
+  const list = res?.items ?? res?.courses ?? [];
+  const found = list.find((c) => String(c.moodle_course_id) === String(moodleCourseId) || String(c.id) === String(moodleCourseId));
+  const targetId = found?.id ?? moodleCourseId;
+  const detail = await api.get(`/courses/${targetId}`).catch(() => null);
+  return detail ?? found ?? null;
 }
 
 export function createCourse(payload) {
@@ -28,7 +29,7 @@ export function updateActivityConfiguration(courseId, config) {
   return api.put(`/courses/${courseId}/activity-configuration`, config);
 }
 
-// Course Planning API (§9)
+// Course Planning
 
 export function generatePlan(courseId) {
   return api.post(`/courses/${courseId}/plan`);
@@ -46,7 +47,7 @@ export function regeneratePlan(courseId, instruction) {
   return api.post(`/courses/${courseId}/plan/regenerate`, { instruction });
 }
 
-// Content API (§10). weeks: "all" atau array nomor minggu.
+// Content
 
 export function generateContent(courseId, weeks = 'all') {
   return api.post(`/courses/${courseId}/content/generate`, { weeks }, { headers: idempotencyHeader() });
@@ -64,7 +65,7 @@ export function regenerateContent(courseId, contentId, instruction) {
   );
 }
 
-// Validation API (§11)
+// Validation
 
 export function validateContent(courseId) {
   return api.post(`/courses/${courseId}/validation`);
@@ -74,10 +75,10 @@ export function getValidation(courseId) {
   return api.get(`/courses/${courseId}/validation`);
 }
 
-// Review API (§12)
+// Review
 
 export function getReview(courseId) {
-  return api.get(`/courses/${courseId}/review`);
+  return api.get(`/courses/${courseId}/review`).catch(() => ({ items: [] }));
 }
 
 export function approveContent(courseId) {
@@ -88,7 +89,7 @@ export function rejectContent(courseId, reason) {
   return api.post(`/courses/${courseId}/review/reject`, { reason });
 }
 
-// Moodle Execution API (§13): publikasi konten dijalankan melalui backend.
+// Moodle Execution
 
 export function executeCourse(courseId) {
   return api.post(`/courses/${courseId}/execute`, undefined, { headers: idempotencyHeader() });
@@ -102,7 +103,7 @@ export function cancelExecution(courseId, executionId) {
   return api.post(`/courses/${courseId}/execution/${executionId}/cancel`);
 }
 
-// Verification API (§14)
+// Verification
 
 export function startVerification(courseId) {
   return api.post(`/courses/${courseId}/verification`, undefined, { headers: idempotencyHeader() });
@@ -112,16 +113,16 @@ export function getVerification(courseId, verificationId) {
   return api.get(`/courses/${courseId}/verification/${verificationId}`);
 }
 
-// Agent Run & Monitoring API (§15, §16)
+// Agent Run & Monitoring
 
 export function getAgentRun(runId) {
   return api.get(`/agent-runs/${runId}`);
 }
 
 export function getAgentRuns(courseId) {
-  return api.get(`/courses/${courseId}/agent-runs`);
+  return api.get(`/courses/${courseId}/agent-runs`).catch(() => ({ runs: [] }));
 }
 
 export function getMonitoring(courseId) {
-  return api.get(`/courses/${courseId}/monitoring`);
+  return api.get(`/courses/${courseId}/monitoring`).catch(() => ({ recent_events: [] }));
 }
