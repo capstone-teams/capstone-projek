@@ -59,6 +59,15 @@ services:
       # Nilai dapat ditimpa dari shell, contoh:
       #   CORS_ORIGINS="http://localhost:3000,http://localhost:4173" docker compose up -d backend
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # Uvicorn hanya memercayai header X-Forwarded-* dari IP ini. Di balik
+      # tunnel/proxy (Cloudflare, reverse proxy host) koneksi datang dari
+      # gateway docker, bukan 127.0.0.1; tanpa nilai ini redirect slash
+      # (307) dibentuk dengan skema http meski client memakai https.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-*}
+      # Model Docling (±0,5 GB) diunduh saat konversi RPS pertama dan di-cache
+      # huggingface_hub di $HF_HOME. Diarahkan ke /app/var agar ikut volume
+      # backend-storage; tanpa ini model hilang tiap container dibuat ulang.
+      HF_HOME: ${HF_HOME:-/app/var/hf-cache}
     ports:
       - "${APP_PORT:-8000}:8000"
     depends_on:
