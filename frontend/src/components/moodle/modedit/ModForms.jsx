@@ -51,6 +51,34 @@ function EditorField({ id, label, required, value, onChange, error }) {
   );
 }
 
+const AI_PROMPT_MAX = 2000;
+
+/**
+ * Bagian "Generator AI": bukan bagian dari modedit.php Moodle, ditambahkan di bawah bagian-bagian Moodle.
+ * Isinya instruksi untuk agent AI saat menyusun isi aktivitas; diteruskan ke onSubmit sebagai { aiPrompt }.
+ */
+function AiPromptSection({ id, value, onChange, placeholder }) {
+  return (
+    <FormSection id="ai" title="Generator AI">
+      <FormRow label="Prompt AI" labelFor={`${id}-ai`}>
+        <textarea
+          id={`${id}-ai`}
+          rows={4}
+          maxLength={AI_PROMPT_MAX}
+          value={value}
+          placeholder={placeholder}
+          aria-describedby={`${id}-ai-hint`}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <p id={`${id}-ai-hint`} className="mt-1 text-sm text-muted">
+          Opsional. Instruksi untuk agent AI saat menyusun isi aktivitas ini. Belum diproses sampai layanan AI untuk aktivitas tersedia.
+          <span className="ml-2 whitespace-nowrap">{value.length}/{AI_PROMPT_MAX}</span>
+        </p>
+      </FormRow>
+    </FormSection>
+  );
+}
+
 /** Tombol bawah modedit.php; tanpa API pembuatan dari backend, simpan dinonaktifkan. */
 function ModFormButtons({ canCreate, pending, withDisplay, onCancel, onSave }) {
   return (
@@ -72,7 +100,7 @@ function ModForm({ sections, initiallyOpen, validate, toFields, state, props, wi
     const found = validate(state.form);
     state.setErrors(found);
     if (Object.values(found).some(Boolean)) {
-      // Seperti Moodle: buka bagian yang berisi error lalu fokus ke field pertama yang salah.
+      // Rujukan perilaku formulir Moodle: buka bagian yang berisi error lalu fokus ke field pertama yang salah.
       const form = event.currentTarget;
       setTimeout(() => {
         const field = form.querySelector('[aria-invalid="true"], [data-invalid="true"]');
@@ -82,7 +110,7 @@ function ModForm({ sections, initiallyOpen, validate, toFields, state, props, wi
       });
       return;
     }
-    props.onSubmit(toFields(state.form), displayRef.current);
+    props.onSubmit(toFields(state.form), displayRef.current, { aiPrompt: state.form.aiPrompt.trim() });
     displayRef.current = false;
   };
   return (
@@ -115,6 +143,7 @@ export function AssignModForm(props) {
     onlinetext: false, wordlimit: '', wordlimitEnabled: false,
     file: true, maxfiles: '20', maxbytes: String(MB),
     grade: '100',
+    aiPrompt: '',
   });
   const { form, set, errors } = state;
   const validate = (f) => {
@@ -145,7 +174,7 @@ export function AssignModForm(props) {
   });
 
   return (
-    <ModForm sections={['general', 'availability', 'submissiontypes', 'grade']} initiallyOpen={['general', 'availability', 'submissiontypes']}
+    <ModForm sections={['general', 'availability', 'submissiontypes', 'grade', 'ai']} initiallyOpen={['general', 'availability', 'submissiontypes', 'ai']}
       validate={validate} toFields={toFields} state={state} props={props}
     >
       <FormSection id="general" title="General">
@@ -226,13 +255,14 @@ export function AssignModForm(props) {
           />
         </FormRow>
       </FormSection>
+      <AiPromptSection id={id} value={form.aiPrompt} onChange={set('aiPrompt')} placeholder="Mis. Buat tugas studi kasus tentang normalisasi basis data dengan tiga pertanyaan dan rubrik penilaian." />
     </ModForm>
   );
 }
 
 export function QuizModForm(props) {
   const id = useId();
-  const state = useFormState({ name: '', intro: '', open: dateValue(0, false), close: dateValue(7, false) });
+  const state = useFormState({ name: '', intro: '', open: dateValue(0, false), close: dateValue(7, false), aiPrompt: '' });
   const { form, set, errors } = state;
   const validate = (f) => ({
     name: f.name.trim() ? undefined : REQUIRED,
@@ -241,7 +271,7 @@ export function QuizModForm(props) {
   const toFields = (f) => ({ name: f.name.trim(), intro: plain(f.intro) ? f.intro : '', timeopen: toUnix(f.open), timeclose: toUnix(f.close) });
 
   return (
-    <ModForm sections={['general', 'timing']} initiallyOpen={['general']} validate={validate} toFields={toFields} state={state} props={props}>
+    <ModForm sections={['general', 'timing', 'ai']} initiallyOpen={['general', 'ai']} validate={validate} toFields={toFields} state={state} props={props}>
       <FormSection id="general" title="General">
         <NameField id={`${id}-name`} label="Name" value={form.name} onChange={set('name')} error={errors.name} />
         <EditorField id={`${id}-intro`} label="Description" value={form.intro} onChange={set('intro')} />
@@ -250,24 +280,26 @@ export function QuizModForm(props) {
         <DateTimeSelector label="Open the quiz" value={form.open} onChange={set('open')} />
         <DateTimeSelector label="Close the quiz" value={form.close} onChange={set('close')} error={errors.close} />
       </FormSection>
+      <AiPromptSection id={id} value={form.aiPrompt} onChange={set('aiPrompt')} placeholder="Mis. Buat 10 soal pilihan ganda tingkat sedang tentang SQL join beserta kunci jawabannya." />
     </ModForm>
   );
 }
 
 export function LabelModForm(props) {
   const id = useId();
-  const state = useFormState({ name: '', text: '' });
+  const state = useFormState({ name: '', text: '', aiPrompt: '' });
   const { form, set, errors } = state;
   const validate = (f) => ({ text: plain(f.text) ? undefined : REQUIRED });
   // format 1 = FORMAT_HTML: isi berasal dari editor.
   const toFields = (f) => ({ name: f.name.trim(), text: f.text, format: 1 });
 
   return (
-    <ModForm sections={['general']} initiallyOpen={['general']} validate={validate} toFields={toFields} state={state} props={props} withDisplay={false}>
+    <ModForm sections={['general', 'ai']} initiallyOpen={['general', 'ai']} validate={validate} toFields={toFields} state={state} props={props} withDisplay={false}>
       <FormSection id="general" title="General">
         <NameField id={`${id}-name`} label="Title in course index" required={false} value={form.name} onChange={set('name')} />
         <EditorField id={`${id}-text`} label="Text" required value={form.text} onChange={set('text')} error={errors.text} />
       </FormSection>
+      <AiPromptSection id={id} value={form.aiPrompt} onChange={set('aiPrompt')} placeholder="Mis. Tulis ringkasan materi minggu ini dalam tiga paragraf untuk mahasiswa semester tiga." />
     </ModForm>
   );
 }

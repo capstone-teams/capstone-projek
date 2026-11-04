@@ -1,5 +1,6 @@
 import { PREFERENCES_STORAGE_KEY } from '../services/config';
 import { readJson, writeJson } from '../utils/storage';
+import { applyWorkflowEvent, eventKey, mergeEvents } from '../utils/workflowStatus';
 
 // State aplikasi lintas halaman. Reducer dibuat murni (tanpa side effect) supaya mudah diuji;
 // id dan penyimpanan diurus oleh AppStateProvider.
@@ -8,6 +9,8 @@ import { readJson, writeJson } from '../utils/storage';
 // - notifications : toast singkat.
 // - loading       : aksi yang sedang berjalan dan perlu terlihat di seluruh aplikasi.
 // - errors        : error yang tidak dimiliki satu halaman (mis. backend AI tidak tersedia).
+// - workflows     : pantauan workflow per id (FE-10.2): snapshot, event, dan status koneksi real-time,
+//                   dipakai bersama oleh halaman status workflow, daftar RPS (FE-08.2), dan dashboard (FE-11.1).
 
 export const MAX_NOTIFICATIONS = 3;
 
@@ -17,7 +20,17 @@ export const initialAppState = {
   notifications: [],
   loading: [],
   errors: [],
+  workflows: {},
 };
+
+const emptyMonitor = { workflow: null, events: [], connection: 'connecting' };
+
+/** Pembuat action untuk slice `workflows`; dipakai AppStateProvider dan hook saat tanpa provider. */
+export const workflowActions = (dispatch) => ({
+  loadWorkflow: (id, workflow, events) => dispatch({ type: 'workflow/loaded', id, workflow, events }),
+  receiveWorkflowEvent: (id, event) => dispatch({ type: 'workflow/event', id, event }),
+  setWorkflowConnection: (id, connection) => dispatch({ type: 'workflow/connection', id, connection }),
+});
 
 export function createAppState(userId = null) {
   return { ...initialAppState, userId, preferences: loadPreferences(userId) };
@@ -58,6 +71,25 @@ export function appStateReducer(state, action) {
       );
     case 'error/clear':
       return withList(state, 'errors', []);
+    case 'workflow/loaded': {
+      // Snapshot HTTP: event yang tiba lewat WebSocket sebelum jawaban datang diterapkan kembali di atasnya.
+      const current = state.workflows[action.id] ?? emptyMonitor;
+      const events = mergeEvents(current.events, action.events ?? []);
+      const workflow = events.reduce(applyWorkflowEvent, action.workflow);
+      return { ...state, workflows: { ...state.workflows, [action.id]: { ...current, workflow, events } } };
+    }
+    case 'workflow/event': {
+      const current = state.workflows[action.id] ?? emptyMonitor;
+      const key = eventKey(action.event);
+      if (current.events.some((event) => eventKey(event) === key)) return state;
+      const next = { ...current, events: mergeEvents(current.events, [action.event]), workflow: applyWorkflowEvent(current.workflow, action.event) };
+      return { ...state, workflows: { ...state.workflows, [action.id]: next } };
+    }
+    case 'workflow/connection': {
+      const current = state.workflows[action.id] ?? emptyMonitor;
+      if (state.workflows[action.id] && current.connection === action.connection) return state;
+      return { ...state, workflows: { ...state.workflows, [action.id]: { ...current, connection: action.connection } } };
+    }
     default:
       return state;
   }

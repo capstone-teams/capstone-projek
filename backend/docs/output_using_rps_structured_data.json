@@ -8,7 +8,8 @@
     "description": "Mata kuliah ini membahas struktur diskrit sebagai fondasi informatika, meliputi logika, proposisi, ekuivalensi, predikat dan quantifier, aturan penarikan kesimpulan, metode pembuktian, induksi matematika, teori himpunan, relasi dan fungsi, aljabar Boolean, kombinatorial, dan teori bilangan."
   },
   "cpl": [],
-  "cpmk": [
+  "cpmk": "Mahasiswa mampu memahami dan menerapkan konsep Matematika Diskrit",
+  "sub_cpmk": [
     {
       "id": "CPMK-1",
       "description": "Mahasiswa mampu menerapkan konsep proposisi, ekuivalensi, predikat dan quantifier pada suatu pernyataan.",
@@ -60,7 +61,6 @@
       "cpl_ids": []
     }
   ],
-  "sub_cpmk": [],
   "topics": [
     {
       "id": "TOP-1",

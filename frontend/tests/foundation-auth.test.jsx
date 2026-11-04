@@ -138,9 +138,19 @@ describe('FE-06.2 session restore', () => {
     expect(storedToken()).toBeNull();
   });
 
-  it('keeps the backend token when the backend is unreachable during restore', async () => {
-    storeSession('mock-token:user_001');
+  it('discards a rejected Moodle token', async () => {
+    storeSession('expired');
+    service.getCurrentUser.mockResolvedValueOnce(instructorMe);
+    service.resolveSession.mockRejectedValueOnce(new Error('invalidtoken'));
+    await mount();
+    expect(state.user).toBeNull();
+    expect(storedTokens()).toEqual([null, null]);
+  });
+
+  it('keeps the tokens when the backend is unreachable during restore', async () => {
+    storeSession();
     service.getCurrentUser.mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.'));
+    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     expect(state.user).toBeNull();
     expect(state.initializing).toBe(false);

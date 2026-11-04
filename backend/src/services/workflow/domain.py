@@ -213,6 +213,23 @@ class WorkflowRecord:
         else:
             self.progress_completed += 1
 
+    def wait_for_review(self) -> None:
+        """Tahap selesai dan workflow menunggu tindakan dosen (DL-012).
+
+        ``WAITING_FOR_REVIEW`` adalah status tunggu setelah sebuah tahap selesai,
+        bukan status terminal: tahap berikutnya (review course plan, generasi
+        konten, eksekusi) melanjutkan workflow yang sama. Workflow yang sudah
+        terminal tidak dapat kembali menunggu — run baru harus dimulai lewat
+        ``begin_run`` lebih dulu.
+        """
+        if self.is_terminal:
+            raise WorkflowStateError(
+                f"workflow {self.id} sudah {self.status.value} dan tidak dapat "
+                "menunggu peninjauan"
+            )
+        self.status = WorkflowStatus.WAITING_FOR_REVIEW
+        self.completed_at = None
+
     def mark_retrying(self) -> None:
         """Tahap aktif sedang mencoba ulang setelah kegagalan yang dapat dipulihkan."""
         if not self.is_active:

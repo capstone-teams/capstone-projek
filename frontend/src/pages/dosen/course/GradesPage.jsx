@@ -4,7 +4,7 @@ import { getGradeItems } from '../../../services/moodle/moodleApi';
 import { EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
 import { gradeItemLabel } from '../../../utils/grades';
 
-/** Rekap nilai semua mahasiswa (mirip grader report Moodle). */
+/** Rekap nilai semua mahasiswa. Rujukan: grader report Moodle. */
 export default function GradesPage() {
   const { course } = useMoodleCourse();
   // userid 0 = semua peserta.

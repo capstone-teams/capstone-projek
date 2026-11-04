@@ -146,6 +146,16 @@ function publicRps(r) {
   };
 }
 
+// Bentuk GET/PUT /instructors/me/setup (design-api §7).
+function publicSetup({ additional_prompt, activity_configuration, updated_at, ...instructor_profile }) {
+  return { instructor_profile, additional_prompt, activity_configuration, updated_at };
+}
+
+// Bentuk item GET /workflows (design-api §16.1).
+function publicWorkflow(w) {
+  return { id: w.id, status: w.status, stage: w.stage, progress: w.progress, rps_id: w.rps_id, created_at: w.created_at, updated_at: w.created_at };
+}
+
 // Bentuk GET /rps/{id} (design-api §6.2).
 function rpsDetail(r) {
   return {
@@ -154,6 +164,7 @@ function rpsDetail(r) {
     status: r.status,
     created_at: r.created_at,
     has_source_document: !!r.has_source_document,
+    workflow_id: r.workflow_id ?? null,
     processing_duration_ms: r.processing_duration_ms ?? null,
     processing_error_code: r.status === 'FAILED' ? 'RPS_PROCESSING_FAILED' : null,
     processing_error_message: r.status === 'FAILED' ? RPS_FAILURE_MESSAGE[r.failed_stage] : null,
@@ -412,11 +423,27 @@ const handlers = {
   reanalyzeRps({ rpsId }) {
     const rps = db.rps.find((r) => r.id === rpsId);
     if (!rps) return notFound('RPS');
-    if (!rps.has_source_document || ['PROCESSING', 'ANALYZING'].includes(rps.status)) {
-      return fail(409, 'INVALID_REQUEST', 'Status RPS tidak mengizinkan operasi ini.');
-    }
+    if (!rps.has_source_document) return fail(422, 'INVALID_REQUEST', 'RPS belum dikonversi.');
+    if (['PROCESSING', 'ANALYZING'].includes(rps.status)) return fail(409, 'INVALID_REQUEST', 'Status RPS tidak mengizinkan operasi ini.');
     const workflow = startRpsAnalysis(rps, { immediate: true });
     return ok({ rps_id: rps.id, workflow_id: workflow.id, status: 'ANALYZING' }, 202);
+  },
+
+  // design-api 16: monitoring workflow dan course target (BE-11.3).
+  listWorkflows: () => ok({ items: [...db.workflows].reverse().map(publicWorkflow) }),
+  getWorkflow({ workflowId }) {
+    const workflow = db.workflows.find((w) => w.id === workflowId);
+    return workflow ? ok({ ...publicWorkflow(workflow), moodle_course_id: workflow.moodle_course_id ?? null }) : notFound('Workflow');
+  },
+  getWorkflowEvents({ workflowId }) {
+    const workflow = db.workflows.find((w) => w.id === workflowId);
+    return workflow ? ok({ items: workflow.events }) : notFound('Workflow');
+  },
+  updateMoodleTarget({ workflowId }, { body }) {
+    const workflow = db.workflows.find((w) => w.id === workflowId);
+    if (!workflow) return notFound('Workflow');
+    workflow.moodle_course_id = body.moodle_course_id;
+    return ok({ ...publicWorkflow(workflow), moodle_course_id: workflow.moodle_course_id });
   },
 
   getRpsAnalysis({ rpsId }) {
@@ -428,6 +455,7 @@ const handlers = {
     return ok({ rps_id: rps.id, analyzed_at: rps.updated_at ?? rps.created_at, data: buildRpsStructuredData({ incomplete }) });
   },
 
+<<<<<<< HEAD
   // Instructor setup
   getInstructorSetup: () => ok(db.instructorSetup || db.profile),
   getProfile: () => ok(db.instructorSetup || db.profile),
@@ -437,6 +465,18 @@ const handlers = {
       return fail(422, 'INVALID_REQUEST', 'Body request tidak valid.', [
         { field: 'body', message: 'Body request harus berupa objek JSON.' },
       ]);
+=======
+  // design-api 7: instructor setup.
+  getProfile: () => ok(publicSetup(db.profile)),
+
+  updateProfile(_p, { body: setup }) {
+    const body = { ...setup?.instructor_profile, additional_prompt: setup?.additional_prompt, activity_configuration: setup?.activity_configuration };
+    const textFields = ['teaching_style', 'expertise', 'delivery_preference', 'language_preference', 'content_preference', 'additional_prompt'];
+    const invalid = textFields.filter((f) => body?.[f] != null && typeof body[f] !== 'string');
+    if (invalid.length) return fail(422, 'INVALID_REQUEST', 'Field profil harus berupa teks.', invalid);
+    if (body?.additional_prompt && Array.from(body.additional_prompt).length > 1000) {
+      return fail(422, 'INVALID_REQUEST', 'Prompt tambahan tidak boleh melebihi 1000 karakter.', ['additional_prompt']);
+>>>>>>> develop
     }
 
     const issues = [];
@@ -456,6 +496,7 @@ const handlers = {
         }
       }
     }
+<<<<<<< HEAD
 
     // Validasi additional_prompt jika ada
     if (body.additional_prompt !== undefined && body.additional_prompt !== null) {
@@ -517,6 +558,10 @@ const handlers = {
 
   updateProfile(p, ctx) {
     return mockServer.updateInstructorSetup(p, ctx);
+=======
+    db.profile.updated_at = now();
+    return ok(publicSetup(db.profile));
+>>>>>>> develop
   },
 
   // Course
@@ -533,7 +578,7 @@ const handlers = {
       return fail(422, 'INVALID_REQUEST', 'RPS harus selesai dianalisis terlebih dahulu.', ['rps_id']);
     }
     const moodleId = body.moodle_course_id == null ? '' : String(body.moodle_course_id).trim();
-    // Satu kursus Moodle hanya punya satu project generator.
+    // Satu kursus hanya punya satu project generator.
     if (moodleId && db.courses.some((c) => String(c.moodle_course_id) === moodleId)) {
       return conflict('Kursus ini sudah memiliki project generator AI.');
     }
@@ -851,10 +896,19 @@ const ROUTES = [
   ['POST', '/rps/:rpsId/process', 'processRps'],
   ['POST', '/rps/:rpsId/reanalyze', 'reanalyzeRps'],
   ['GET', '/rps/:rpsId/analysis', 'getRpsAnalysis'],
+<<<<<<< HEAD
   ['GET', '/instructors/me/setup', 'getInstructorSetup'],
   ['PUT', '/instructors/me/setup', 'updateInstructorSetup'],
   ['GET', '/instructors/me/profile', 'getProfile'],
   ['PUT', '/instructors/me/profile', 'updateProfile'],
+=======
+  ['GET', '/workflows', 'listWorkflows'],
+  ['GET', '/workflows/:workflowId', 'getWorkflow'],
+  ['GET', '/workflows/:workflowId/events', 'getWorkflowEvents'],
+  ['PUT', '/workflows/:workflowId/moodle-target', 'updateMoodleTarget'],
+  ['GET', '/instructors/me/setup', 'getProfile'],
+  ['PUT', '/instructors/me/setup', 'updateProfile'],
+>>>>>>> develop
   ['GET', '/courses', 'listCourses'],
   ['POST', '/courses', 'createCourse'],
   ['GET', '/courses/:courseId', 'getCourse'],

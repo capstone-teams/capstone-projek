@@ -25,7 +25,16 @@ export function percent(completed, total) {
   return Math.round((completed / total) * 100);
 }
 
+<<<<<<< HEAD
 // ---- Timestamp Moodle (detik sejak epoch)
+=======
+export function errorMessage(error) {
+  if (!error) return '';
+  return error.message || 'Terjadi kesalahan.';
+}
+
+// ---- Timestamp LMS (detik sejak epoch)
+>>>>>>> develop
 const dayFormat = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const shortFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 const clockFormat = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -56,7 +65,7 @@ export function formatRelative(ts) {
   return `${Math.floor(diff / 86400)} hari lalu`;
 }
 
-/** Ambil cmid dari URL Moodle seperti .../mod/assign/view.php?id=42 */
+/** Ambil cmid dari URL aktivitas seperti .../mod/assign/view.php?id=42 */
 export function cmidFromUrl(url) {
   const m = /[?&]id=(\d+)/.exec(url ?? '');
   return m ? Number(m[1]) : null;

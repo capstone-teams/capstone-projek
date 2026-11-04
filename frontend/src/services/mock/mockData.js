@@ -1,6 +1,6 @@
 // Data dummy untuk mode mock. Bentuk mengikuti contoh response di design-api.md.
 
-// Akun sama dengan mock Moodle (mockMoodle.js); field mengikuti GET /auth/me backend.
+// Akun sama dengan mock LMS (mockMoodle.js); field mengikuti GET /auth/me backend.
 // dosen.demo & 11231023 adalah akun uji backend (BE-06.3).
 export const MOCK_USERS = [
   { id: 'user_001', username: 'dosen', firstname: 'Rina', lastname: 'Kartika', email: 'dosen@lecturer.itk.ac.id', role: 'INSTRUCTOR' },
@@ -12,7 +12,7 @@ export const MOCK_USERS = [
   { id: 'user_007', username: '11231023', firstname: 'Mahasiswa', lastname: 'Demo', email: '11231023@student.itk.ac.id', role: 'STUDENT' },
 ];
 
-// Password mock sama dengan mock Moodle: "<username>123".
+// Password mock sama dengan mock LMS: "<username>123".
 export const mockPassword = (username) => `${username}123`;
 
 export const SAMPLE_TOPICS = [

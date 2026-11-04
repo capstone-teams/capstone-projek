@@ -7,6 +7,10 @@ import { PageContainer } from '../../../components/layout/MoodleLayout';
 import { ErrorAlert, ErrorBoundary, Spinner } from '../../../components/ui';
 import { ROLE } from '../../../types/auth';
 
+<<<<<<< HEAD
+=======
+// Rujukan Moodle: hak mengubah kursus (moodle/course:update) dari core_course_get_user_administration_options.
+>>>>>>> develop
 const canUpdate = (options) => options?.[0]?.options.some((o) => o.name === 'update' && o.available) ?? false;
 
 export default function MoodleCourseLayout() {

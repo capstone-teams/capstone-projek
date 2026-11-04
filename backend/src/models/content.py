@@ -19,7 +19,7 @@ class ContentStatus(str, enum.Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
 
-
+## tanya ini isinya ada apa aja
 class Content(BaseModel):
     __tablename__ = "contents"
 

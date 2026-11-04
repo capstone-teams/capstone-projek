@@ -9,7 +9,9 @@ course:
     teori himpunan, relasi dan fungsi, aljabar Boolean, kombinatorial,
     dan teori bilangan.
 
-cpmk:
+cpmk: "Mahasiswa mampu memahami dan menerapkan konsep matematika diskrit."
+
+sub_cpmk:
   - code: CPMK-1
     description: >-
       Mahasiswa mampu menerapkan konsep proposisi, ekuivalensi,
@@ -53,8 +55,6 @@ cpmk:
     description: >-
       Mahasiswa mampu menerapkan dan menganalisis konsep kombinatorial
       pada sebuah kasus.
-
-sub_cpmk: []
 
 weekly_plan:
   - weeks: [1]

@@ -3,6 +3,7 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { usePreference } from '../../hooks/useAppState';
 import { useApi } from '../../hooks/useApi';
 import { getCoursesByClassification } from '../../services/moodle/moodleApi';
+import { COURSE_API_AVAILABLE } from '../../services/config';
 import { listCourses } from '../../services/courseService';
 import { PageContainer } from '../../components/layout/MoodleLayout';
 import { EmptyState, ErrorAlert, Spinner } from '../../components/ui';
@@ -17,13 +18,13 @@ const FILTERS = [
 
 export default function MyCoursesPage() {
   const { isTeacherOf, isDosen } = useCurrentUser();
-  // Filter diingat per user, seperti blok "Ikhtisar kursus" Moodle.
+  // Filter diingat per pengguna. Rujukan: blok "Course overview" di Moodle.
   const [storedClassification, setClassification] = usePreference('myCourses.classification', 'all');
   const classification = FILTERS.some((f) => f.value === storedClassification) ? storedClassification : 'all';
   const [query, setQuery] = useState('');
   const { data, error, loading } = useApi(() => getCoursesByClassification(classification), [classification]);
   // Status generator AI per kursus (dosen saja). Backend AI tidak tersedia -> badge disembunyikan.
-  const ai = useApi(() => (isDosen ? listCourses().catch(() => null) : null), [isDosen]);
+  const ai = useApi(() => (isDosen && COURSE_API_AVAILABLE ? listCourses().catch(() => null) : null), [isDosen]);
   const aiByMoodleId = new Map((ai.data?.courses ?? []).map((p) => [String(p.moodle_course_id), p.status]));
   const aiStatusOf = (courseId) => (ai.data && isTeacherOf(courseId) ? aiByMoodleId.get(String(courseId)) ?? null : undefined);
 

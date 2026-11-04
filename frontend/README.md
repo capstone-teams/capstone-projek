@@ -15,20 +15,13 @@ npm run dev
 ```
 
 Buka http://localhost:3000. Port tidak berganti otomatis; restart Vite setelah
-perubahan dependency atau environment. Mode default menggunakan dua mock di
-browser sehingga tidak memerlukan backend atau server Moodle.
+perubahan dependency atau environment.
 
-Kata sandi akun mock selalu `<username>123`. Akun yang sama tersedia di mock
-backend dan mock Moodle; kolom Username juga menerima email akun.
-
-| Akun mock | Kata sandi | Nama | Role backend |
-| --- | --- | --- | --- |
-| dosen.demo | dosen.demo123 | Dosen Demo (akun uji BE-06.3) | INSTRUCTOR |
-| 11231023 | 11231023123 | Mahasiswa Demo (akun uji BE-06.3) | STUDENT |
-| dosen | dosen123 | Rina Kartika | INSTRUCTOR |
-| mahasiswa | mahasiswa123 | Andi Saputra | STUDENT |
-
-Akun lain: dosen2, mahasiswa2, dan mahasiswa3.
+Login selalu memakai backend nyata (`VITE_USE_MOCK` default `false`). Atur alamatnya
+lewat `VITE_BACKEND_URL` di `.env.local`; akun uji dibuat dengan seed backend dan kata
+sandinya tidak disimpan di repository. Data kursus masih dari mock Moodle
+(`VITE_MOODLE_MOCK=true`), jadi username backend harus ada di fixture tersebut, yaitu
+`dosen.demo` dan `11231023`. Mock backend hanya dipakai test.
 
 Fixture kursus mencakup Pemrograman Web (kelas A dan B) dan Basis Data. Workflow backend mock
 berjalan di memori: navigasi client mempertahankan perubahan, full reload
@@ -43,7 +36,7 @@ Salin `.env.example` ke `.env.local` dan sesuaikan:
 | VITE_MOODLE_MOCK | true | false memakai Web Service Moodle nyata |
 | VITE_MOODLE_URL | http://localhost:8080 | Instance Moodle untuk Web Service (bukan tautan keluar) |
 | VITE_MOODLE_SERVICE | moodle_mobile_app | Service login/token.php |
-| VITE_USE_MOCK | true | false memakai backend capstone nyata |
+| VITE_USE_MOCK | false | true memakai mock backend di browser (untuk test) |
 | VITE_API_BASE_URL | /api/v1 | Prefix API backend; `/api/v1` memakai proxy, URL absolut memanggil backend langsung |
 | VITE_BACKEND_URL | http://localhost:8000 | Tujuan proxy Vite untuk /api |
 
@@ -65,7 +58,7 @@ VITE_* tersedia di browser; jangan gunakan untuk secret deployment.
 
 | URL | Fungsi |
 | --- | --- |
-| /login | Login akun backend lalu Moodle |
+| /login | Login akun backend; token Moodle diambil setelahnya |
 | /forgot-password | Pemulihan kata sandi (belum tersedia di backend) |
 | / | Halaman awal sesuai role: DOSEN ke /my, MAHASISWA ke /my/courses |
 | /my | Dashboard dosen (khusus DOSEN; role lain melihat halaman 403) |
@@ -139,7 +132,7 @@ Pada backend nyata, akun uji dibuat dengan
 [backend/README.md](../backend/README.md)); kata sandinya tidak disimpan di
 repository. Bila `VITE_MOODLE_MOCK=false`, akun yang sama harus ada di Moodle.
 Backend belum menyediakan endpoint course/plan/konten, sehingga
-`VITE_USE_MOCK=false` membuat tab Generator AI gagal (404).
+Generator AI memakai `/workflows` selama API `/courses` belum tersedia.
 
 Halaman /forgot-password hanya menampilkan pemberitahuan "belum tersedia" karena
 backend belum punya endpoint pemulihan; formulir tidak dikirim ke Moodle.
@@ -155,12 +148,10 @@ Unggah RPS berada di tab **Generator AI** kursus, pada kartu "1. RPS mata kuliah
 yang tampil selama kursus belum punya project generator (`AiProjectStart`). Kartu
 memuat formulir unggah, daftar RPS milik dosen, dan pilihan RPS yang sudah diproses
 untuk kursus tersebut. File dipilih lewat klik atau diseret ke area unggah, lalu divalidasi
-di klien sebelum dikirim: format PDF atau DOCX dan ukuran 1 byte–20 MB (mengikuti
-default `RPS_MAX_UPLOAD_BYTES` backend). File yang tidak valid ditandai dengan
-pesan di bawah area unggah dan tidak dikirim. DOCX ditampilkan sebagai format
-didukung, tetapi backend saat ini hanya menerima PDF (`RPS_ALLOWED_EXTENSIONS`);
-pemrosesan DOCX menyusul pada M03, sehingga unggahan DOCX dijawab
-`400 INVALID_FILE` dan pesannya ditampilkan.
+di klien sebelum dikirim: format PDF dan ukuran 1 byte–20 MB (mengikuti default
+`RPS_MAX_UPLOAD_BYTES` backend). File yang tidak valid ditandai dengan pesan di bawah
+area unggah dan tidak dikirim. Backend menolak isi yang bukan PDF dengan
+`400 INVALID_FILE`, dan pesannya ditampilkan.
 
 Unggahan memakai `POST /api/v1/rps` dengan indikator progres (`api.upload`
 berbasis XHR; di mode mock progresnya disimulasikan), lalu langsung `POST /api/v1/rps/{rps_id}/process`. RPS baru muncul
@@ -204,16 +195,80 @@ menampilkan **Lihat hasil analisis**: ringkasan langsung di kartu selama project
 belum dibuat. Tab RPS kursus (halaman hasil analisis yang sudah ada) menampilkan
 status RPS dan tautan **Pantau workflow** ke tab Ringkasan (Aktivitas agent).
 
-Status backend saat ini: enum `ANALYZING`/`ANALYZED`, `GET /rps`,
-`/rps/{id}/analysis`, dan `/rps/{id}/reanalyze` sudah tersedia (BE-08.2/BE-08.3).
-`/workflows/*` dan WebSocket workflow masih stub `501` (BE-11.3), sehingga status
-diperbarui lewat polling. Orkestrator BE-11.2 belum ada: konversi berhenti di
-`PROCESSED` tanpa workflow dan analisis tidak berjalan otomatis. Untuk RPS itu
-daftar menampilkan tombol **Analisis RPS** yang memanggil `POST /rps/{id}/reanalyze`
-(endpoint backend yang menjadwalkan analisis), lalu status dipantau sampai
-`ANALYZED` atau `FAILED`. Mock mengikuti kontrak dan mensimulasikan orkestrator;
-nama file berisi `tanpa-analisis` meniru backend saat ini (berhenti di `PROCESSED`),
-dan `gagal-analisis` gagal saat analisis pertama untuk mencoba Analisis ulang.
+Status backend saat ini: RPS (BE-08.2/BE-08.3) serta orkestrator, `/workflows/*`,
+dan WebSocket `/ws/workflows/{id}` (BE-11.2/BE-11.3) tersedia. `POST /rps/{id}/process`
+membuat workflow dan melanjutkan konversi ke analisis, sehingga status berjalan
+otomatis sampai `ANALYZED` atau `FAILED`; event WebSocket memicu pembaruan segera dan
+polling menjadi cadangan. Penutupan WebSocket 4401/4403/4404 tidak dicoba ulang.
+Dokumen `PROCESSED` lama tanpa workflow menampilkan tombol **Analisis RPS**
+(`POST /rps/{id}/reanalyze`). Di mock, nama file berisi `tanpa-analisis` meniru dokumen
+lama itu dan `gagal-analisis` gagal saat analisis pertama untuk mencoba Analisis ulang.
+
+### Status workflow (FE-10.1)
+
+Tab **Workflow** di Generator AI (`/course/:id/ai/workflows`) menampilkan workflow milik dosen:
+daftar dari `GET /workflows` (nama RPS dari `GET /rps`), dan detail dari `GET /workflows/{id}` beserta
+riwayat `GET /workflows/{id}/events`. Workflow dipilih lewat `?workflow=<id>`; tautan **Pantau workflow**
+di daftar RPS membukanya. Tab **Ringkasan** memakai komponen status yang sama untuk workflow kursus ini.
+
+Konstanta ada di `src/utils/workflowStatus.js` (dipakai juga FE-11.1): `WORKFLOW_STATUS` (seluruh nilai
+WorkflowStatus backend), `EVENT_TYPE` dan `WORKFLOW_EVENT`, beserta label Bahasa Indonesia, warna, dan penanda.
+Berbeda dari `utils/workflow.js`, yang memuat status course milik API `/courses`.
+
+Backend hanya mengirim `status` (QUEUED, RUNNING, COMPLETED, FAILED) dan `stage` (mis. `rps_analysis`,
+`retrying`, `instructor_review`), bukan status tahap internal (`src/schemas/workflow.py`). Frontend menurunkan
+nilai WorkflowStatus lewat `workflowStatusOf()`, dan keadaan tiap tahap lewat `deriveStages()` dari workflow dan
+event-nya: selesai (event `WORKFLOW_STAGE_COMPLETED`), berjalan, **menunggu tindakan dosen** (stage
+`instructor_review`), **mencoba ulang** (stage `retrying`, tahap dari event `WORKFLOW_RETRY`), **gagal**
+(tahap pada event `WORKFLOW_FAILED`), dan menunggu. FAILED dibedakan dari RETRYING lewat warna (merah/kuning)
+dan bentuk penanda (✕/↻). Tahap yang belum dijalankan backend (rencana, konten, review, pengiriman, verifikasi)
+tampil sebagai menunggu, atau "Belum dijalankan" bila workflow sudah berhenti.
+
+Saat ini orkestrator backend baru menjalankan dua tahap (pemrosesan dan analisis RPS), sehingga RETRYING dan
+WAITING_FOR_REVIEW baru teruji lewat data contoh di tes.
+
+### Event real-time 
+
+Status dan riwayat event workflow diperbarui otomatis lewat `WS /api/v1/ws/workflows/{id}`, dipusatkan di hook
+`useWorkflowMonitor(workflowId)` (`src/hooks/useWorkflowMonitor.js`):
+
+1. **Keadaan awal lewat HTTP** (`GET /workflows/{id}` dan `/events`), baru setelah itu berlangganan. Server hanya
+   mengirim event baru setelah tersambung, jadi data diambil ulang tiap koneksi tersambung (juga setelah terputus)
+   dan setelah event akhir (`WORKFLOW_COMPLETED`/`WORKFLOW_FAILED`) untuk status yang pasti.
+2. **Event diterapkan langsung** ke status, tahap, progres, dan daftar event (`applyWorkflowEvent`,
+   `mergeEvents` di `utils/workflowStatus.js`), tanpa permintaan HTTP per event. Event ganda antara riwayat HTTP dan
+   frame WebSocket dibuang, dan daftar dibatasi 500 event per workflow.
+3. **Autentikasi token** lewat query `?token=` (browser tidak dapat menyetel header pada WebSocket). Token dibaca
+   ulang pada tiap percobaan sambung. Penutupan 4401/4403/4404 tidak dicoba ulang dan beralih ke polling.
+4. **Reconnect otomatis** dengan jeda 1, 2, 4, ... maksimal 15 detik; segera mencoba lagi saat jaringan kembali
+   (`online`) atau tab dibuka lagi. Satu koneksi dipakai bersama semua komponen untuk workflow yang sama.
+5. **Fallback polling**: cepat (4 detik) selama WebSocket belum atau tidak tersambung, jarang (15 detik) sebagai
+   jaring pengaman saat tersambung, dan berhenti setelah workflow berhenti. Layar menampilkan keterangan singkat
+   ("Status diperbarui otomatis" / "menyambungkan ulang" / "diperbarui berkala").
+6. **State management (FE-03.1)**: snapshot, event, dan status koneksi tiap workflow disimpan di slice `workflows`
+   pada `AppStateProvider` (`src/state/appState.js`). Hook `useWorkflowMonitor` atau `useAppState().workflows[id]`
+   memberi data yang sama untuk halaman lain, mis. progres RPS (FE-08.2) dan dashboard (FE-11.1).
+
+### Hapus RPS yang gagal (dimatikan)
+
+Fitur ini **disembunyikan** karena backend belum punya `DELETE /rps/{id}`; kodenya disimpan untuk
+berjaga-jaga. Flag-nya `RPS_DELETE_AVAILABLE` (`services/config.js`), diaktifkan dengan
+`VITE_RPS_DELETE=true` (mode mock untuk tes selalu aktif). Bila aktif, RPS berstatus **Gagal** punya tombol
+**Hapus** (dengan konfirmasi), dan bila ada lebih dari satu muncul **Hapus semua yang gagal (N)**. Saat ini
+"hapus" hanya mengeluarkan RPS dari daftar pengguna di browser (kunci `rps.hidden`) dan dokumennya tetap di
+server; unggah file yang sama menampilkannya kembali. Saat flag mati, RPS yang pernah dihapus tampil lagi.
+
+Setelah backend punya endpoint hapus: aktifkan flag, lalu ganti isi `hide` di `useRpsLibrary` agar memanggilnya.
+
+### Tanpa API /courses
+
+Backend belum punya `/courses`, jadi `COURSE_API_AVAILABLE` (services/config.js) hanya
+benar di mode mock. Dengan `VITE_USE_MOCK=false`, project kursus adalah workflow RPS:
+`WorkflowLayout` membaca `GET /workflows` dan detailnya, mencari `moodle_course_id` yang
+sama dengan kursus. Bila belum ada, dosen mengunggah RPS lalu **Hubungkan RPS**
+(`PUT /workflows/{id}/moodle-target`). Setelah terhubung, Generator AI hanya memuat tab
+Ringkasan (status dan riwayat event) dan RPS; Rencana, Konten, Review, dan Publikasi
+disembunyikan sampai API-nya tersedia.
 
 ### Hasil analisis RPS (FE-08.3)
 
@@ -326,6 +381,12 @@ benar-benar disimpan yang ditampilkan (`src/components/moodle/modedit/`):
   General, Availability, dan Submission types terbuka seperti `setExpanded` Moodle.
 - **Quiz**: General (Name, Description) dan Timing (Open the quiz, Close the quiz).
 - **Text and media area**: General (Title in course index, Text dengan editor).
+
+Ketiganya punya bagian tambahan **Generator AI** (bukan bagian Moodle) di bagian bawah, terbuka secara
+bawaan, berisi **Prompt AI**: instruksi opsional (maks. 2000 karakter, dengan contoh isian sesuai jenis)
+untuk agent AI saat menyusun isi aktivitas. Prompt diteruskan oleh formulir ke `onSubmit` sebagai argumen
+ketiga `{ aiPrompt }`, terpisah dari isian aktivitas, sehingga tidak ikut terkirim ke kursus. Backend belum punya
+API pembuatan aktivitas dengan AI, jadi prompt belum diproses; formulir menyebutkannya.
 
 Pesan validasi Moodle: "You must supply a value here.", "Due date cannot be earlier
 than the allow submissions from date.", "Cut-off date cannot be earlier than the due

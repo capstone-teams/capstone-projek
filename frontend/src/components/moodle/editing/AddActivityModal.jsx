@@ -2,8 +2,8 @@ import { useNavigate } from 'react-router-dom';
 import { Modal } from '../../ui';
 import ActivityChooser from './ActivityChooser';
 
-// Jenis aktivitas di pemilih. Warna ikon dan teks mengikuti dialog "Add an activity or resource" Moodle.
-// `recommended` di Moodle diatur admin situs; di sini ditetapkan tetap.
+// Jenis aktivitas di pemilih. Rujukan: warna ikon dan teks dialog "Add an activity or resource" di Moodle.
+// Di Moodle `recommended` diatur admin situs; di sini ditetapkan tetap.
 const ACTIVITY_TYPES = [
   {
     modname: 'assign',
@@ -33,7 +33,7 @@ const ACTIVITY_TYPES = [
 
 /**
  * Tambah aktivitas ke section: pilih jenis di pemilih, lalu buka halaman "New <aktivitas>"
- * seperti Moodle (course/modedit.php?add=<modname>&section=<n>).
+ * Rujukan alur Moodle: course/modedit.php?add=<modname>&section=<n>.
  */
 export default function AddActivityModal({ open, courseId, section, onClose }) {
   const navigate = useNavigate();

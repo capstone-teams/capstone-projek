@@ -1,6 +1,6 @@
 /**
- * Tiruan Moodle Web Service untuk mode VITE_MOODLE_MOCK=true.
- * Bentuk respons mengikuti *_returns() di source Moodle, cukup untuk kebutuhan UI.
+ * Tiruan layanan LMS untuk mode VITE_MOODLE_MOCK=true.
+ * Rujukan source Moodle: bentuk respons mengikuti *_returns() tiap fungsi, cukup untuk kebutuhan UI.
  */
 
 const DAY = 86400;
@@ -14,7 +14,7 @@ const USERS = {
   5: { id: 5, username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id' },
   6: { id: 6, username: 'mahasiswa2', firstname: 'Siti', lastname: 'Rahmawati', email: 'mahasiswa2@student.itk.ac.id' },
   7: { id: 7, username: 'mahasiswa3', firstname: 'Dimas', lastname: 'Nugroho', email: 'mahasiswa3@student.itk.ac.id' },
-  // Akun uji backend (BE-06.3); login aplikasi mewajibkan akun yang sama di backend dan Moodle.
+  // Akun uji backend (BE-06.3); username harus sama dengan akun backend.
   8: { id: 8, username: 'dosen.demo', firstname: 'Dosen', lastname: 'Demo', email: 'dosen.demo@itk.ac.id' },
   9: { id: 9, username: '11231023', firstname: 'Mahasiswa', lastname: 'Demo', email: '11231023@student.itk.ac.id' },
 };
@@ -71,7 +71,7 @@ let cmSeq = 100;
 const PAGES = [];
 const ASSIGNS = [];
 
-// Jenis pengumpulan (assignsubmission_onlinetext / assignsubmission_file), bentuk `configs` Moodle.
+// Rujukan source Moodle: `configs` jenis pengumpulan (assignsubmission_onlinetext / assignsubmission_file).
 function assignConfigs({ onlinetext = true, wordlimit = 0, file = true, maxfiles = 20, maxbytes = 1048576 } = {}) {
   const config = (plugin, name, value) => ({ plugin, subtype: 'assignsubmission', name, value: String(value) });
   return [
@@ -93,7 +93,7 @@ function mod(course, section, modname, name, description, extra = {}) {
     instance: id,
     modname,
     modplural: MODULE_PLURAL[modname],
-    // Ikon asli Moodle (mod/*/pix/monologo.svg), disalin ke public/moodle/mod.
+    // Rujukan source Moodle: ikon mod/*/pix/monologo.svg, disalin ke public/moodle/mod.
     modicon: `/moodle/mod/${modname}.svg`,
     url: `/mod/${modname}/view.php?id=${id}`,
     description,
@@ -475,7 +475,7 @@ const handlers = {
 };
 
 // ---- Editor kursus (Edit mode). Mengikuti core_courseformat\stateactions dan
-// core_update_inplace_editable pada Moodle 5.x; hanya editingteacher yang boleh mengubah.
+// Rujukan source Moodle 5.x: core_update_inplace_editable; hanya editingteacher yang boleh mengubah.
 
 function editableCourse(user, courseid) {
   const c = COURSE_DEFS.find((x) => x.id === Number(courseid));
@@ -573,7 +573,7 @@ const editingHandlers = {
     }
     return { component, itemtype, itemid: Number(itemid), displayvalue: name, value: name, editlabel: '', edithint: '' };
   },
-  // Bukan fungsi Moodle: Moodle core belum punya Web Service untuk membuat assign/label
+  // Khusus mock, bukan fungsi Moodle. Rujukan: Moodle core belum punya Web Service untuk membuat assign/label
   // beserta isinya (core_courseformat_create_module hanya untuk modul FEATURE_QUICKCREATE).
   mock_course_create_activity(user, { courseid, sectionnum, modname, name, intro = '', text = '', allowsubmissionsfromdate = 0, duedate = 0, cutoffdate = 0, grade = 100, timeopen = 0, timeclose = 0, onlinetext_enabled = 0, onlinetext_wordlimit = 0, file_enabled = 1, file_maxfiles = 20, file_maxbytes = 1048576, format = 0 }) {
     const { error, course, sections } = editableCourse(user, courseid);
@@ -617,7 +617,7 @@ const editingHandlers = {
         : String(text ?? '').trim().split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
       const plain = html.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
       if (!plain) return wsError('invalidparameter', 'Isi teks wajib diisi.');
-      // Seperti Moodle: tanpa "Title in course index", nama label diambil dari awal isinya.
+      // Rujukan perilaku Moodle: tanpa "Title in course index", nama label diambil dari awal isinya.
       const cm = mod(course, section.section, 'label', String(name ?? '').trim() || plain.replace(/\s+/g, ' ').slice(0, 50), html);
       section.modules.push(cm);
       return { cmid: cm.id };
@@ -635,10 +635,10 @@ export function resetMockMoodle() {
   DRAFTS.clear();
 }
 
-export async function mockRequestToken(username, password) {
+export async function mockRequestToken(username, password, { trusted = false } = {}) {
   await sleep(200);
   const user = Object.values(USERS).find((u) => u.username === username);
-  if (!user || password !== `${username}123`) {
+  if (!user || (!trusted && password !== `${username}123`)) {
     const { MoodleError } = await import('../moodle/moodleClient');
     throw new MoodleError('invalidlogin', 'Invalid login, please try again');
   }

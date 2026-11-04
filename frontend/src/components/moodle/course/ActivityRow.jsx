@@ -20,7 +20,7 @@ const MOD_LABELS = {
 
 const DATE_LABELS = { 'Opened:': 'Dibuka:', 'Due:': 'Tenggat:', 'Closes:': 'Ditutup:', 'Closed:': 'Ditutup:', 'Opens:': 'Dibuka:' };
 
-// Indentasi aktivitas (Geser ke kanan) mengikuti Moodle: satu tingkat ≈ 1.5rem.
+// Rujukan Moodle: indentasi aktivitas (Geser ke kanan), satu tingkat ≈ 1.5rem.
 const indentStyle = (mod) => (mod.indent > 0 ? { marginLeft: `${Math.min(mod.indent, 16) * 1.5}rem` } : undefined);
 
 /** Satu aktivitas di halaman kursus. Pada Edit mode menampilkan pensil ubah nama dan menu ⋮. */
@@ -48,7 +48,7 @@ export default function ActivityRow({ courseId, mod, isTeacher, editMode, sectio
   );
 
   return (
-    // .activity-item (Moodle 5.3): padding 1.25rem, radius 1rem, latar abu muda, putih saat hover.
+    // Rujukan CSS Moodle 5.3 (.activity-item): padding 1.25rem, radius 1rem, latar abu muda, putih saat hover.
     <li
       className={`flex items-start gap-3 rounded-2xl border border-line-subtle bg-surface p-5 transition-colors hover:bg-white focus-within:outline-2 focus-within:outline-primary ${hidden && isTeacher ? 'opacity-80' : ''}`}
       style={indentStyle(mod)}

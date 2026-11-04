@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** Quality Plan
-**Version:** 0.2
+**Version:** 0.5
 **Status:** Proposed
 **Owner:** Project Manager
 **Related Documents:** `project-charter.md`, `prd.md`, `system-design.md`, `api-specification.md`, `moodle-integration.md`, `data-model.md`, `agent-design.md`, `content-schema.md`
@@ -617,12 +617,12 @@ Candidate model dibandingkan berdasarkan:
 6. RPS adherence;
 7. content quality;
 8. latency;
-9. memory/resource consumption;
+9. token usage dan biaya per run;
 10. stability.
 
 Example:
 
-| Model   | RPS Adherence | Content Quality | Tool Calling | Structured Output | Latency | Resource |
+| Model   | RPS Adherence | Content Quality | Tool Calling | Structured Output | Latency | Cost/Run |
 | ------- | ------------: | --------------: | -----------: | ----------------: | ------: | -------: |
 | Model A |           TBD |             TBD |          TBD |               TBD |     TBD |      TBD |
 | Model B |           TBD |             TBD |          TBD |               TBD |     TBD |      TBD |
@@ -983,7 +983,7 @@ Assignment dan quiz tetap bergantung pada Moodle capability yang tersedia.
 
 # 29. Moodle Integration Quality
 
-Moodle integration diuji berdasarkan capability yang benar-benar tersedia pada Moodle ITK.
+Moodle integration diuji berdasarkan capability yang benar-benar tersedia pada instance Moodle self-hosted tim (DL-001).
 
 Testing mencakup, sesuai scope dan capability:
 
@@ -1000,13 +1000,13 @@ Testing mencakup, sesuai scope dan capability:
 11. error handling;
 12. verification.
 
-Exact Moodle functions dan capability tidak boleh diasumsikan tersedia sebelum diverifikasi pada environment ITK.
+Exact Moodle functions dan capability tidak boleh diasumsikan tersedia sebelum diverifikasi pada instance Moodle tim.
 
 ---
 
 # 30. Moodle Mock Testing
 
-Sebelum Moodle ITK tersedia atau ketika integration belum lengkap, sistem menggunakan Moodle abstraction/mock.
+Sebelum operasi Moodle tertentu tersedia atau ketika integration belum lengkap, sistem menggunakan Moodle abstraction/mock.
 
 ```text
 Backend
@@ -1219,18 +1219,17 @@ Performance evaluation mencakup:
 * Moodle execution time;
 * end-to-end time.
 
-Resource metrics:
+LLM metrics:
 
 ```text
-CPU
-RAM
-VRAM
-Model loading time
-Inference latency
+API latency per request
+Token usage per run
+Cost per run
+Rate limit / error rate
 Concurrent workload
 ```
 
-Target final ditentukan berdasarkan hardware environment Capstone.
+Target final ditentukan berdasarkan baseline pengukuran dan anggaran penggunaan OpenAI API (DL-007).
 
 ---
 
@@ -1365,7 +1364,7 @@ Application
 +
 PostgreSQL
 +
-Ollama
+OpenAI API
 +
 Moodle Test Environment
 +
@@ -1381,10 +1380,12 @@ Application
 +
 PostgreSQL
 +
-Ollama
+OpenAI API (atau mock LLM)
 +
 Mock Moodle
 ```
+
+Moodle Test Environment adalah instance Moodle self-hosted yang dikelola tim, menggunakan versi yang ditetapkan pada DL-002.
 
 Production Moodle tidak digunakan sebagai environment eksperimen utama.
 
@@ -1526,6 +1527,7 @@ Metric utama:
 | Verification Success Rate     | Mengukur verification                      |
 | Student Accessibility Rate    | Mengukur akses hasil oleh student          |
 | End-to-End Completion Time    | Mengukur performance                       |
+| Time Reduction Rate           | Mengukur efisiensi waktu dibandingkan pengembangan konten secara manual (rumusan masalah proposal no. 3) |
 | Instructor Task Completion    | Mengukur usability                         |
 | Critical/High Defect Count    | Mengukur release quality                   |
 
@@ -1546,10 +1548,19 @@ Target dibagi menjadi target yang sudah dapat ditetapkan dan target yang membutu
 | RPS adherence                     | Ditentukan setelah baseline evaluation                        |
 | Content quality                   | Ditentukan setelah rubric calibration                         |
 | Agent success rate                | Ditentukan setelah baseline                                   |
-| Performance                       | Ditentukan berdasarkan hardware benchmark                     |
+| Time reduction rate               | Diukur dengan membandingkan waktu pengembangan course secara manual dan menggunakan sistem untuk RPS yang sama |
+| Performance                       | Ditentukan berdasarkan baseline latency dan biaya API          |
 | Accessibility                     | Critical usability/accessibility issues resolved              |
 
 Target kuantitatif yang belum memiliki baseline tidak boleh ditetapkan secara arbitrer.
+
+Tiga metrik evaluasi utama proyek mengikuti rumusan masalah pada proposal:
+
+| Metrik Proposal     | Metrik Quality Plan                         | Rumus                                                                 |
+| ------------------- | ------------------------------------------- | --------------------------------------------------------------------- |
+| Success rate        | Workflow Success Rate                       | skenario berhasil ÷ total skenario pengujian × 100%                   |
+| RPS adherence rate  | RPS Adherence Score                         | kriteria RPS yang terpenuhi ÷ total kriteria evaluasi × 100%          |
+| Time reduction rate | Time Reduction Rate                         | (waktu manual − waktu dengan sistem) ÷ waktu manual × 100%            |
 
 ---
 
@@ -1868,7 +1879,7 @@ Risk dan issue tetap dibedakan.
 Risk:
 
 ```text
-Quiz creation mungkin tidak tersedia pada Moodle ITK.
+Quiz creation mungkin tidak tersedia melalui external functions bawaan Moodle.
 ```
 
 Issue:
@@ -1971,7 +1982,7 @@ Sebuah test dianggap complete apabila:
 | Final LLM                       | TBD      |
 | Performance target              | TBD      |
 | Retry limit                     | TBD      |
-| Moodle test environment         | TBD      |
+| Moodle test environment         | Confirmed — self-hosted (DL-001) |
 | Accessibility target            | TBD      |
 | CI testing strategy             | TBD      |
 
@@ -2022,10 +2033,10 @@ Perubahan terhadap quality criteria yang memengaruhi scope atau acceptance crite
 | ------------ | -------------------------------------- |
 | Document     | Quality Plan                           |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.2                                    |
+| Version      | 0.5                                    |
 | Status       | Proposed                               |
 | Owner        | Project Manager                        |
-| Last Updated | 2026-09-02                             |
+| Last Updated | 2026-10-13                             |
 
 ## Version History
 
@@ -2033,3 +2044,6 @@ Perubahan terhadap quality criteria yang memengaruhi scope atau acceptance crite
 | ------- | ---------- | ---------------------------------------------------------------------------------------------------------------- | ------------ |
 | 0.1     | 2026-09-02 | Initial Quality Plan                                                                                             | Project Team |
 | 0.2     | 2026-09-02 | Consolidated QA/QC, AI evaluation, agent reliability, Moodle verification, quality governance, and release gates | Project Team |
+| 0.3     | 2026-10-13 | Moodle test environment disesuaikan dengan DL-001; referensi DL-002 dan DL-003 | Project Manager |
+| 0.4     | 2026-10-13 | Environment dan metrik LLM disesuaikan dengan DL-007 | Project Manager |
+| 0.5     | 2026-10-14 | Penambahan Time Reduction Rate dan pemetaan tiga metrik proposal | Project Manager |

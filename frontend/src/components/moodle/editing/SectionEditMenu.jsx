@@ -1,6 +1,6 @@
 import ActionMenu from './ActionMenu';
 
-/** Menu ⋮ section di Edit mode. Section umum (nomor 0) tidak dapat disembunyikan, seperti di Moodle. */
+/** Menu ⋮ section di Edit mode. Rujukan Moodle: section umum (nomor 0) tidak dapat disembunyikan. */
 export default function SectionEditMenu({ section, editing }) {
   const hidden = section.visible === 0;
   const items = [

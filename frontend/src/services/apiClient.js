@@ -1,6 +1,7 @@
 import { API_BASE_URL, TOKEN_STORAGE_KEY, USE_MOCK } from './config';
 import { handleMockRequest } from './mock/mockServer';
 import { readString, writeString } from '../utils/storage';
+import { MSG_REQUEST_FAILED, MSG_UNAVAILABLE, logTechnical } from '../utils/userMessages';
 
 /**
  * Error dari Backend API. Bentuknya mengikuti design-api.md §18:
@@ -97,13 +98,20 @@ function defaultErrorCode(status) {
   return 'API_ERROR';
 }
 
+<<<<<<< HEAD
 function toApiError(status, payload) {
+=======
+// Pesan cadangan untuk pengguna; kode HTTP hanya dicatat ke konsol.
+const fallbackMessage = (status) => (status >= 500 || status === 0 ? MSG_UNAVAILABLE : MSG_REQUEST_FAILED);
+
+export function toApiError(status, payload) {
+>>>>>>> develop
   if (payload?.error && typeof payload.error === 'object') {
     const err = payload.error;
     return new ApiError(
       status,
       err.code || defaultErrorCode(status),
-      err.message || `Request gagal (HTTP ${status}).`,
+      err.message || fallbackMessage(status),
       Array.isArray(err.details) ? err.details : (err.details != null ? [err.details] : []),
     );
   }
@@ -120,7 +128,7 @@ function toApiError(status, payload) {
   if (payload?.detail !== undefined && payload?.detail !== null) {
     const code = (typeof payload.detail === 'object' && !Array.isArray(payload.detail) && (payload.detail.code || payload.detail.error_code))
       || defaultErrorCode(status);
-    const message = formatDetail(payload.detail) || `Request gagal (HTTP ${status}).`;
+    const message = formatDetail(payload.detail) || fallbackMessage(status);
     const details = Array.isArray(payload.detail) ? payload.detail : [payload.detail];
     return new ApiError(status, code, message, details);
   }
@@ -134,7 +142,8 @@ function toApiError(status, payload) {
     );
   }
 
-  return new ApiError(status, 'INTERNAL_ERROR', `Request gagal (HTTP ${status}).`);
+  logTechnical('api', { status, body: payload });
+  return new ApiError(status, 'INTERNAL_ERROR', fallbackMessage(status));
 }
 
 /**
@@ -171,13 +180,14 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}${qs}`, init);
-  } catch {
+  } catch (cause) {
+    logTechnical('api', { method, path, error: String(cause) });
     throw networkError();
   }
   return settle(response.status, await response.text(), { token, isAuthLogin });
 }
 
-const networkError = () => new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.');
+const networkError = () => new ApiError(0, 'NETWORK_ERROR', MSG_UNAVAILABLE);
 
 /** Ubah response HTTP mentah menjadi data, atau lempar ApiError (dipakai fetch dan upload XHR). */
 function settle(status, text, { token, isAuthLogin }) {
@@ -187,7 +197,10 @@ function settle(status, text, { token, isAuthLogin }) {
     try {
       data = JSON.parse(text);
     } catch {
-      if (ok) throw new ApiError(status, 'INVALID_RESPONSE', 'Respons JSON backend tidak valid.');
+      if (ok) {
+        logTechnical('api', { status, body: text.slice(0, 200) });
+        throw new ApiError(status, 'INVALID_RESPONSE', MSG_UNAVAILABLE);
+      }
       data = null;
     }
   }

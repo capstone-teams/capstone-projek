@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { useWorkflow } from '../../../hooks/useWorkflow';
 import { getRps, getRpsAnalysis, processRps, reanalyzeRps } from '../../../services/rpsService';
+<<<<<<< HEAD
+=======
+import { COURSE_API_AVAILABLE } from '../../../services/config';
+>>>>>>> develop
 import { useApi } from '../../../hooks/useApi';
 import { usePolling } from '../../../hooks/usePolling';
 import { Card, ErrorAlert, Spinner } from '../../../components/ui';
@@ -13,7 +17,12 @@ import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsStatus';
 import { formatDateTime } from '../../../utils/format';
 
+<<<<<<< HEAD
 const COURSE_PLANNING_AVAILABLE = true;
+=======
+// Course planning (FE-05) baru tersedia di backend pada M03; di mode mock sudah dapat dicoba.
+const COURSE_PLANNING_AVAILABLE = COURSE_API_AVAILABLE;
+>>>>>>> develop
 const POLL_MS = 3000;
 
 /**
@@ -91,10 +100,17 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
 
 /** Hasil analisis RPS. */
 export default function CourseRpsPage() {
+<<<<<<< HEAD
   const { course, events, refresh } = useCourse();
   const [activeRpsId, setActiveRpsId] = useState(null);
   const rpsId = activeRpsId || course?.rps_id;
 
+=======
+  const { course } = useCourse();
+  const rpsId = course.rps_id;
+  // Pada backend nyata `course` adalah workflow itu sendiri; pada mock /courses itu project, jadi tanpa id workflow.
+  const workflowId = COURSE_API_AVAILABLE ? course.workflow_id : course.id;
+>>>>>>> develop
   // Status dulu (GET /rps/{id}); hasil analisis hanya diminta bila sudah ANALYZED.
   const rpsQuery = useApi(() => (rpsId ? getRps(rpsId) : null), [rpsId]);
   const rps = rpsQuery.data;
@@ -156,9 +172,9 @@ export default function CourseRpsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Monitoring workflow kursus ini ada di tab Ringkasan (Aktivitas agent). */}
-          <Link to=".." relative="path" className="btn btn--ghost btn--sm">
-            Pantau workflow
+          {/* Status workflow ada di tab Workflow; RPS tanpa workflow kembali ke daftar RPS. */}
+          <Link to={course.id ? `../workflows${workflowId ? `?workflow=${workflowId}` : ''}` : '..'} relative="path" className="btn btn--ghost btn--sm">
+            {course.id ? 'Pantau workflow' : 'Kembali ke daftar RPS'}
           </Link>
           {COURSE_PLANNING_AVAILABLE && analyzed ? (
             <Link to="../plan" relative="path" className="btn btn--primary">

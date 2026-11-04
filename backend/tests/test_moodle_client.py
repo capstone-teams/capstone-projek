@@ -367,3 +367,47 @@ def test_from_settings_reads_moodle_configuration():
 
     run(scenario())
     assert seen == [TOKEN]
+    
+
+def test_from_settings_uses_the_configured_timeout():
+    settings = SimpleNamespace(
+        MOODLE_BASE_URL=BASE_URL, MOODLE_WEB_SERVICE_TOKEN=TOKEN, moodle_timeout_seconds=3.0
+    )
+
+    async def scenario():
+        client = MoodleClient.from_settings(settings)
+        try:
+            return client._http.timeout
+        finally:
+            await client.aclose()
+
+    timeout = run(scenario())
+    assert timeout.connect == timeout.read == 3.0
+
+
+def test_from_settings_keeps_an_explicit_timeout():
+    settings = SimpleNamespace(
+        MOODLE_BASE_URL=BASE_URL, MOODLE_WEB_SERVICE_TOKEN=TOKEN, moodle_timeout_seconds=3.0
+    )
+
+    async def scenario():
+        client = MoodleClient.from_settings(settings, timeout=7.5)
+        try:
+            return client._http.timeout
+        finally:
+            await client.aclose()
+
+    assert run(scenario()).read == 7.5
+
+
+def test_from_settings_falls_back_to_the_default_timeout():
+    settings = SimpleNamespace(MOODLE_BASE_URL=BASE_URL, MOODLE_WEB_SERVICE_TOKEN=TOKEN)
+
+    async def scenario():
+        client = MoodleClient.from_settings(settings)
+        try:
+            return client._http.timeout
+        finally:
+            await client.aclose()
+
+    assert run(scenario()).read == 10.0

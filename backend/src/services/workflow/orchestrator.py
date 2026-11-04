@@ -1,19 +1,22 @@
-"""Orkestrator workflow RPS (BE-11.2).
+"""Orkestrator workflow (BE-11.2, BE-14.3).
 
 Orkestrator mengendalikan urutan tahap dan transisi status; LLM tidak dapat
-mengubah status workflow. Pada sprint ini dua tahap dijalankan berurutan dalam
-satu workflow:
+mengubah status workflow. Tiga rangkaian tahap berjalan di atas workflow yang
+sama:
 
 ```text
-PROCESSING_RPS  (pipeline Docling BE-05.2)
-      ↓
-ANALYZING_RPS   (BE-08.1 → BE-09.2 → BE-08.2)
+Post /rps/{id}/process   PROCESSING_RPS → ANALYZING_RPS
+Post /workflows/{id}/plan        PLANNING_COURSE → VALIDATING
+Post /rps/{id}/reanalyze         ANALYZING_RPS
 ```
 
-Daftar ``WorkflowStage`` sengaja berupa tuple sehingga tahap berikutnya
-(``PLANNING_COURSE`` dan seterusnya, issue BE-11.2) ditambahkan dengan
-menambahkan entri — tanpa mengubah tahap yang sudah ada.
+Setelah rangkaian tahap selesai, workflow berhenti pada
+``WAITING_FOR_REVIEW`` — status tunggu DL-012, bukan ``COMPLETED`` — karena
+keputusan dosen (review rencana, generate konten, eksekusi) melanjutkan
+workflow yang sama.
 
+Daftar ``WorkflowStage`` sengaja berupa tuple sehingga tahap berikutnya
+ditambahkan dengan menambahkan entri — tanpa mengubah tahap yang sudah ada.
 Setiap perubahan status, aktivitas agent, retry, dan kegagalan melewati
 :class:`~src.services.workflow.service.WorkflowService` dan tercatat sebagai
 ``workflow_events``. Proses berjalan di background dengan session database
@@ -25,11 +28,20 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from src.config.database import get_session_factory
 from src.models.workflow import WorkflowStatus
 from src.models.workflow_event import EventType
 from src.services.analysis.service import RPSEvent
+from src.services.course_plan.errors import CoursePlanDomainError
+from src.services.course_plan.planner import (
+    CoursePlanner,
+    PlannedCoursePlan,
+    PlanningRequest,
+    get_course_planner,
+)
+from src.services.llm.base import LLMProviderError
 from src.services.rps.errors import RPSDomainError
 from src.services.rps.service import RPSService
 from src.services.workflow.domain import WorkflowRecord, stage_name
@@ -42,15 +54,24 @@ from src.services.workflow.service import (
 )
 
 __all__ = [
+    "COURSE_PLANNING_STAGES",
     "RPS_ANALYSIS_STAGES",
     "RPS_PROCESSING_STAGES",
     "WorkflowStage",
     "execute_workflow",
+    "run_course_planning_workflow",
     "run_rps_analysis_workflow",
     "run_rps_processing_workflow",
 ]
 
+if TYPE_CHECKING:  # pragma: no cover - hanya untuk anotasi tipe
+    from src.services.course_plan.service import CoursePlanService
+
+
 logger = logging.getLogger(__name__)
+
+#: Event publik setelah sebuah versi course plan tersimpan (BE-14.3).
+EVENT_PLAN_GENERATED = "WORKFLOW_PLAN_GENERATED"
 
 #: Nama tahap analisis pada event (sama dengan ``stage_name`` domain).
 ANALYSIS_STAGE_NAME = stage_name(WorkflowStatus.ANALYZING_RPS) or "rps_analysis"
@@ -69,6 +90,21 @@ ANALYSIS_EVENT_MAP: dict[str, tuple[EventType, str]] = {
     "ANALYSIS_FAILED": (EventType.ERROR_FAILURE, EVENT_FAILED),
 }
 
+#: Pemetaan event Course Planning Service (BE-14.3) ke event workflow.
+#: ``PLANNING_COMPLETED`` tidak dipetakan: tahap yang berakhir sudah menulis
+#: ``WORKFLOW_STAGE_COMPLETED``.
+PLANNING_EVENT_MAP: dict[str, tuple[EventType, str]] = {
+    "LLM_CALLING": (EventType.AKTIVITAS_AGENT, EVENT_STAGE_PROGRESS),
+    "LLM_RESPONDED": (EventType.AKTIVITAS_AGENT, EVENT_STAGE_PROGRESS),
+    "VALIDATING": (EventType.AKTIVITAS_AGENT, EVENT_STAGE_PROGRESS),
+    "RETRY_FIX": (EventType.RETRY_FIX, EVENT_RETRY),
+    "PLANNING_FAILED": (EventType.ERROR_FAILURE, EVENT_FAILED),
+}
+
+#: Nama tahap perencanaan/validasi pada event.
+PLANNING_STAGE_NAME = stage_name(WorkflowStatus.PLANNING_COURSE) or "course_planning"
+PLAN_VALIDATION_STAGE_NAME = stage_name(WorkflowStatus.VALIDATING) or "validation"
+
 
 @dataclass
 class WorkflowContext:
@@ -77,6 +113,12 @@ class WorkflowContext:
     workflow: WorkflowRecord
     workflow_service: WorkflowService
     rps_service: RPSService
+    #: Hanya terisi pada rangkaian tahap course planning (BE-14.3).
+    course_plan_service: CoursePlanService | None = None
+    planner: CoursePlanner | None = None
+    instruction: str | None = None
+    planning_request: PlanningRequest | None = None
+    planned_plan: PlannedCoursePlan | None = None
     #: Event kegagalan sudah ditulis oleh service yang gagal (mis. analisis),
     #: sehingga orkestrator tidak perlu menulis event kegagalan kedua.
     failure_emitted: bool = False
@@ -213,6 +255,105 @@ RPS_PROCESSING_STAGES: tuple[WorkflowStage, ...] = (PROCESSING_STAGE, ANALYSIS_S
 RPS_ANALYSIS_STAGES: tuple[WorkflowStage, ...] = (ANALYSIS_STAGE,)
 
 
+# --- Tahap: course planning (BE-14.3) ----------------------------------------
+
+
+def _planning_emitter(ctx: WorkflowContext) -> Callable[..., Awaitable[None]]:
+    """Terjemahkan event Course Planning Service menjadi WorkflowEvent.
+
+    Retry service memindahkan workflow ke ``RETRYING`` dan kembali ke
+    ``PLANNING_COURSE`` saat percobaan berikutnya benar-benar dikirim ke model —
+    pola yang sama dengan tahap analisis RPS.
+    """
+
+    async def emit(*, event: str, message: str, **data: object) -> None:
+        mapped = PLANNING_EVENT_MAP.get(event)
+        if mapped is None:
+            return
+
+        event_category, public_event = mapped
+        if event_category is EventType.ERROR_FAILURE:
+            ctx.failure_emitted = True
+
+        if public_event == EVENT_RETRY:
+            ctx.workflow = await ctx.workflow_service.mark_retrying(ctx.workflow)
+        elif event == "LLM_CALLING" and int(data.get("attempt") or 1) > 1:
+            ctx.workflow = await ctx.workflow_service.resume_stage(
+                ctx.workflow, WorkflowStatus.PLANNING_COURSE
+            )
+
+        await ctx.workflow_service.record_event(
+            ctx.workflow,
+            event_type=event_category,
+            event=public_event,
+            stage=PLANNING_STAGE_NAME,
+            message=message,
+            metadata={key: value for key, value in data.items() if value is not None},
+        )
+
+    return emit
+
+
+async def _run_course_planning(ctx: WorkflowContext) -> None:
+    """Susun konteks dan jalankan Course Planning Service (BE-14.3)."""
+    if ctx.course_plan_service is None or ctx.planner is None:
+        raise RuntimeError(
+            "tahap course planning memerlukan CoursePlanService dan CoursePlanner"
+        )
+
+    ctx.planning_request = await ctx.course_plan_service.prepare_planning(
+        workflow=ctx.workflow, instruction=ctx.instruction
+    )
+    ctx.planned_plan = await ctx.planner.generate(
+        ctx.planning_request, emit_event=_planning_emitter(ctx)
+    )
+
+
+async def _run_plan_validation(ctx: WorkflowContext) -> None:
+    """Validasi akademik lalu simpan hasil sebagai versi DRAFT baru."""
+    if (
+        ctx.course_plan_service is None
+        or ctx.planning_request is None
+        or ctx.planned_plan is None
+    ):
+        raise RuntimeError("tahap validasi memerlukan hasil perencanaan")
+
+    record = await ctx.course_plan_service.store_planned_plan(
+        workflow=ctx.workflow,
+        request=ctx.planning_request,
+        planned=ctx.planned_plan,
+    )
+    issues = (record.validation_result or {}).get("issues") or []
+
+    await ctx.workflow_service.record_event(
+        ctx.workflow,
+        event_type=EventType.AKTIVITAS_AGENT,
+        event=EVENT_PLAN_GENERATED,
+        stage=PLAN_VALIDATION_STAGE_NAME,
+        message=f"Course plan versi {record.version} tersimpan.",
+        metadata={
+            "version": record.version,
+            "course_plan_id": record.id,
+            "validation_passed": record.validation_passed,
+            "issues": len(issues),
+        },
+    )
+
+
+
+PLANNING_COURSE_STAGE = WorkflowStage(
+    WorkflowStatus.PLANNING_COURSE, _run_course_planning
+)
+PLAN_VALIDATION_STAGE = WorkflowStage(
+    WorkflowStatus.VALIDATING, _run_plan_validation
+)
+
+#: Urutan tahap generate/regenerate course plan: PLANNING_COURSE → VALIDATING.
+COURSE_PLANNING_STAGES: tuple[WorkflowStage, ...] = (
+    PLANNING_COURSE_STAGE,
+    PLAN_VALIDATION_STAGE,
+)
+
 # --- Eksekusi ----------------------------------------------------------------
 
 
@@ -222,17 +363,25 @@ async def execute_workflow(
     stages: tuple[WorkflowStage, ...],
     workflow_service: WorkflowService,
     rps_service: RPSService,
+    course_plan_service: CoursePlanService | None = None,
+    planner: CoursePlanner | None = None,
+    instruction: str | None = None,
 ) -> None:
     """Jalankan deretan tahap pada satu workflow.
 
     Kegagalan tahap menghentikan rangkaian, menandai workflow ``FAILED``, dan
     menulis satu event kegagalan (kecuali event itu sudah ditulis oleh service
-    yang gagal). Tidak ada exception yang dilempar ke pemanggil background.
+    yang gagal). Rangkaian yang selesai berakhir di ``WAITING_FOR_REVIEW``
+    (DL-012), bukan ``COMPLETED``. Tidak ada exception yang dilempar ke
+    pemanggil background.
     """
     ctx = WorkflowContext(
         workflow=workflow,
         workflow_service=workflow_service,
         rps_service=rps_service,
+        course_plan_service=course_plan_service,
+        planner=planner,
+        instruction=instruction,
     )
     ctx.workflow = await workflow_service.begin_run(workflow, total=len(stages))
 
@@ -240,6 +389,14 @@ async def execute_workflow(
         ctx.workflow = await workflow_service.begin_stage(ctx.workflow, stage.status)
         try:
             await stage.handler(ctx)
+        except CoursePlanDomainError as exc:
+            await workflow_service.fail_run(
+                ctx.workflow,
+                stage=stage.name,
+                message=exc.public_message,
+                emit_event=not ctx.failure_emitted,
+            )
+            return
         except RPSDomainError as exc:
             await workflow_service.fail_run(
                 ctx.workflow,
@@ -264,7 +421,8 @@ async def execute_workflow(
             ctx.workflow, stage.status
         )
 
-    await workflow_service.complete_run(ctx.workflow)
+    # Rangkaian selesai; workflow menunggu tindakan dosen (DL-012).
+    await workflow_service.wait_for_review(ctx.workflow)
 
 
 # --- Entry point background --------------------------------------------------
@@ -290,6 +448,84 @@ async def run_rps_analysis_workflow(*, rps_id: str, owner_id: str) -> None:
         owner_id=owner_id,
         stages=RPS_ANALYSIS_STAGES,
     )
+
+
+async def run_course_planning_workflow(
+    *,
+    workflow_id: str,
+    owner_id: str,
+    instruction: str | None = None,
+    planner: CoursePlanner | None = None,
+) -> None:
+    """Jalankan generate/regenerate course plan di background (BE-14.3).
+
+    Route sudah mengklaim workflow (:meth:`WorkflowService.claim_planning`)
+    sebelum menjadwalkan fungsi ini, sehingga dua permintaan tidak dapat
+    memulai dua run. ``planner`` dapat diganti pengujian; nilai bawaannya
+    :func:`~src.services.course_plan.planner.get_course_planner`.
+
+    Seluruh kegagalan ditelan dan dilaporkan lewat status workflow, event, dan
+    log — tidak ada client yang menunggu pekerjaan background.
+    """
+    # Import lokal memutus siklus impor paket: workflow/__init__ mengekspor
+    # orkestrator, sedangkan course_plan.service mengimpor workflow domain/service.
+    from src.services.course_plan.service import CoursePlanService
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        workflow_service = WorkflowService.from_session(session)
+        rps_service = RPSService.from_session(session)
+        course_plan_service = CoursePlanService.from_session(session)
+        try:
+            workflow = await workflow_service.get_workflow(
+                workflow_id=workflow_id, owner_id=owner_id
+            )
+            try:
+                active_planner = planner or get_course_planner()
+            except LLMProviderError as exc:
+                # Konfigurasi provider salah (mis. nama provider tidak dikenal).
+                # Kegagalan ini terjadi sebelum tahap berjalan, jadi workflow
+                # harus tetap ditutup sebagai FAILED, bukan menggantung di
+                # status klaim PLANNING_COURSE.
+                await workflow_service.fail_run(
+                    workflow,
+                    stage=PLANNING_STAGE_NAME,
+                    message=exc.public_message,
+                )
+                logger.warning(
+                    "course planning workflow %s gagal menyiapkan planner: %s",
+                    workflow_id,
+                    exc,
+                )
+                return
+
+            await execute_workflow(
+                workflow=workflow,
+                stages=COURSE_PLANNING_STAGES,
+                workflow_service=workflow_service,
+                rps_service=rps_service,
+                course_plan_service=course_plan_service,
+                planner=active_planner,
+                instruction=instruction,
+            )
+        except CoursePlanDomainError as exc:
+            logger.warning(
+                "course planning workflow %s gagal: %s", workflow_id, exc.log_message
+            )
+        except RPSDomainError as exc:
+            logger.warning(
+                "course planning workflow %s gagal: %s", workflow_id, exc.log_message
+            )
+        except WorkflowDomainError as exc:
+            logger.warning(
+                "course planning workflow %s gagal: %s", workflow_id, exc.log_message
+            )
+        except Exception:
+            logger.exception(
+                "course planning workflow %s gagal di luar error domain", workflow_id
+            )
+        else:
+            logger.info("course planning workflow %s selesai", workflow_id)
 
 
 async def _run_in_background(

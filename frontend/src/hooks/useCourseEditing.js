@@ -21,7 +21,7 @@ const CM_MESSAGES = {
 };
 
 /**
- * Aksi Edit mode untuk satu kursus. Setiap aksi memuat ulang isi kursus dari Moodle
+ * Aksi Edit mode untuk satu kursus. Setiap aksi memuat ulang isi kursus
  * sehingga tampilan selalu mengikuti state server. `pending` berisi kunci aksi yang sedang berjalan.
  */
 export function useCourseEditing() {
@@ -42,7 +42,7 @@ export function useCourseEditing() {
       return result ?? true;
     } catch (e) {
       (onError ?? setError)(e);
-      // Isi kursus mungkin sudah berubah di Moodle (mis. aktivitas dihapus di tab lain).
+      // Isi kursus mungkin sudah berubah (mis. aktivitas dihapus di tab lain).
       await reload({ silent: true });
       return false;
     } finally {

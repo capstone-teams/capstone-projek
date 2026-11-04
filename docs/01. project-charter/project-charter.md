@@ -3,7 +3,7 @@
 ## Agentic AI untuk Mengisi Konten Pembelajaran Moodle
 **Project Type**: Capstone Project
 **Project Manager**: Noel
-**Document Version**: 0.1
+**Document Version**: 0.4
 **Status**: Draf
 
 ------------------------------------------------------------
@@ -121,7 +121,7 @@ Human-in-the-loop tetap dipertahankan pada tahap review sehingga dosen dapat men
 #### A. RPS Processing
 Sistem mendukung input RPS dalam format dikumen yang relevan, terutama PDF dan DOCX.
 
-RPS diproses menjadi representasi yang dapat digunakan oleh sistem AI, termasuk representasi teks/Markdown dan structured data yang diperlukan untuk proses analisis dan generation. RPS menjadi sumber utama informasi akademik untuk proses pembuatan course.
+RPS diproses menjadi representasi yang dapat digunakan oleh sistem AI, dalam bentuk structured data JSON yang disimpan dan YAML sebagai input LLM (DL-006, DL-008), untuk proses analisis dan generation. RPS menjadi sumber utama informasi akademik untuk proses pembuatan course.
 
 #### B. RPS Analysis
 
@@ -193,9 +193,9 @@ Jika hasil tidak memenuhi kriteria validasi, agent dapat melakukan retry atau pe
 
 #### I. Moodle Integration
 
-Sistem mengintegrasikan hasil yang telah disetujui dengan Moodle LMS ITK menggunakan Moodle Web Service API yang disediakan oleh platform Moodle.
+Sistem mengintegrasikan hasil yang telah disetujui dengan instance Moodle open-source yang dipasang dan dikelola oleh tim (self-hosted) menggunakan Moodle Web Service API yang disediakan oleh platform Moodle (DL-001).
 
-Implementasi mengacu pada dokumentasi resmi Moodle serta kemampuan Web Service yang tersedia dan diaktifkan pada instance Moodle ITK.
+Implementasi mengacu pada dokumentasi resmi Moodle untuk versi yang digunakan tim (DL-002) serta kemampuan Web Service yang tersedia pada instance tersebut.
 
 Kapabilitas integrasi mencakup kebutuhan yang diperlukan untuk:
 - mengakses atau menentukan course;
@@ -206,7 +206,9 @@ Kapabilitas integrasi mencakup kebutuhan yang diperlukan untuk:
 - memastikan hasil generation dapat direpresentasikan pada Moodle; dan
 - memverifikasi hasil setelah proses eksekusi.
 
-Detail function, endpoint, parameter, authentication, dan permission Moodle ditentukan pada tahap technical design dan implementasi berdasarkan konfigurasi Moodle ITK.
+Detail function, endpoint, parameter, authentication, dan permission Moodle ditentukan pada tahap technical design dan implementasi berdasarkan hasil verifikasi pada instance Moodle tim. Operasi yang tidak tersedia melalui external functions bawaan Moodle, seperti pembuatan activity, mengikuti mekanisme yang ditetapkan pada DL-003.
+
+Integrasi dengan Moodle production ITK tidak termasuk scope MVP. Pemisahan melalui Moodle Integration Layer menjaga kemungkinan integrasi tersebut sebagai pengembangan lanjutan.
 
 #### J. Student Role and Verification
 
@@ -247,12 +249,13 @@ Fitur berikut tidak menjadi target utama proyek:
 4. Sistem pengelolaan nilai akademik secara menyeluruh.
 5. Pengembangan LMS baru.
 6. Pengembangan Moodle fork atau modifikasi core Moodle.
-7. Pengembangan API Moodle khusus milik ITK.
+7. Pengembangan custom API Moodle di luar kebutuhan minimum MVP. Batasan penggunaan local plugin Moodle ditetapkan melalui DL-003.
 8. Pembuatan custom browser/Chromium sebagai bagian wajib produk.
 9. Pengelolaan seluruh administrasi akademik dosen.
 10. Penggantian penuh peran dosen dalam proses pembelajaran.
 11. Publikasi otomatis tanpa mekanisme kontrol/review yang ditentukan.
 12. Fitur AI yang tidak berhubungan langsung dengan proses transformasi RPS menjadi konten Moodle.
+13. Integrasi dengan Moodle production ITK (DL-001).
 
 Tugas dan kuis dapat menjadi bagian dari scope sebagai optional learning activities, tetapi bukan berarti seluruh jenis aktivitas Moodle harus didukung.
 
@@ -310,15 +313,15 @@ Technology direction berikut merupakan baseline proyek dan tidak seluruhnya meru
 | Frontend              | React + TypeScript    |
 | Backend               | FastAPI + Python      |
 | Database              | PostgreSQL            |
-| LLM Runtime           | Ollama                |
+| LLM Provider          | OpenAI API (DL-007)   |
 | LLM Model             | evaluated             |
 | Document Processing   | Docling               |
-| Content Representation| Markdown + JSON       |
+| Content Representation| Markdown + JSON; YAML untuk input LLM |
 | Moodle Integration    | Moodle Web Service API|
 | Agent Monitoring      | WebScoket             |
 | Client                | Web App               |
 
-Pemilihan model LLM final dilakukan berdasarkan evaluasi terhadap instruction following, kemampuan Bahasa Indonesia, reasoning, structured output, tool calling, adherence terhadap RPS, latency, serta kebutuhan hardware.
+Pemilihan model LLM final dilakukan berdasarkan evaluasi terhadap instruction following, kemampuan Bahasa Indonesia, reasoning, structured output, tool calling, adherence terhadap RPS, latency, serta biaya penggunaan API.
 
 ## 11. Key Deliverables
 Deliverable utama proyek meliputi:
@@ -346,24 +349,24 @@ Stakeholder utama proyek meliputi:
 | Dosen                 | Pengguna utama dan target utama solusi |
 | Mahasiswa             | Pengguna akhir course dan pihak yang memverifikasi hasil |
 | Tim Capstone          | Pengembang dan pengelola |
-| Moodle                | Menyediakan environment Moodle yang menjadi target integrasi |
+| Moodle (self-hosted)  | Instance Moodle open-source yang dikelola tim sebagai target integrasi dan environment pengujian |
 
 ## 13. Constraints
 Project memiliki beberapa constraint utama:
 1. Proyek merupakan Capstone Project dengan waktu dan resource terbatas.
-2. Kemampuan integrasi dibatasi oleh Web Service API dan permission yang tersedia
-3. pada Moodle ITK.
-4. Performa Agentic AI dipengaruhi oleh hardware yang tersedia untuk menjalankan local LLM.
-5. Kualitas output AI tidak dapat diasumsikan selalu benar sehingga mekanisme validation dan human review diperlukan.
-6. Scope harus dibatasi agar implementasi inti dapat diselesaikan dalam periode Capstone.
-7. Sistem harus menjaga keamanan credential dan tidak memberikan akses langsung credential Moodle kepada LLM.
+2. Kemampuan integrasi dibatasi oleh external functions yang tersedia pada versi Moodle yang digunakan. Operasi yang tidak tersedia memerlukan mekanisme tambahan yang ditetapkan melalui DL-003.
+3. Penggunaan LLM bergantung pada layanan OpenAI API, termasuk biaya penggunaan, rate limit, dan koneksi internet (DL-007).
+4. Kualitas output AI tidak dapat diasumsikan selalu benar sehingga mekanisme validation dan human review diperlukan.
+5. Scope harus dibatasi agar implementasi inti dapat diselesaikan dalam periode Capstone.
+6. Sistem harus menjaga keamanan credential dan tidak memberikan akses langsung credential Moodle kepada LLM.
+7. Tim bertanggung jawab atas instalasi, konfigurasi, dan stabilitas instance Moodle self-hosted yang digunakan untuk pengembangan dan pengujian.
 
 ## 14. Assumptions
 Asumsi awal proyek:
-1. Moodle ITK menggunakan Moodle Web Service API yang mengikuti mekanisme dan dokumentasi Moodle.
+1. Instance Moodle self-hosted yang digunakan tim menyediakan Moodle Web Service API sesuai dokumentasi resmi Moodle untuk versi yang dipilih (DL-002).
 2. Environment Moodle yang digunakan menyediakan Web Service dan permission yang dibutuhkan untuk operasi dalam scope proyek.
 3. Dosen dapat menyediakan RPS sebagai sumber utama informasi pembelajaran.
-4. Local LLM dapat dijalankan menggunakan environment/hardware yang tersedia bagi tim.
+4. Tim memiliki akses OpenAI API dengan kuota dan anggaran yang mencukupi untuk development, evaluasi, dan demo.
 5. Dosen tetap menjadi pihak yang memiliki keputusan akhir terhadap konten yang dipublikasikan.
 6. Student role/account tersedia atau dapat disiapkan pada environment pengujian Moodle.
 7. Format dan struktur RPS yang digunakan dalam pengujian memiliki informasi yang cukup untuk menghasilkan course plan dan konten.
@@ -372,11 +375,11 @@ Asumsi yang terbukti tidak valid harus dicatat dan dievaluasi dampaknya terhadap
 
 ## 15. Dependencies
 Project memiliki dependency terhadap:
-1. Moodle LMS ITK dan environment pengujiannya.
+1. Instance Moodle self-hosted yang dikelola tim beserta data pengujiannya (DL-001).
 2. Konfigurasi Moodle Web Service.
 3. Authentication dan credential yang diperlukan untuk integrasi.
 4. Permission/capability Moodle yang diperlukan untuk operasi dalam scope.
-5. Hardware untuk menjalankan local LLM.
+5. Layanan OpenAI API beserta API key dan kuota penggunaannya.
 6. Ketersediaan RPS untuk development dan testing.
 7. Arahan dan validasi dosen pembimbing.
 8. Ketersediaan anggota tim untuk pengembangan dan pengujian.
@@ -387,15 +390,17 @@ Project memiliki dependency terhadap:
 | ------------------------------------------------------------ | --------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Output AI tidak sesuai RPS                                   | Quality konten menurun                              | RPS grounding, validation, review, dan regeneration                           |
 | Model LLM tidak memenuhi kebutuhan                           | Kualitas generation dan performa agent rendah       | Evaluasi beberapa kandidat model berdasarkan benchmark yang ditentukan        |
-| Local LLM terlalu lambat                                     | Workflow menjadi tidak praktis                      | Benchmark model, optimasi prompt, dan optimasi workflow                       |
-| Moodle Web Service tidak mendukung kebutuhan tertentu        | Integrasi terhambat                                 | Identifikasi function yang dibutuhkan lebih awal dan gunakan abstraction/mock |
-| Permission Moodle tidak mencukupi                            | Execution ke Moodle gagal                           | Validasi capability dan permission pada environment sejak awal                |
+| Latency OpenAI API tinggi atau terkena rate limit | Workflow menjadi tidak praktis | Pemrosesan per minggu, retry dengan backoff, optimasi prompt, dan pemantauan penggunaan |
+| Moodle Web Service tidak mendukung kebutuhan tertentu        | Integrasi terhambat                                 | Identifikasi function yang dibutuhkan lebih awal, gunakan abstraction/mock, dan putuskan mekanisme alternatif melalui DL-003 |
+| Permission Moodle tidak mencukupi                            | Execution ke Moodle gagal                           | Tim memegang akses administrator instance Moodle; capability dan permission dikonfigurasi dan diverifikasi sejak awal |
+| Instance Moodle self-hosted tidak stabil atau versinya berbeda antar anggota tim | Hasil pengujian integrasi tidak konsisten | Satu versi Moodle untuk seluruh tim (DL-002), prosedur setup terdokumentasi, dan data uji yang dapat dibuat ulang |
 | RPS memiliki format atau struktur yang sulit diproses        | Analisis dan generation tidak akurat                | Document processing pipeline dan validation                                   |
 | Agent melakukan kesalahan saat execution                     | Course atau konten Moodle dapat salah               | Controlled tool layer, validation, instructor review, dan verification        |
 | Scope berkembang terlalu besar                               | Schedule dan quality terdampak                      | Menetapkan MVP boundary dan menerapkan change control                         |
 | Konten AI tidak memenuhi kualitas pedagogis                  | Materi kurang layak digunakan                       | Instructor review dan quality evaluation                                      |
 | Monitoring tidak merepresentasikan state agent secara akurat | Transparansi workflow rendah                        | Mendefinisikan state dan event agent sejak system design                      |
-| Keterbatasan hardware local LLM                              | Generation lambat atau model tidak dapat dijalankan | Hardware benchmarking dan pemilihan model berdasarkan resource yang tersedia  |
+| Biaya penggunaan OpenAI API melebihi anggaran | Pengujian dan evaluasi terbatas | Estimasi biaya per run, batas penggunaan, dan model yang lebih ringan untuk development |
+| Data RPS dikirim ke layanan pihak ketiga | Risiko privasi data akademik | Hanya subset field akademik yang dikirim (DL-006); identitas dosen dan data administratif tidak dikirim |
 | Integrasi antar komponen tidak konsisten                     | Sistem end-to-end gagal                             | Menetapkan interface dan contract antar komponen sejak tahap system design    |
 
 ---
@@ -508,6 +513,8 @@ Project dikelola dengan pendekatan yang berorientasi pada:
 ### 19.1 Task and Schedule Management
 
 Kanban tim digunakan sebagai **source of truth untuk task dan schedule operasional**.
+
+Penjadwalan menggunakan milestone berbasis increment dengan exit criteria serta sprint berdurasi 1 minggu (DL-004).
 
 Project Charter tidak menggantikan Kanban dan tidak digunakan sebagai sistem task management kedua.
 
@@ -717,7 +724,7 @@ Status teknologi pada saat Project Charter dibuat dibagi menjadi beberapa katego
 
 | Component             | Technology / Decision              |
 | --------------------- | ---------------------------------- |
-| Target LMS            | Moodle LMS ITK                     |
+| Target LMS            | Moodle open-source self-hosted (DL-001) |
 | Integration mechanism | Moodle Web Service API             |
 | Client Platform       | Standard Web Application           |
 | Agent Monitoring      | Monitoring UI pada Web Application |
@@ -729,8 +736,8 @@ Status teknologi pada saat Project Charter dibuat dibagi menjadi beberapa katego
 | Frontend               | React + TypeScript                             |
 | Backend                | FastAPI + Python                               |
 | Database               | PostgreSQL                                     |
-| LLM Runtime            | Ollama                                         |
-| Content Representation | Markdown + Structured JSON                     |
+| LLM Provider           | OpenAI API melalui provider abstraction (DL-007) |
+| Content Representation | Markdown + Structured JSON; YAML untuk input LLM (DL-006) |
 | Real-Time Monitoring   | WebSocket atau mekanisme real-time yang sesuai |
 
 ### 22.3 Candidate
@@ -738,7 +745,7 @@ Status teknologi pada saat Project Charter dibuat dibagi menjadi beberapa katego
 | Component           | Candidate                               |
 | ------------------- | --------------------------------------- |
 | Document Processing | Docling                                 |
-| LLM Model           | Kandidat local LLM yang akan dievaluasi |
+| LLM Model           | Kandidat model OpenAI yang akan dievaluasi |
 
 Pemilihan LLM final harus mempertimbangkan:
 
@@ -750,7 +757,7 @@ Pemilihan LLM final harus mempertimbangkan:
 * RPS adherence;
 * content quality;
 * latency; dan
-* hardware requirements.
+* biaya per run.
 
 ### 22.4 TBD
 
@@ -760,6 +767,8 @@ Hal berikut belum ditentukan secara final:
 * document processing solution final;
 * Moodle Web Service functions yang secara spesifik digunakan;
 * authentication mechanism pada environment Moodle;
+* versi Moodle final (DL-002);
+* mekanisme pembuatan activity Moodle (DL-003);
 * permission/capability yang diperlukan;
 * detail agent orchestration;
 * detail monitoring protocol.
@@ -808,10 +817,10 @@ Dokumen terkait:
 | ------------- | -------------------------------------- |
 | Document      | Project Charter                        |
 | Project       | Agentic AI untuk Mengisi Konten Moodle |
-| Version       | 0.1                                    |
+| Version       | 0.4                                    |
 | Status        | Draft                                  |
 | Owner         | Project Manager                        |
-| Last Updated  | 2026-09-02                             |
+| Last Updated  | 2026-10-13                             |
 | Review Status | Pending Supervisor Review              |
 
 ### Version History
@@ -819,3 +828,6 @@ Dokumen terkait:
 | Version | Date       | Description                   | Author       |
 | ------- | ---------- | ----------------------------- | ------------ |
 | 0.1     | 2026-09-02 | Initial Project Charter draft | Project Team |
+| 0.2     | 2026-10-13 | Target integrasi diubah ke Moodle self-hosted (DL-001), referensi DL-002 s.d. DL-004, perbaikan penomoran constraint | Project Manager |
+| 0.3     | 2026-10-13 | Content representation mengikuti DL-006 | Project Manager |
+| 0.4     | 2026-10-13 | LLM provider diubah ke OpenAI API (DL-007) | Project Manager |

@@ -13,7 +13,7 @@ const TYPES = {
   label: { name: 'Text and media area', Form: LabelModForm, successMessage: 'Teks dan media ditambahkan.' },
 };
 
-/** Halaman "New <aktivitas>" (Moodle: course/modedit.php?add=<modname>&section=<n>). */
+/** Halaman "New <aktivitas>". Rujukan alur Moodle: course/modedit.php?add=<modname>&section=<n>. */
 export default function ModEditPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -33,6 +33,8 @@ export default function ModEditPage() {
   }
 
   const sectionPath = `${coursePath}#section-${section.section}`;
+  // Argumen ketiga dari formulir ({ aiPrompt }) sengaja tidak dipakai di sini: pembuatan aktivitas dengan AI
+  // belum punya API di backend, dan prompt tidak boleh ikut terkirim sebagai isian aktivitas.
   const submit = async (fields, display) => {
     setError(null);
     const result = await editing.createActivity(section, modname, fields, type.successMessage, setError);

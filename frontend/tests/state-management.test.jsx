@@ -136,19 +136,20 @@ describe('FE state: authentication and current user', () => {
     await submitLogin('dosen', 'salah');
     const alert = node.querySelector('[role="alert"]');
     expect(alert.textContent).toContain('Login gagal');
-    expect(alert.textContent).toContain('Autentikasi gagal.');
+    expect(alert.textContent).toContain('Username atau kata sandi salah.');
     expect(auth.isAuthenticated).toBe(false);
     expect(service.requestToken).not.toHaveBeenCalled();
     expect(node.querySelector('button[type="submit"]').disabled).toBe(false);
   });
 
-  it('succeeds login through backend even if Moodle connection fails', async () => {
+  it('labels a Moodle failure after a valid backend login separately', async () => {
     service.getCurrentUser.mockResolvedValueOnce(studentMe);
     service.requestToken.mockRejectedValueOnce(Object.assign(new Error('Invalid login, please try again'), { code: 'invalidlogin' }));
     await render(<AuthProvider><AuthProbe /><LoginPage /></AuthProvider>);
     await submitLogin('mahasiswa', 'mahasiswa123');
-    expect(auth.isAuthenticated).toBe(true);
-    expect(auth.user).toMatchObject({ username: 'mahasiswa', role: 'MAHASISWA' });
+    const alert = node.querySelector('[role="alert"]');
+    expect(alert.textContent).toContain('Login Moodle gagal');
+    expect(alert.textContent).toContain('Moodle menolak kredensial yang sama');
   });
 
   it('locks the login form while the request is pending', async () => {
@@ -162,14 +163,16 @@ describe('FE state: authentication and current user', () => {
     expect(node.querySelector('form').getAttribute('aria-busy')).toBe('true');
     expect(node.querySelector('#username').readOnly).toBe(true);
     expect(node.querySelector('#password').readOnly).toBe(true);
-    await act(async () => pending.reject(new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.')));
+    await act(async () => pending.reject(new ApiError(0, 'NETWORK_ERROR', 'Layanan sedang tidak dapat diakses. Silakan coba lagi beberapa saat lagi.')));
     expect(button.disabled).toBe(false);
-    expect(node.querySelector('[role="alert"]').textContent).toContain('Tidak dapat terhubung ke server backend.');
+    expect(node.querySelector('[role="alert"]').textContent).toContain('Layanan sedang tidak dapat diakses');
   });
 
-  it('shows a restore-unavailable notice on the login page', async () => {
+  it('does not show backend or session-restore warnings on the login page', async () => {
     await render(<AuthContext.Provider value={{ user: null, sessionNotice: SESSION_NOTICE.UNAVAILABLE }}><LoginPage /></AuthContext.Provider>);
-    expect(node.textContent).toContain('Sesi belum dapat dipulihkan');
+    expect(node.textContent).not.toMatch(/Sesi belum dapat dipulihkan|Server tidak dapat dihubungi|Muat ulang halaman/);
+    expect(node.querySelector('[role="alert"]')).toBeNull();
+    expect(node.querySelector('form')).not.toBeNull();
   });
 
   it('derives role helpers from the current user', async () => {

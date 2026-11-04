@@ -23,7 +23,7 @@ for (const width of [375, 1440]) {
 
     // Ditolak sebelum dikirim: format dan ukuran.
     await input.setInputFiles({ name: 'catatan.txt', mimeType: 'text/plain', buffer: Buffer.from('x') });
-    await expect(page.getByRole('alert')).toHaveText('Format file harus PDF atau DOCX.');
+    await expect(page.getByRole('alert')).toHaveText('Format file harus PDF.');
     await expect(submit).toBeDisabled();
     await input.setInputFiles(pdf('rps-besar.pdf', 21 * 1024 * 1024));
     await expect(page.getByRole('alert')).toHaveText('Ukuran file 21.0 MB melebihi batas 20.0 MB.');

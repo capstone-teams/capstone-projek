@@ -6,7 +6,12 @@ export function listCourses() {
 }
 
 /**
+<<<<<<< HEAD
  * Mencari project generator milik kursus Moodle.
+=======
+ * Project generator milik satu kursus (satu kursus = satu project), atau null bila belum ada.
+ * Hasil tetap disaring di sini supaya benar walau backend belum mendukung filter moodle_course_id.
+>>>>>>> develop
  */
 export async function findCourseByMoodleId(moodleCourseId) {
   const res = await api.get('/courses', { query: { moodle_course_id: moodleCourseId } }).catch(() => null);

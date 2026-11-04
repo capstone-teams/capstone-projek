@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { ROLE, homePathFor } from './types/auth';
+import { COURSE_API_AVAILABLE } from './services/config';
 import MoodleLayout from './components/layout/MoodleLayout';
 import RequireAuth from './components/layout/RequireAuth';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
@@ -21,6 +22,8 @@ import ModEditPage from './pages/dosen/course/ModEditPage';
 // Dosen: Generator Konten AI (tab di halaman kursus, khusus dosen pengampu)
 import AiCourseLayout from './pages/dosen/ai/AiCourseLayout';
 import CourseOverviewPage from './pages/dosen/ai/CourseOverviewPage';
+import WorkflowOverviewPage from './pages/dosen/ai/WorkflowOverviewPage';
+import WorkflowStatusPage from './pages/dosen/ai/WorkflowStatusPage';
 import CourseRpsPage from './pages/dosen/ai/CourseRpsPage';
 import CourseTargetSelectionPage from './pages/dosen/ai/CourseTargetSelectionPage';
 import CoursePlanPage from './pages/dosen/ai/CoursePlanPage';
@@ -67,13 +70,26 @@ export default function App() {
             {/* RPS, Course Target, dan Monitoring berada di tab Generator AI (khusus DOSEN). */}
             <Route element={<RequireAuth roles={[ROLE.DOSEN]} />}>
               <Route path="ai" element={<AiCourseLayout />}>
-                <Route index element={<CourseOverviewPage />} />
+                <Route index element={COURSE_API_AVAILABLE ? <CourseOverviewPage /> : <WorkflowOverviewPage />} />
                 <Route path="rps" element={<CourseRpsPage />} />
+<<<<<<< HEAD
                 <Route path="target" element={<CourseTargetSelectionPage />} />
                 <Route path="plan" element={<CoursePlanPage />} />
                 <Route path="content" element={<CourseContentPage />} />
                 <Route path="review" element={<CourseReviewPage />} />
                 <Route path="publish" element={<CoursePublishPage />} />
+=======
+                <Route path="workflows" element={<WorkflowStatusPage />} />
+                {/* Tahap berikut butuh API /courses, yang belum ada di backend. */}
+                {COURSE_API_AVAILABLE && (
+                  <>
+                    <Route path="plan" element={<CoursePlanPage />} />
+                    <Route path="content" element={<CourseContentPage />} />
+                    <Route path="review" element={<CourseReviewPage />} />
+                    <Route path="publish" element={<CoursePublishPage />} />
+                  </>
+                )}
+>>>>>>> develop
               </Route>
             </Route>
           </Route>
