@@ -122,3 +122,27 @@ def test_env_example_is_the_lowest_priority_env_file():
     env_file_names = [Path(path).name for path in Settings.model_config["env_file"]]
 
     assert env_file_names == [".env.example", ".env", ".env"]
+
+
+def test_moodle_timeout_defaults_to_ten_seconds_when_not_configured():
+    settings = Settings().model_copy(update={"MOODLE_TIMEOUT_SECONDS": None})
+
+    assert settings.moodle_timeout_seconds == 10.0
+
+
+def test_moodle_timeout_is_read_from_environment(monkeypatch):
+    monkeypatch.setenv("MOODLE_TIMEOUT_SECONDS", "30")
+
+    assert Settings().moodle_timeout_seconds == 30.0
+
+
+def test_env_example_documents_the_moodle_timeout():
+    assert Settings(_env_file=str(ENV_EXAMPLE_PATH)).MOODLE_TIMEOUT_SECONDS == 10.0
+
+
+@pytest.mark.parametrize("value", ["0", "-5"])
+def test_moodle_timeout_must_be_positive(monkeypatch, value):
+    monkeypatch.setenv("MOODLE_TIMEOUT_SECONDS", value)
+
+    with pytest.raises(ValidationError):
+        Settings()
