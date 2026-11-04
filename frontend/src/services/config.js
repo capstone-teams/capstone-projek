@@ -7,12 +7,21 @@ export const MOODLE_URL = (import.meta.env.VITE_MOODLE_URL || 'http://localhost:
 // Site administration > General > Mobile app > Enable web services for mobile devices.
 export const MOODLE_SERVICE = import.meta.env.VITE_MOODLE_SERVICE || 'moodle_mobile_app';
 
+<<<<<<< HEAD
+// Default false: panggil backend/Moodle nyata. Set VITE_MOODLE_MOCK=true hanya untuk mock testing.
+export const USE_MOODLE_MOCK = import.meta.env.VITE_MOODLE_MOCK === 'true';
+=======
 // Default: data dummy di browser. VITE_MOODLE_MOCK=false memanggil Web Service sungguhan.
 export const USE_MOODLE_MOCK = (import.meta.env.VITE_MOODLE_MOCK ?? 'true') !== 'false';
+>>>>>>> develop
 
 // ---- Backend capstone (fitur Generator Konten AI untuk dosen)
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
+<<<<<<< HEAD
+// Default false: panggil FastAPI backend nyata. Set VITE_USE_MOCK=true hanya untuk mock testing.
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
+=======
 // Default backend nyata; mock hanya bila VITE_USE_MOCK=true (dipakai test).
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
@@ -23,6 +32,7 @@ export const COURSE_API_AVAILABLE = USE_MOCK;
 // (useRpsLibrary.hide, tombol di RpsList) disimpan untuk berjaga-jaga. Aktifkan dengan VITE_RPS_DELETE=true
 // setelah endpoint tersedia, lalu ganti isi `hide` agar memanggilnya. Mode mock (tes) selalu aktif.
 export const RPS_DELETE_AVAILABLE = USE_MOCK || import.meta.env.VITE_RPS_DELETE === 'true';
+>>>>>>> develop
 
 export const TOKEN_STORAGE_KEY = 'agentic-lms.token';
 export const MOODLE_SESSION_KEY = 'agentic-lms.moodle-session';
