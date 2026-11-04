@@ -8,14 +8,14 @@ function isTransient(error) {
   return error instanceof ApiError && (error.status === 0 || error.status >= 500);
 }
 
-// Tandai kegagalan langkah setelah akun backend terverifikasi, agar halaman login dapat membedakannya.
-function fromMoodle(error) {
-  if (error && typeof error === 'object') error.source = 'moodle';
-  return error;
-}
-
-/** Identitas & role dari backend (GET /auth/me); data kursus dan hak mengajar dari layanan LMS (belum ada API backend). */
-function buildSession(moodle, me) {
+/**
+ * Identitas & role resmi dari backend (GET /auth/me).
+ * Otoritas tunggal berada pada Backend API (Single Gateway).
+ */
+function buildSession(me) {
+  const fullname = `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || me.username;
+  const role = backendAuth.toUiRole(me.role);
+  const isDosen = role === ROLE.DOSEN || role === 'dosen';
   return {
     site: { name: 'Moodle ITK' },
     user: {
@@ -34,11 +34,6 @@ function buildSession(moodle, me) {
   };
 }
 
-/**
- * Sesi login memakai akun backend (POST /auth/login, dipulihkan via GET /auth/me) dan token LMS
- * dengan kredensial yang sama, karena data kursus belum tersedia lewat API backend.
- * Keduanya wajib: kegagalan salah satunya membatalkan login.
- */
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [initializing, setInitializing] = useState(() => backendAuth.hasToken());
@@ -80,10 +75,6 @@ export function AuthProvider({ children }) {
           }
         })
         .finally(() => { if (isCurrent()) setInitializing(false); });
-    } else if (token || backendAuth.hasToken()) {
-      // Sesi tidak lengkap (mis. tersisa dari versi sebelumnya): buang, mulai dari login.
-      storeToken(null);
-      backendAuth.logout();
     }
 
     return () => {
@@ -101,25 +92,11 @@ export function AuthProvider({ children }) {
 
     await backendAuth.login(username, password, { isCurrent });
     ensureCurrent();
-    let me, token, next;
-    try {
-      me = await backendAuth.getCurrentUser();
-      ensureCurrent();
-      // Username dari backend dipakai untuk token LMS, sehingga login memakai email tetap berhasil.
-      token = await requestToken(me.username, password).catch((e) => { throw fromMoodle(e); });
-      ensureCurrent();
-      setMoodleToken(token);
-      next = await resolveSession().catch((e) => { throw fromMoodle(e); });
-      ensureCurrent();
-    } catch (e) {
-      if (isCurrent()) {
-        setMoodleToken(null);
-        backendAuth.logout();
-      }
-      throw e;
-    }
-    storeToken(token);
-    const nextSession = buildSession(next, me);
+
+    const me = await backendAuth.getCurrentUser();
+    ensureCurrent();
+
+    const nextSession = buildSession(me);
     setSession(nextSession);
     setSessionNotice(null);
     setInitializing(false);

@@ -7,8 +7,8 @@ export const MOODLE_URL = (import.meta.env.VITE_MOODLE_URL || 'http://localhost:
 // Site administration > General > Mobile app > Enable web services for mobile devices.
 export const MOODLE_SERVICE = import.meta.env.VITE_MOODLE_SERVICE || 'moodle_mobile_app';
 
-// Default: data dummy di browser. VITE_MOODLE_MOCK=false memanggil Web Service sungguhan.
-export const USE_MOODLE_MOCK = (import.meta.env.VITE_MOODLE_MOCK ?? 'true') !== 'false';
+// Default false: data Moodle lewat backend (Single Gateway). Set VITE_MOODLE_MOCK=true hanya untuk mock testing.
+export const USE_MOODLE_MOCK = import.meta.env.VITE_MOODLE_MOCK === 'true';
 
 // ---- Backend capstone (fitur Generator Konten AI untuk dosen)
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
