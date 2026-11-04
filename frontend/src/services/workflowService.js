@@ -79,6 +79,11 @@ export function setMoodleTarget(workflowId, moodleCourseId) {
   });
 }
 
+/** Seperti setMoodleTarget, tetapi id kursus dinormalisasi ke angka (dipakai halaman pemilihan course target). */
+export function setWorkflowMoodleTarget(workflowId, moodleCourseId) {
+  return setMoodleTarget(workflowId, moodleCourseId == null ? null : Number(moodleCourseId));
+}
+
 /** Workflow yang menargetkan kursus ini, dengan data terbaru dari GET /workflows/{id}; null bila tidak ada. */
 export async function findWorkflowForCourse(moodleCourseId) {
   const items = await listWorkflows();
