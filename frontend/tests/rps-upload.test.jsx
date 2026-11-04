@@ -183,7 +183,7 @@ describe('FE-08.2 status pemrosesan RPS', () => {
       return badge === 'Selesai dianalisis';
     }, 'Selesai dianalisis', 13000);
     configureMock({ latencyMs: 0, stepMs: 5 });
-    expect(subscribe).toHaveBeenCalledWith('workflow_001', expect.any(Function));
+    expect(subscribe).toHaveBeenCalledWith('workflow_001', expect.any(Function), expect.any(Function));
     expect([...seenLabels]).toEqual(expect.arrayContaining(['Diproses', 'Dianalisis', 'Selesai dianalisis']));
     const row = rowFor('RPS-Otomatis.pdf');
     expect(row.textContent).toMatch(/workflow_\d+/);
