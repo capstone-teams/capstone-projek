@@ -44,6 +44,9 @@ DEFAULT_LLM_RETRY_BACKOFF_FACTOR = 2.0
 DEFAULT_LLM_RETRY_MIN_WAIT = 0.5
 DEFAULT_LLM_RETRY_MAX_WAIT = 10.0
 
+# Batas waktu request ke Moodle Web Service 
+DEFAULT_MOODLE_TIMEOUT_SECONDS = 10.0
+
 # Nilai bawaan konfigurasi analisis RPS
 DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 2
 MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 5
@@ -76,6 +79,8 @@ class Settings(BaseSettings):
 
     MOODLE_BASE_URL: str
     MOODLE_WEB_SERVICE_TOKEN: str
+    
+    MOODLE_TIMEOUT_SECONDS: float | None = None
 
     LLM_PROVIDER: str
     # Optional shared credential/model, kept for single-provider setups. Prefer
@@ -180,6 +185,13 @@ class Settings(BaseSettings):
         """
         return _normalize_cors_origins(v)
 
+    @field_validator("MOODLE_TIMEOUT_SECONDS", mode="after")
+    @classmethod
+    def validate_moodle_timeout(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("MOODLE_TIMEOUT_SECONDS harus lebih besar dari 0")
+        return v
+    
     @field_validator("RPS_CONVERTER_TABLE_MODE", mode="after")
     @classmethod
     def parse_rps_table_mode(cls, v: str) -> str:
@@ -238,6 +250,13 @@ class Settings(BaseSettings):
             )
         return v
 
+    @property
+    def moodle_timeout_seconds(self) -> float:
+        """Timeout request ke Moodle (detik) yang berlaku."""
+        if self.MOODLE_TIMEOUT_SECONDS is None:
+            return DEFAULT_MOODLE_TIMEOUT_SECONDS
+        return float(self.MOODLE_TIMEOUT_SECONDS)
+    
     @property
     def rps_storage_path(self) -> Path:
         """Direktori absolut penyimpanan dokumen RPS."""

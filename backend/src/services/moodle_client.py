@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import logging
@@ -119,7 +120,15 @@ class MoodleClient:
 
     @classmethod
     def from_settings(cls, settings: Any, **kwargs: Any) -> MoodleClient:
-        """Build a client from `src.config.settings.Settings`."""
+        """Build a client from `src.config.settings.Settings`.
+
+        Timeout diambil dari ``MOODLE_TIMEOUT_SECONDS`` (default 10 detik)
+        kecuali caller memberikan ``timeout`` secara eksplisit.
+        """
+        kwargs.setdefault(
+            "timeout",
+            getattr(settings, "moodle_timeout_seconds", None) or DEFAULT_TIMEOUT_SECONDS,
+        )
         return cls(
             settings.MOODLE_BASE_URL,
             settings.MOODLE_WEB_SERVICE_TOKEN,
