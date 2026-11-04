@@ -25,16 +25,12 @@ export function percent(completed, total) {
   return Math.round((completed / total) * 100);
 }
 
-<<<<<<< HEAD
-// ---- Timestamp Moodle (detik sejak epoch)
-=======
 export function errorMessage(error) {
   if (!error) return '';
   return error.message || 'Terjadi kesalahan.';
 }
 
 // ---- Timestamp LMS (detik sejak epoch)
->>>>>>> develop
 const dayFormat = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const shortFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 const clockFormat = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' });

@@ -91,12 +91,8 @@ export const EVENT_LABELS = {
 };
 
 export function describeEvent(ev) {
-<<<<<<< HEAD
-  if (ev.message) return ev.message;
-=======
   // Event workflow (design-api §17) membawa pesan siap tampil dari backend.
   if (ev.event?.startsWith('WORKFLOW_') && ev.message) return ev.message;
->>>>>>> develop
   const label = EVENT_LABELS[ev.event] ?? ev.event;
   if (ev.event === 'STATUS_CHANGED') return `${label}: ${STATUS_LABELS[ev.status] ?? ev.status}`;
   if (ev.stage) return `${label} (${RUN_TYPE_LABELS[ev.stage] ?? ev.stage})`;
