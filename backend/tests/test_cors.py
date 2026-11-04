@@ -14,6 +14,8 @@ tidak bergantung pada file ``.env`` developer.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -27,7 +29,7 @@ LOGIN_PATH = "/api/v1/auth/login"
 
 
 @pytest.fixture
-def client(monkeypatch) -> TestClient:
+def client(monkeypatch) -> Iterator[TestClient]:
     monkeypatch.setattr(settings, "CORS_ORIGINS", [ALLOWED_ORIGIN, OTHER_ALLOWED_ORIGIN])
     with TestClient(create_app()) as test_client:
         yield test_client

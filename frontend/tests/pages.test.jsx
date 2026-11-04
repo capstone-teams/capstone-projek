@@ -103,6 +103,20 @@ describe('login', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('password dengan spasi atau baris baru di tepi (hasil salin-tempel) tetap dapat masuk', async () => {
+    await render('/login');
+    await fillAndSubmit('dosen', 'dosen123 \n');
+    await waitForText('Kursus yang Anda ajar');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('password yang memang salah tetap ditolak walau dibersihkan, dan kolomnya dikosongkan', async () => {
+    await render('/login');
+    await fillAndSubmit('dosen', 'keliru \u200b');
+    await waitForText('Username atau kata sandi salah.');
+    expect(container.querySelector('#password').value).toBe('');
+  });
+
   it('menampilkan placeholder sesuai desain login', async () => {
     await render('/login');
     expect(container.querySelector('#username').placeholder).toBe('ID Number (username) / email');

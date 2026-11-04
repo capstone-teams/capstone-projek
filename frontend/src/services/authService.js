@@ -2,7 +2,6 @@ import { api, getToken, setToken } from './apiClient';
 import { ROLE_FROM_BACKEND } from '../types/auth';
 
 
-/** Role kanonik backend (INSTRUCTOR/STUDENT/ADMIN) → ROLE aplikasi (DOSEN/MAHASISWA/ADMIN). */
 export function toUiRole(role) {
   return ROLE_FROM_BACKEND[role] ?? null;
 }
