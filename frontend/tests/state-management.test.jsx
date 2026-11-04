@@ -28,7 +28,7 @@ vi.mock('../src/services/authService', () => service);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const teacher = { id: 3, fullname: 'Rina Kartika', username: 'dosen', role: 'DOSEN', teacherCourseIds: [2] };
-const student = { id: 5, fullname: 'Andi Saputra', username: 'mahasiswa', role: 'MAHASISWA', teacherCourseIds: [] };
+const student = { id: 'user_002', fullname: 'Andi Saputra', username: 'mahasiswa', role: 'MAHASISWA', teacherCourseIds: [] };
 const studentMe = { id: 'user_002', username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id', role: 'STUDENT' };
 function deferred() {
   let resolve, reject;
@@ -106,14 +106,11 @@ describe('FE state: authentication and current user', () => {
   });
 
   it('marks the session as expired when the stored token is rejected', async () => {
-    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'expired' }));
     localStorage.setItem(TOKEN_STORAGE_KEY, 'expired-backend');
     service.getCurrentUser.mockRejectedValueOnce(new ApiError(401, 'AUTHENTICATION_FAILED', 'Autentikasi gagal.'));
-    service.resolveSession.mockRejectedValueOnce(new Error('invalidtoken'));
     await render(<AuthProvider><AuthProbe /></AuthProvider>);
     expect(auth.status).toBe(AUTH_STATUS.ANONYMOUS);
     expect(auth.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
-    expect(localStorage.getItem(MOODLE_SESSION_KEY)).toBeNull();
   });
 
   it('shows the expired-session notice on the login page', async () => {
