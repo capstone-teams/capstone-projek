@@ -70,6 +70,8 @@ function courseTargetOf(item) {
 }
 
 /** PUT /workflows/{id}/moodle-target: id kursus memilih target, null melepaskannya. */
+export const setWorkflowMoodleTarget = setMoodleTarget;
+
 export function setMoodleTarget(workflowId, moodleCourseId) {
   return api.put(`/workflows/${workflowId}/moodle-target`, { moodle_course_id: moodleCourseId }).then((workflow) => {
     const stale = (key) => key.startsWith(`${workflowId}:`);

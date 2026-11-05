@@ -470,7 +470,6 @@ const handlers = {
     const issues = [];
 
     // Validasi instructor_profile jika ada
-    const profileData = body.instructor_profile || (body.teaching_style !== undefined ? body : null);
     if (body.instructor_profile !== undefined) {
       if (body.instructor_profile === null || typeof body.instructor_profile !== 'object') {
         issues.push({ field: 'instructor_profile', message: 'Field instructor_profile harus berupa objek.' });

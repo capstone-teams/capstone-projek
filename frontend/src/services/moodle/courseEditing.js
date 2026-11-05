@@ -14,7 +14,6 @@
  * - Service kustom untuk fungsi di luar layanan bawaan:
  *   https://moodledev.io/docs/5.0/apis/subsystems/external/advanced/custom-services
  */
-import { USE_MOODLE_MOCK } from '../config';
 import { MoodleError, callWs } from './moodleClient';
 
 /** Aksi aktivitas (course module) yang dikirim ke core_courseformat_update_course. */
@@ -69,7 +68,7 @@ export function renameSection(courseFormat, sectionId, name) {
 // mod_assign hanya punya fungsi PHP assign_add_instance(), bukan external function:
 // https://phpdoc.moodledev.io/4.4/d3/d4f/group__mod__assign.html
 
-export const CAN_CREATE_IN_APP = USE_MOODLE_MOCK;
+export const CAN_CREATE_IN_APP = false;
 
 /**
  * fields Assignment: { name, intro, allowsubmissionsfromdate, duedate, cutoffdate, grade }
