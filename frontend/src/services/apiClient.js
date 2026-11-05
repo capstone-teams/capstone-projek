@@ -1,7 +1,5 @@
-import { API_BASE_URL, TOKEN_STORAGE_KEY, USE_MOCK } from './config';
-import { handleMockRequest } from './mock/mockServer';
+import { API_BASE_URL, TOKEN_STORAGE_KEY } from './config';
 import { readString, writeString } from '../utils/storage';
-import { MSG_REQUEST_FAILED, MSG_UNAVAILABLE, logTechnical } from '../utils/userMessages';
 
 /**
  * Error dari Backend API. Bentuknya mengikuti design-api.md §18:
@@ -98,16 +96,13 @@ function defaultErrorCode(status) {
   return 'API_ERROR';
 }
 
-// Pesan cadangan untuk pengguna; kode HTTP hanya dicatat ke konsol.
-const fallbackMessage = (status) => (status >= 500 || status === 0 ? MSG_UNAVAILABLE : MSG_REQUEST_FAILED);
-
-export function toApiError(status, payload) {
+function toApiError(status, payload) {
   if (payload?.error && typeof payload.error === 'object') {
     const err = payload.error;
     return new ApiError(
       status,
       err.code || defaultErrorCode(status),
-      err.message || fallbackMessage(status),
+      err.message || `Request gagal (HTTP ${status}).`,
       Array.isArray(err.details) ? err.details : (err.details != null ? [err.details] : []),
     );
   }
@@ -131,7 +126,7 @@ export function toApiError(status, payload) {
   if (payload?.detail !== undefined && payload?.detail !== null) {
     const code = (typeof payload.detail === 'object' && !Array.isArray(payload.detail) && (payload.detail.code || payload.detail.error_code))
       || defaultErrorCode(status);
-    const message = formatDetail(payload.detail) || fallbackMessage(status);
+    const message = formatDetail(payload.detail) || `Request gagal (HTTP ${status}).`;
     const details = Array.isArray(payload.detail) ? payload.detail : [payload.detail];
     return new ApiError(status, code, message, details);
   }
@@ -145,13 +140,11 @@ export function toApiError(status, payload) {
     );
   }
 
-  logTechnical('api', { status, body: payload });
-  return new ApiError(status, 'INTERNAL_ERROR', fallbackMessage(status));
+  return new ApiError(status, 'INTERNAL_ERROR', `Request gagal (HTTP ${status}).`);
 }
 
 /**
- * Satu pintu untuk semua request ke Backend API.
- * Saat USE_MOCK aktif, request dijawab oleh mockServer dengan kontrak yang sama.
+ * Satu pintu untuk semua request ke Backend API (Single Gateway).
  */
 export async function request(method, path, { body, query, headers = {} } = {}) {
   const qs = query
@@ -160,13 +153,6 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
   const token = getToken();
   const normalizedPath = path.replace(/\/+$/, '');
   const isAuthLogin = normalizedPath === '/auth/login';
-
-  if (USE_MOCK) {
-    const res = await handleMockRequest({ method, path, query, body, token });
-    if (res.status === 401 && token && !isAuthLogin && unauthorizedHandler) unauthorizedHandler();
-    if (res.status >= 400) throw fail(res.status, res.data);
-    return res.data;
-  }
 
   const isForm = body instanceof FormData;
   const init = {
@@ -183,14 +169,13 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}${qs}`, init);
-  } catch (cause) {
-    logTechnical('api', { method, path, error: String(cause) });
+  } catch {
     throw networkError();
   }
   return settle(response.status, await response.text(), { token, isAuthLogin });
 }
 
-const networkError = () => new ApiError(0, 'NETWORK_ERROR', MSG_UNAVAILABLE);
+const networkError = () => new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.');
 
 /** Ubah response HTTP mentah menjadi data, atau lempar ApiError (dipakai fetch dan upload XHR). */
 function settle(status, text, { token, isAuthLogin }) {
@@ -200,10 +185,7 @@ function settle(status, text, { token, isAuthLogin }) {
     try {
       data = JSON.parse(text);
     } catch {
-      if (ok) {
-        logTechnical('api', { status, body: text.slice(0, 200) });
-        throw new ApiError(status, 'INVALID_RESPONSE', MSG_UNAVAILABLE);
-      }
+      if (ok) throw new ApiError(status, 'INVALID_RESPONSE', 'Respons JSON backend tidak valid.');
       data = null;
     }
   }
@@ -214,22 +196,10 @@ function settle(status, text, { token, isAuthLogin }) {
 
 /**
  * Upload multipart dengan laporan progres (fetch tidak melaporkan progres pengiriman).
- * onProgress(persen 0–100). Mode mock tidak mengirim data sungguhan, jadi progres disimulasikan
- * bertahap (maks. 90%) selama request berjalan, lalu 100% setelah selesai.
+ * onProgress(persen 0–100).
  */
 export function upload(path, form, { onProgress } = {}) {
   const token = getToken();
-  if (USE_MOCK) {
-    let simulated = 0;
-    onProgress?.(simulated);
-    const timer = onProgress && setInterval(() => onProgress((simulated = Math.min(simulated + 15, 90))), 60);
-    return request('POST', path, { body: form })
-      .finally(() => clearInterval(timer))
-      .then((data) => {
-        onProgress?.(100);
-        return data;
-      });
-  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE_URL}${path}`);
