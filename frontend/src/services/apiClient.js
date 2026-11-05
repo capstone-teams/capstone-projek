@@ -107,13 +107,6 @@ function toApiError(status, payload) {
     );
   }
 
-  // Galat server di luar kontrak backend (mis. halaman galat Cloudflare atau proxy): teksnya teknis dan bukan
-  // untuk pengguna, jadi hanya dicatat ke konsol.
-  if (status >= 500 || status === 0) {
-    logTechnical('api', { status, body: payload });
-    return new ApiError(status, status === 0 ? 'NETWORK_ERROR' : 'INTERNAL_ERROR', MSG_UNAVAILABLE);
-  }
-
   if (typeof payload?.error === 'string') {
     return new ApiError(
       status,

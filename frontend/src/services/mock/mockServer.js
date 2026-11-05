@@ -467,21 +467,21 @@ const handlers = {
       return fail(422, 'INVALID_REQUEST', 'Prompt tambahan tidak boleh melebihi 1000 karakter.', ['additional_prompt']);
     }
 
-    // Bagian penyimpanan ini ikut terhapus saat konflik merge; dikembalikan dari develop.
-    textFields.forEach((f) => {
-      if (body?.[f] != null) db.profile[f] = body[f].trim();
-    });
-    if (body?.delivery_preference != null && body?.content_preference == null) {
-      db.profile.content_preference = body.delivery_preference.trim();
-    } else if (body?.content_preference != null && body?.delivery_preference == null) {
-      db.profile.delivery_preference = body.content_preference.trim();
-    }
-    if (body?.activity_configuration && typeof body.activity_configuration === 'object') {
-      const mergedConfig = { ...db.profile.activity_configuration, ...body.activity_configuration };
-      if (!Object.values(mergedConfig).some(Boolean)) {
-        return fail(422, 'INVALID_REQUEST', 'Minimal satu jenis aktivitas pembelajaran harus diaktifkan.', ['activity_configuration']);
+    const issues = [];
+
+    // Validasi instructor_profile jika ada
+    if (body.instructor_profile !== undefined) {
+      if (body.instructor_profile === null || typeof body.instructor_profile !== 'object') {
+        issues.push({ field: 'instructor_profile', message: 'Field instructor_profile harus berupa objek.' });
+      } else {
+        const textFields = ['teaching_style', 'expertise', 'delivery_preference', 'language_preference'];
+        for (const f of textFields) {
+          const val = body.instructor_profile[f];
+          if (val !== undefined && val !== null && typeof val !== 'string') {
+            issues.push({ field: 'instructor_profile.' + f, message: 'Field ' + f + ' harus berupa teks.' });
+          }
+        }
       }
-      db.profile.activity_configuration = mergedConfig;
     }
     db.profile.updated_at = now();
     return ok(publicSetup(db.profile));
@@ -780,6 +780,26 @@ const handlers = {
   getMoodleStatus: () => ok(db.moodleStatus),
 
   getMoodleCourses: () => ok({ courses: db.moodleCourses }),
+
+  listWorkflows: () => ok({ items: db.workflows }),
+
+  getWorkflow({ workflowId }) {
+    const wf = db.workflows.find((w) => w.id === workflowId);
+    return wf ? ok(wf) : notFound('Workflow');
+  },
+
+  updateWorkflowMoodleTarget({ workflowId }, { body }) {
+    const wf = db.workflows.find((w) => w.id === workflowId);
+    if (!wf) return notFound('Workflow');
+    wf.moodle_course_id = body?.moodle_course_id == null ? null : Number(body.moodle_course_id);
+    wf.updated_at = now();
+    return ok(wf);
+  },
+
+  listWorkflowEvents({ workflowId }) {
+    const wf = db.workflows.find((w) => w.id === workflowId);
+    return wf ? ok({ items: wf.events ?? [] }) : notFound('Workflow');
+  },
 };
 
 // ---------------------------------------------------------------- routing
@@ -789,6 +809,10 @@ const ROUTES = [
   ['GET', '/auth/me', 'me', { anyRole: true }],
   ['GET', '/integrations/moodle/status', 'getMoodleStatus', { anyRole: true }],
   ['GET', '/integrations/moodle/courses', 'getMoodleCourses', { anyRole: true }],
+  ['GET', '/workflows', 'listWorkflows', { anyRole: true }],
+  ['GET', '/workflows/:workflowId', 'getWorkflow', { anyRole: true }],
+  ['PUT', '/workflows/:workflowId/moodle-target', 'updateWorkflowMoodleTarget', { anyRole: true }],
+  ['GET', '/workflows/:workflowId/events', 'listWorkflowEvents', { anyRole: true }],
   ['GET', '/rps', 'listRps'],
   ['POST', '/rps', 'uploadRps'],
   ['GET', '/rps/:rpsId', 'getRps'],
@@ -973,6 +997,19 @@ export function resetMockDb() {
   rps.analysis = buildRpsAnalysis(rps.id);
   db.profile = db.instructorSetup;
   db.rps.push(rps);
+
+  const initialWorkflow = {
+    id: 'workflow_001',
+    status: 'COMPLETED',
+    stage: 'rps_analysis',
+    progress: { completed: 2, total: 2 },
+    rps_id: rps.id,
+    moodle_course_id: 2,
+    events: [],
+    created_at: now(),
+    updated_at: now(),
+  };
+  db.workflows.push(initialWorkflow);
 
   // Course selesai, untuk contoh tampilan akhir.
   const done = newCourse({
