@@ -7,6 +7,8 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 export const TOKEN_STORAGE_KEY = 'agentic-lms.token';
 export const PREFERENCES_STORAGE_KEY = 'agentic-lms.preferences';
 
-// Fitur workflow aktif penuh; course API lama dinonaktifkan
-export const COURSE_API_AVAILABLE = false;
+// Project kursus dari API /courses backend (GET /courses, /courses/{id}, /plan, /content): tab Generator AI
+// menampilkan Ringkasan, RPS, Course Target, Rencana, Konten, Review, Publikasi, dan Workflow.
+// false = tampilan workflow saja (WorkflowLayout).
+export const COURSE_API_AVAILABLE = true;
 export const RPS_DELETE_AVAILABLE = import.meta.env.VITE_RPS_DELETE === 'true';
