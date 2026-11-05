@@ -76,6 +76,9 @@ export default function LoginPage() {
       {error && <Alert tone="danger" title={error.title}>{error.message}</Alert>}
       {info && <Alert tone="info">{info}</Alert>}
       {!error && !info && sessionNotice === SESSION_NOTICE.EXPIRED && <Alert tone="info" title="Sesi berakhir">Sesi Anda telah berakhir. Silakan masuk kembali.</Alert>}
+      {!error && !info && sessionNotice === SESSION_NOTICE.UNAVAILABLE && (
+        <Alert tone="warning" title="Sesi belum dapat dipulihkan">Server tidak dapat dihubungi. Muat ulang halaman nanti, atau masuk kembali.</Alert>
+      )}
       <form onSubmit={onSubmit} aria-busy={pending}>
         <AuthField id="username" label="Username" value={form.username} onChange={update('username')} autoComplete="username" placeholder="ID Number (username) / email" required autoFocus readOnly={pending} />
         <PasswordField id="password" label="Kata sandi" value={form.password} onChange={update('password')} autoComplete="current-password" placeholder="Password" required readOnly={pending} />
