@@ -44,8 +44,8 @@ export default function CoursePlanDetails({ plan, course }) {
   return (
     <div className="min-w-0 wrap-anywhere">
       <dl className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 max-lg:grid-cols-[minmax(0,1fr)] max-lg:gap-3" aria-label="Informasi rencana">
-        <InfoItem label="Mata kuliah">{info.title || course.name}</InfoItem>
-        <InfoItem label="Kode mata kuliah">{info.code || course.code}</InfoItem>
+        <InfoItem label="Mata kuliah">{info.title || course.name || course.fullname}</InfoItem>
+        <InfoItem label="Kode mata kuliah">{info.code || course.code || course.shortname}</InfoItem>
         {info.credits != null && <InfoItem label="Bobot">{info.credits} SKS</InfoItem>}
         <InfoItem label="Jumlah minggu">{plan.weeks.length} minggu</InfoItem>
       </dl>

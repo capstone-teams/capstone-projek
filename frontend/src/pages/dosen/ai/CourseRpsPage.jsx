@@ -93,8 +93,10 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
 
 /** Hasil analisis RPS. */
 export default function CourseRpsPage() {
-  const { course } = useCourse();
-  const rpsId = course.rps_id;
+  const { course, events = [], refresh } = useCourse();
+  // RPS yang baru diunggah ulang dari halaman ini ditampilkan lebih dulu daripada RPS kursus.
+  const [activeRpsId, setActiveRpsId] = useState(null);
+  const rpsId = activeRpsId || course.rps_id;
   // Pada backend nyata `course` adalah workflow itu sendiri; pada mock /courses itu project, jadi tanpa id workflow.
   const workflowId = COURSE_API_AVAILABLE ? course.workflow_id : course.id;
   // Status dulu (GET /rps/{id}); hasil analisis hanya diminta bila sudah ANALYZED.

@@ -260,15 +260,23 @@ server; unggah file yang sama menampilkannya kembali. Saat flag mati, RPS yang p
 
 Setelah backend punya endpoint hapus: aktifkan flag, lalu ganti isi `hide` di `useRpsLibrary` agar memanggilnya.
 
-### Tanpa API /courses
+### Project kursus dari API /courses
 
-Backend belum punya `/courses`, jadi `COURSE_API_AVAILABLE` (services/config.js) hanya
-benar di mode mock. Dengan `VITE_USE_MOCK=false`, project kursus adalah workflow RPS:
-`WorkflowLayout` membaca `GET /workflows` dan detailnya, mencari `moodle_course_id` yang
-sama dengan kursus. Bila belum ada, dosen mengunggah RPS lalu **Hubungkan RPS**
-(`PUT /workflows/{id}/moodle-target`). Setelah terhubung, Generator AI hanya memuat tab
-Ringkasan (status dan riwayat event) dan RPS; Rencana, Konten, Review, dan Publikasi
-disembunyikan sampai API-nya tersedia.
+Backend kini punya `GET /courses`, `GET /courses/{id}`, `GET /courses/{id}/plan`, dan
+`GET /courses/{id}/content`, jadi `COURSE_API_AVAILABLE` (services/config.js) aktif secara bawaan.
+Tab Generator AI memakai tampilan project kursus seperti FE-09: langkah Rencana sampai Selesai, lalu
+tab Ringkasan, RPS, Course Target, Rencana, Konten, Review, dan Publikasi, ditambah Workflow (FE-10)
+di ujung. Endpoint aksi (membuat project, menyetujui rencana, generate, review, publikasi) belum ada
+di backend, sehingga tombolnya menampilkan galat dari server.
+
+Dengan `VITE_COURSE_API=false`, project kursus adalah workflow RPS: `WorkflowLayout` membaca
+`GET /workflows` dan detailnya, mencari `moodle_course_id` yang sama dengan kursus. Bila belum ada,
+dosen mengunggah RPS lalu **Hubungkan RPS** (`PUT /workflows/{id}/moodle-target`).
+
+Tab **Course Target** (`/course/:id/ai/target`) memilih kursus Moodle dari
+`GET /integrations/moodle/courses` dan status dari `GET /integrations/moodle/status`, lalu
+menyimpannya lewat `PUT /workflows/{id}/moodle-target` (`moodle_course_id` berupa angka). Bila
+backend tidak dapat menjangkau Moodle, halaman menampilkan koneksi terputus, tanpa daftar pengganti.
 
 ### Hasil analisis RPS (FE-08.3)
 

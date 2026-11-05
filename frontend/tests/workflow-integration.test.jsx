@@ -112,7 +112,7 @@ describe('Generator AI tanpa API /courses', () => {
 
     await act(async () => button('Hubungkan RPS').click());
     await waitFor(() => container.textContent.includes('Status workflow'), 'ringkasan workflow');
-    expect([...container.querySelectorAll('[aria-label="Bagian generator AI"] a')].map((a) => a.textContent)).toEqual(['Ringkasan', 'RPS', 'Workflow']);
+    expect([...container.querySelectorAll('[aria-label="Bagian generator AI"] a')].map((a) => a.textContent)).toEqual(['Ringkasan', 'RPS', 'Course Target', 'Workflow']);
     await waitFor(() => container.querySelector('.event-log'), 'riwayat event');
     expect(await getWorkflow('workflow_001')).toMatchObject({ moodle_course_id: 2, rps_id: expect.any(String) });
 

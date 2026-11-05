@@ -19,8 +19,11 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 // Default backend nyata; mock hanya bila VITE_USE_MOCK=true (dipakai test).
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-// API /courses (rencana, konten, review, publikasi) belum ada di backend; baru tersedia di mock.
-export const COURSE_API_AVAILABLE = USE_MOCK;
+// Project kursus dari API /courses backend (GET /courses, /courses/{id}, /plan, /content): tab Generator AI
+// menampilkan Ringkasan, RPS, Course Target, Rencana, Konten, Review, dan Publikasi. Endpoint aksi (membuat
+// project, menyetujui rencana, generate, review, publikasi) belum ada di backend. VITE_COURSE_API=false kembali
+// ke tampilan workflow saja (WorkflowLayout).
+export const COURSE_API_AVAILABLE = USE_MOCK || import.meta.env.VITE_COURSE_API !== 'false';
 
 // Fitur "Hapus" RPS yang gagal. Disembunyikan karena backend belum punya DELETE /rps/{id}; kodenya
 // (useRpsLibrary.hide, tombol di RpsList) disimpan untuk berjaga-jaga. Aktifkan dengan VITE_RPS_DELETE=true

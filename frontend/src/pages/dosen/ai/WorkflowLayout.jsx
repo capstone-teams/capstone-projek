@@ -11,6 +11,7 @@ import { ForbiddenPage } from '../../StatusPage';
 const TABS = [
   { to: '', label: 'Ringkasan', end: true },
   { to: 'rps', label: 'RPS' },
+  { to: 'target', label: 'Course Target' },
   { to: 'workflows', label: 'Workflow' },
 ];
 
@@ -51,7 +52,7 @@ export default function WorkflowLayout() {
           </NavLink>
         ))}
       </nav>
-      <Outlet context={{ course: live, events: monitor.events, connection: monitor.connection, version, refresh }} />
+      <Outlet context={{ course: live, workflow: live, workflowId: live.id, events: monitor.events, connection: monitor.connection, version, refresh }} />
     </>
   );
 }

@@ -4,7 +4,8 @@
  */
 export default function MoodleConnectionBanner({
   status,
-  moodleUrl,
+  connected,
+  siteName,
   message,
   loading = false,
   error = null,
@@ -18,7 +19,7 @@ export default function MoodleConnectionBanner({
     );
   }
 
-  const isConnected = status === 'CONNECTED' && !error;
+  const isConnected = (connected ?? status === 'CONNECTED') && !error;
 
   if (isConnected) {
     return (
@@ -29,8 +30,8 @@ export default function MoodleConnectionBanner({
         <div className="flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-600" aria-hidden="true" />
           <span className="font-semibold">Moodle LMS Terhubung</span>
-          {moodleUrl && (
-            <span className="text-emerald-700">({moodleUrl})</span>
+          {siteName && (
+            <span className="text-emerald-700">({siteName})</span>
           )}
         </div>
         {message && <span className="text-xs text-emerald-700">{message}</span>}

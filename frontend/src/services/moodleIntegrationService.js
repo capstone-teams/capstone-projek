@@ -1,41 +1,27 @@
 import { api } from './apiClient';
 
-/**
- * Layanan integrasi Moodle melalui Backend API Gateway.
- */
+// Integrasi Moodle lewat backend (/api/v1/integrations/moodle, src/schemas/moodle.py). Kegagalan diteruskan
+// apa adanya supaya halaman menampilkan keadaan sebenarnya, bukan status atau daftar kursus pengganti.
 
 /**
- * Cek status koneksi backend ke instance Moodle.
- * GET /api/v1/integrations/moodle/status
- *
- * @returns {Promise<{ status: 'CONNECTED' | 'DISCONNECTED', moodle_url: string, message?: string }>}
+ * GET /integrations/moodle/status
+ * @returns {Promise<{ status: string, connected: boolean, message: string, site_name: string, release: string,
+ *   version: string, all_functions_available: boolean, functions: Array<{ name: string, available: boolean }> }>}
  */
 export function getMoodleStatus() {
-  return api.get('/integrations/moodle/status').catch(() => ({
-    status: 'CONNECTED',
-    moodle_url: 'https://moodle.demo',
-    message: 'Backend LMS gateway aktif',
-  }));
+  return api.get('/integrations/moodle/status');
+}
+
+/** Kursus Moodle: `id` selalu angka dan sama dengan moodle_course_id, nilai yang dikirim ke PUT moodle-target. */
+function toMoodleCourse(course) {
+  return { ...course, id: course.moodle_course_id ?? course.id, summary: course.summary ?? '', category: course.category ?? null };
 }
 
 /**
- * Ambil daftar kursus dari Moodle LMS melalui backend adapter.
- * GET /api/v1/integrations/moodle/courses
- *
- * @returns {Promise<{ courses: Array<{ id: number, fullname: string, shortname: string, category?: string, summary?: string }> }>}
+ * GET /integrations/moodle/courses
+ * @returns {Promise<{ courses: Array<{ id: number, moodle_course_id: number, fullname: string, shortname: string,
+ *   visible: boolean, summary: string, category: string | null }> }>}
  */
 export function getMoodleCourses() {
-  return api.get('/integrations/moodle/courses').catch(async () => {
-    const res = await api.get('/courses').catch(() => null);
-    const list = res?.items ?? res?.courses ?? [];
-    return {
-      courses: list.map((c) => ({
-        id: c.id,
-        fullname: c.fullname,
-        shortname: c.shortname,
-        category: 'Informatika',
-        summary: c.description || c.summary || '',
-      })),
-    };
-  });
+  return api.get('/integrations/moodle/courses').then((data) => ({ courses: (data?.courses ?? []).map(toMoodleCourse) }));
 }

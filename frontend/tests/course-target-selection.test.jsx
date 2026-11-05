@@ -79,7 +79,8 @@ beforeEach(() => {
 
   moodleService.getMoodleStatus.mockResolvedValue({
     status: 'CONNECTED',
-    moodle_url: 'http://localhost:8080',
+    connected: true,
+    site_name: 'Moodle ITK',
     message: 'Terhubung ke Moodle LMS ITK.',
   });
   moodleService.getMoodleCourses.mockResolvedValue({
@@ -124,16 +125,17 @@ describe('FE-09.1 MoodleConnectionBanner', () => {
     expect(node.textContent).toContain('Memeriksa koneksi Moodle LMS');
   });
 
-  it('renders connected state with Moodle URL and message', async () => {
+  it('renders connected state with site name and message', async () => {
     await renderComponent(
       <MoodleConnectionBanner
         status="CONNECTED"
-        moodleUrl="http://localhost:8080"
+        connected
+        siteName="Moodle ITK"
         message="Terhubung ke Moodle LMS ITK."
       />
     );
     expect(node.textContent).toContain('Moodle LMS Terhubung');
-    expect(node.textContent).toContain('http://localhost:8080');
+    expect(node.textContent).toContain('Moodle ITK');
     expect(node.textContent).toContain('Terhubung ke Moodle LMS ITK.');
   });
 
@@ -339,6 +341,19 @@ describe('FE-09.2 CourseTargetSelectionPage (Workflow Integration & Modal Confir
 
     expect(node.textContent).toContain('Koneksi ke Moodle LMS Terputus');
     expect(node.textContent).toContain('Gagal terhubung ke host Moodle');
-    expect(node.textContent).toContain('Koneksi Moodle terputus');
+    // Gagal memuat bukan berarti kosong: tanpa keadaan "tidak ada kursus" dan tanpa pesan ganda.
+    expect(node.textContent).not.toContain('Tidak ada kursus Moodle ditemukan');
+    expect(node.textContent).not.toContain('Koneksi Moodle terputus');
+    expect(node.querySelector('input[type="text"]')).toBeNull();
+  });
+
+  it('shows the course list error once when only the course list fails', async () => {
+    moodleService.getMoodleCourses.mockRejectedValue(new Error('Daftar kursus belum dapat dimuat.'));
+
+    await renderComponent(<CourseTargetSelectionPage />);
+
+    expect(node.textContent).toContain('Moodle LMS Terhubung');
+    expect(node.textContent.match(/Daftar kursus belum dapat dimuat\./g)).toHaveLength(1);
+    expect(node.textContent).not.toContain('Tidak ada kursus Moodle ditemukan');
   });
 });

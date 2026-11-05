@@ -14,11 +14,13 @@ import WorkflowLayout from './WorkflowLayout';
 const TABS = [
   { to: '', label: 'Ringkasan', end: true },
   { to: 'rps', label: 'RPS' },
-  { to: 'workflows', label: 'Workflow' },
+  { to: 'target', label: 'Course Target' },
   { to: 'plan', label: 'Rencana' },
   { to: 'content', label: 'Konten' },
   { to: 'review', label: 'Review' },
   { to: 'publish', label: 'Publikasi' },
+  // Pemantauan workflow (FE-10) di akhir agar urutan tab project kursus tetap seperti FE-09.
+  { to: 'workflows', label: 'Workflow' },
 ];
 
 /**

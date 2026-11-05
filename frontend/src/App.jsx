@@ -72,6 +72,7 @@ export default function App() {
               <Route path="ai" element={<AiCourseLayout />}>
                 <Route index element={COURSE_API_AVAILABLE ? <CourseOverviewPage /> : <WorkflowOverviewPage />} />
                 <Route path="rps" element={<CourseRpsPage />} />
+                <Route path="target" element={<CourseTargetSelectionPage />} />
                 <Route path="workflows" element={<WorkflowStatusPage />} />
                 {/* Tahap berikut butuh API /courses, yang belum ada di backend. */}
                 {COURSE_API_AVAILABLE && (

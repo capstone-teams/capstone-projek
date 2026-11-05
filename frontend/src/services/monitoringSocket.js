@@ -1,6 +1,6 @@
 import { API_BASE_URL, USE_MOCK } from './config';
 import { getToken } from './apiClient';
-import { subscribeMockWorkflowEvents } from './mock/mockServer';
+import { subscribeMockEvents, subscribeMockWorkflowEvents } from './mock/mockServer';
 
 /** Status koneksi real-time yang dilaporkan ke pelanggan. */
 export const SOCKET_STATUS = {
