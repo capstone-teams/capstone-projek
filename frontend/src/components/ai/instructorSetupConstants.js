@@ -1,5 +1,3 @@
-export const MAX_PROMPT_LENGTH = 1000;
-
 export const DEFAULT_ACTIVITY_CONFIGURATION = {
   learning_material: true,
   learning_resource: false,

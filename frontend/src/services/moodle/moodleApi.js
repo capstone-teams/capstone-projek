@@ -83,55 +83,75 @@ export async function getCourse(courseId) {
   }
 }
 
+const escapeHtml = (text) => String(text ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const htmlList = (items) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+
+/** Ringkasan pertemuan seperti LMS ITK: Sub-CPMK lalu Bahan Kajian. */
+function weekSummary({ subCpmk = [], topics = [] }) {
+  const parts = [];
+  if (subCpmk.length) parts.push(`<p><strong>Sub-CPMK:</strong></p>${htmlList(subCpmk)}`);
+  if (topics.length) parts.push(`<p><strong>Bahan Kajian:</strong></p>${htmlList(topics)}`);
+  return parts.join('');
+}
+
+const MATERIAL_MODNAME = { quiz: 'quiz', assignment: 'assign' };
+
 export async function getCourseContents(courseId) {
   try {
     return await callWs('core_course_get_contents', { courseid: courseId });
   } catch {
-    // Single Gateway: jika kursus belum dieksekusi ke Moodle atau token Moodle tidak ada di browser,
-    // ambil konten atau rencana kursus dari Backend Gateway.
-    const content = await api.get(`/courses/${courseId}/content`).catch(() => null);
+    // Single Gateway: tanpa token Moodle di browser, isi kursus diambil dari Backend Gateway. Konten mingguan
+    // (GET /courses/{id}/content) memberi aktivitas, rencana (GET /courses/{id}/plan) memberi Sub-CPMK dan
+    // bahan kajian; keduanya digabung per pertemuan.
+    const [content, plan] = await Promise.all([
+      api.get(`/courses/${courseId}/content`).catch(() => null),
+      api.get(`/courses/${courseId}/plan`).catch(() => null),
+    ]);
+    const planWeeks = new Map((plan?.weeks ?? []).map((w) => [w.week_number, w]));
+    const planSummary = (w) => weekSummary({ subCpmk: [...(w.learning_outcomes ?? []), ...(w.objectives ?? [])], topics: w.topics?.length ? w.topics : [w.title].filter(Boolean) });
+    const section = (number, title, summary, modules) => ({
+      id: number,
+      section: number,
+      name: `Pertemuan ${number}: ${title}`,
+      summary,
+      summaryformat: 1,
+      visible: 1,
+      uservisible: true,
+      modules,
+    });
+
     if (content?.weeks?.length) {
-      return content.weeks.map((w) => ({
-        id: w.week,
-        section: w.week,
-        name: `Minggu ${w.week}: ${w.topic || 'Materi'}`,
-        summary: w.learning_objectives?.length
-          ? `<p><strong>Capaian Pembelajaran:</strong> ${w.learning_objectives.join(', ')}</p>`
-          : '',
-        summaryformat: 1,
-        visible: 1,
-        uservisible: true,
-        modules: (w.materials ?? []).map((m, idx) => ({
-          id: m.content_id || `${w.week}-${idx + 1}`,
-          name: m.title || `Materi Minggu ${w.week}`,
-          modname: m.type === 'quiz' ? 'quiz' : m.type === 'assignment' ? 'assign' : 'page',
-          uservisible: true,
-          visible: 1,
-        })),
-      }));
+      return content.weeks.map((w) => {
+        const planned = planWeeks.get(w.week);
+        return section(
+          w.week,
+          w.topic || planned?.title || 'Materi',
+          planned ? planSummary(planned) : weekSummary({ subCpmk: w.learning_objectives ?? [], topics: [w.topic].filter(Boolean) }),
+          (w.materials ?? []).map((m, idx) => ({
+            id: m.content_id || `${w.week}-${idx + 1}`,
+            name: m.title || `Materi pertemuan ${w.week}`,
+            modname: MATERIAL_MODNAME[m.type] ?? 'page',
+            uservisible: true,
+            visible: 1,
+          })),
+        );
+      });
     }
-    const plan = await api.get(`/courses/${courseId}/plan`).catch(() => null);
-    if (plan?.weeks?.length) {
-      return plan.weeks.map((w) => ({
-        id: w.week_number,
-        section: w.week_number,
-        name: `Minggu ${w.week_number}: ${w.title}`,
-        summary: w.topics?.length ? `<p><strong>Topik:</strong> ${w.topics.join(', ')}</p>` : '',
-        summaryformat: 1,
-        visible: 1,
-        uservisible: true,
-        modules: w.assessment
-          ? [
-              {
-                id: `assessment-${w.week_number}`,
-                name: `${w.assessment.type || 'Tugas'}: ${w.assessment.description || ''}`,
-                modname: w.assessment.type === 'kuis' ? 'quiz' : 'assign',
-                uservisible: true,
-                visible: 1,
-              },
-            ]
+    if (planWeeks.size) {
+      return [...planWeeks.values()].map((w) => section(
+        w.week_number,
+        w.title,
+        planSummary(w),
+        w.assessment
+          ? [{
+              id: `assessment-${w.week_number}`,
+              name: `${w.assessment.type || 'Tugas'}: ${w.assessment.description || ''}`,
+              modname: w.assessment.type === 'kuis' ? 'quiz' : 'assign',
+              uservisible: true,
+              visible: 1,
+            }]
           : [],
-      }));
+      ));
     }
     return [];
   }

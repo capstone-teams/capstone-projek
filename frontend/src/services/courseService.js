@@ -31,6 +31,9 @@ export function updateActivityConfiguration(courseId, config) {
 }
 
 // Course Planning
+// GET /courses/{id}/plan ada di backend (rencana project, hanya dibaca). Generate, approve, dan regenerate
+// rencana di backend memakai /workflows/{id}/plan (coursePlanService.js); tiga fungsi di bawah hanya dijawab
+// backend mock untuk tes alur project kursus, dan tidak dipakai halaman.
 
 export function generatePlan(courseId) {
   return api.post(`/courses/${courseId}/plan`);

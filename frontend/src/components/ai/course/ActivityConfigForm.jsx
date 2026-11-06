@@ -4,6 +4,8 @@ import { useAction } from '../../../hooks/useApi';
 import { Alert, ErrorAlert } from '../../ui';
 import ActivityConfigFields from '../ActivityConfigFields';
 import { isBusy } from '../../../utils/workflow';
+import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
+import PendingFeatureNote from '../PendingFeatureNote';
 
 const LOCKED_CONFIG = ['APPROVED', 'EXECUTING', 'EXECUTED', 'VERIFYING', 'COMPLETED'];
 
@@ -44,7 +46,7 @@ export default function ActivityConfigForm({ course, onSaved }) {
             <button
               type="button"
               className="btn btn--primary"
-              disabled={save.pending}
+              disabled={!COURSE_ACTIONS_AVAILABLE || save.pending}
               onClick={() =>
                 save
                   .run(value)
@@ -60,6 +62,7 @@ export default function ActivityConfigForm({ course, onSaved }) {
           </div>
         )
       )}
+      {!locked && !COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Menyimpan konfigurasi aktivitas belum tersedia.</PendingFeatureNote>}
     </div>
   );
 }

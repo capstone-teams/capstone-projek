@@ -4,6 +4,7 @@ import * as auth from '../src/services/authService';
 import * as rps from '../src/services/rpsService';
 import { isRpsInProgress } from '../src/utils/rpsStatus';
 import { subscribeWorkflowEvents } from '../src/services/monitoringSocket';
+import { getWorkflowEvents } from '../src/services/workflowService';
 import * as courses from '../src/services/courseService';
 import * as instructor from '../src/services/instructorService';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
@@ -79,7 +80,8 @@ describe('RPS', () => {
     expect(uploaded).toMatchObject({ filename: 'rps-basis-data.pdf', status: 'UPLOADED', schema_version: '2.0', deduplicated: false });
 
     const proc = await rps.processRps(uploaded.id);
-    expect(proc).toEqual({ rps_id: uploaded.id, status: 'PROCESSING', schema_version: '2.0', reused: false });
+    // RPSProcessResponse: workflow_id wajib; orkestrator memulai workflow sejak tahap pemrosesan.
+    expect(proc).toEqual({ rps_id: uploaded.id, status: 'PROCESSING', schema_version: '2.0', reused: false, workflow_id: expect.stringMatching(/^workflow_/) });
     await expectApiError(rps.processRps(uploaded.id), 409, 'INVALID_REQUEST');
     await expectApiError(rps.getRpsAnalysis(uploaded.id), 422, 'INVALID_REQUEST');
 
@@ -104,9 +106,20 @@ describe('RPS', () => {
     const unsubscribe = subscribeWorkflowEvents(item.workflow_id, (event) => events.push(event));
     await flush();
     unsubscribe();
-    expect(events.map((e) => e.event)).toEqual(['WORKFLOW_STARTED', 'WORKFLOW_STAGE_STARTED', 'WORKFLOW_STAGE_COMPLETED', 'WORKFLOW_COMPLETED']);
+    // Langganan hanya menerima event baru (BE-11.3); event tahap pemrosesan sudah lewat.
+    expect(events.map((e) => e.event)).toEqual(['WORKFLOW_STAGE_STARTED', 'WORKFLOW_STAGE_COMPLETED', 'WORKFLOW_COMPLETED']);
     expect(events[0]).toMatchObject({ workflow_id: item.workflow_id, stage: 'rps_analysis', timestamp: expect.any(String) });
     expect(events.at(-1).progress).toEqual({ completed: 2, total: 2 });
+    // Riwayat lengkap lewat HTTP: satu workflow untuk tahap pemrosesan lalu analisis.
+    const history = await getWorkflowEvents(item.workflow_id);
+    expect(history.map((e) => `${e.event}:${e.stage}`)).toEqual([
+      'WORKFLOW_STARTED:rps_processing',
+      'WORKFLOW_STAGE_STARTED:rps_processing',
+      'WORKFLOW_STAGE_COMPLETED:rps_processing',
+      'WORKFLOW_STAGE_STARTED:rps_analysis',
+      'WORKFLOW_STAGE_COMPLETED:rps_analysis',
+      'WORKFLOW_COMPLETED:rps_analysis',
+    ]);
     expect(isRpsInProgress(await rps.getRps(uploaded.id))).toBe(false);
   });
 

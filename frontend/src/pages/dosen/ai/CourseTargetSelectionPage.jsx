@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useCourse } from '../../../hooks/useCourse';
-import { getMoodleCourses, getMoodleStatus } from '../../../services/moodleIntegrationService';
+import { getMoodleCourse, getMoodleCourseContents, getMoodleCourses, getMoodleStatus } from '../../../services/moodleIntegrationService';
 import { getWorkflow, setWorkflowMoodleTarget } from '../../../services/workflowService';
 import { getRps } from '../../../services/rpsService';
 import { useAction, useApi } from '../../../hooks/useApi';
@@ -88,6 +88,20 @@ export default function CourseTargetSelectionPage() {
   // Daftar gagal dimuat (bukan kosong): jangan tampilkan pencarian atau keadaan "tidak ada kursus".
   const coursesFailed = !!coursesError && !coursesData;
 
+  // Target saat ini: dari daftar bila ada, selain itu GET /integrations/moodle/courses/{id}.
+  const savedInList = courses.find((c) => String(c.id) === savedMoodleCourseId) ?? null;
+  const { data: savedDetail } = useApi(
+    () => (savedMoodleCourseId && !savedInList && !coursesLoading ? getMoodleCourse(savedMoodleCourseId).catch(() => null) : null),
+    [savedMoodleCourseId, !!savedInList, coursesLoading],
+  );
+  const savedTarget = savedInList ?? savedDetail;
+
+  // Pratinjau isi kursus Moodle yang akan dijadikan target (GET /integrations/moodle/courses/{id}/contents).
+  const preview = useApi(
+    () => (pendingTargetCourse ? getMoodleCourseContents(pendingTargetCourse.id) : null),
+    [pendingTargetCourse?.id],
+  );
+
   const filteredCourses = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return courses;
@@ -155,6 +169,13 @@ export default function CourseTargetSelectionPage() {
           <Alert tone="success" onClose={() => setSuccessMessage(null)}>
             {successMessage}
           </Alert>
+        )}
+
+        {savedMoodleCourseId && (
+          <p className="mb-3 text-sm" aria-label="Target saat ini">
+            <span className="text-muted">Target saat ini: </span>
+            <strong>{savedTarget ? `${savedTarget.fullname} (${savedTarget.shortname})` : `Kursus Moodle #${savedMoodleCourseId}`}</strong>
+          </p>
         )}
 
         <ErrorAlert error={workflowDetailError} onClose={reloadWorkflowDetail} />
@@ -280,6 +301,26 @@ export default function CourseTargetSelectionPage() {
                   </>
                 )}
               </div>
+            </div>
+
+            <div className="text-xs" aria-label="Isi kursus Moodle saat ini">
+              <p className="mb-1 font-semibold text-ink">Isi kursus di Moodle saat ini</p>
+              {preview.loading ? (
+                <p className="text-muted">Memuat isi kursus…</p>
+              ) : preview.error ? (
+                <p className="text-muted">Isi kursus belum dapat dimuat.</p>
+              ) : preview.data?.sections?.length ? (
+                <ul className="m-0 list-disc space-y-0.5 pl-5 text-muted">
+                  {preview.data.sections.slice(0, 6).map((section) => (
+                    <li key={section.moodle_section_id ?? section.section_number}>
+                      {section.name || `Section ${section.section_number}`} · {section.modules?.length ?? 0} aktivitas
+                    </li>
+                  ))}
+                  {preview.data.sections.length > 6 && <li>dan {preview.data.sections.length - 6} section lainnya</li>}
+                </ul>
+              ) : (
+                <p className="text-muted">Kursus ini masih kosong.</p>
+              )}
             </div>
 
             <p className="text-xs leading-relaxed text-muted">

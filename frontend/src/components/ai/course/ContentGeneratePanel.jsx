@@ -3,6 +3,8 @@ import { generateContent, getPlan } from '../../../services/courseService';
 import { nullOn404 } from '../../../services/apiClient';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Card, ErrorAlert } from '../../ui';
+import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
+import PendingFeatureNote from '../PendingFeatureNote';
 
 export default function ContentGeneratePanel({ course, hasContent, onStarted }) {
   const plan = useApi(() => getPlan(course.id).catch(nullOn404), [course.id]);
@@ -51,12 +53,13 @@ export default function ContentGeneratePanel({ course, hasContent, onStarted }) 
         <button
           type="button"
           className="btn btn--primary"
-          disabled={generate.pending || (mode === 'some' && picked.length === 0)}
+          disabled={!COURSE_ACTIONS_AVAILABLE || generate.pending || (mode === 'some' && picked.length === 0)}
           onClick={submit}
         >
           {generate.pending ? 'Meminta…' : mode === 'all' ? 'Generate semua minggu' : `Generate ${picked.length} minggu`}
         </button>
       </div>
+      {!COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Generate konten mingguan belum tersedia.</PendingFeatureNote>}
     </Card>
   );
 }

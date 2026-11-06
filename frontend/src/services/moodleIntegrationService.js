@@ -25,3 +25,33 @@ function toMoodleCourse(course) {
 export function getMoodleCourses() {
   return api.get('/integrations/moodle/courses').then((data) => ({ courses: (data?.courses ?? []).map(toMoodleCourse) }));
 }
+
+/** GET /integrations/moodle/courses/{id}: satu kursus Moodle; 404 bila tidak ada di Moodle. */
+export function getMoodleCourse(moodleCourseId) {
+  return api.get(`/integrations/moodle/courses/${moodleCourseId}`).then(toMoodleCourse);
+}
+
+/**
+ * GET /integrations/moodle/courses/{id}/contents: isi kursus yang sebenarnya ada di Moodle saat ini.
+ * @returns {Promise<{ moodle_course_id: number, sections: Array<{ moodle_section_id: number, section_number: number,
+ *   name: string, summary: string, visible: boolean, modules: Array<{ name: string, modname: string }> }> }>}
+ */
+export function getMoodleCourseContents(moodleCourseId) {
+  return api.get(`/integrations/moodle/courses/${moodleCourseId}/contents`);
+}
+
+/**
+ * POST /integrations/moodle/courses/{id}/sections: membuat section baru, atau mengganti nama section bila
+ * `section_number` sudah ada (jadi aman diulang).
+ */
+export function saveMoodleSection(moodleCourseId, { name, section_number: sectionNumber }) {
+  return api.post(`/integrations/moodle/courses/${moodleCourseId}/sections`, sectionNumber == null ? { name } : { name, section_number: sectionNumber });
+}
+
+/**
+ * POST /integrations/moodle/courses: membuat kursus Moodle. Menurut backend hanya untuk pengujian (development),
+ * sehingga tidak ditampilkan sebagai tombol bagi dosen.
+ */
+export function createMoodleCourse({ fullname, shortname, category_id: categoryId = 1 }) {
+  return api.post('/integrations/moodle/courses', { fullname, shortname, category_id: categoryId }).then(toMoodleCourse);
+}

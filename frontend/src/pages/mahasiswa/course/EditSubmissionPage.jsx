@@ -1,7 +1,7 @@
 import { useContext, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AppStateContext } from '../../../context/appStateContext';
-import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
+import { useCourseBreadcrumb, useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useApi } from '../../../hooks/useApi';
 import { getAssignments, getSubmissionStatus, saveSubmission } from '../../../services/moodle/moodleApi';
 import { EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
@@ -129,6 +129,11 @@ export default function EditSubmissionPage() {
   }, [course.id, cmid]);
 
   const activityPath = `/course/${course.id}/mod/${cmid}`;
+  useCourseBreadcrumb(mod ? [
+    { label: section.name, to: `/course/${course.id}#section-${section.section}` },
+    { label: mod.name, to: activityPath },
+    { label: 'Edit submission' },
+  ] : []);
   if (!mod || mod.modname !== 'assign') {
     return <EmptyState title="Tugas tidak ditemukan." action={<Link to={`/course/${course.id}`}>Kembali ke kursus</Link>} />;
   }
@@ -160,13 +165,6 @@ export default function EditSubmissionPage() {
 
   return (
     <div>
-      <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb aktivitas">
-        <Link to={`/course/${course.id}#section-${section.section}`}>{section.name}</Link>
-        {' / '}
-        <Link to={activityPath}>{mod.name}</Link>
-        {' / '}
-        <span aria-current="page">Edit submission</span>
-      </nav>
       <div className="mb-4 flex items-center gap-3">
         <ActivityIcon modname={mod.modname} src={mod.modicon} />
         <h2 className="text-2xl">{mod.name}</h2>

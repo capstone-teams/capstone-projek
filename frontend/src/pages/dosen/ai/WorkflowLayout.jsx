@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom';
-import { findWorkflowForCourse } from '../../../services/workflowService';
+import { findWorkflowForCourse, moodleCourseIdOf } from '../../../services/workflowService';
 import { useApi } from '../../../hooks/useApi';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
@@ -21,7 +21,9 @@ const TABS = [
  */
 export default function WorkflowLayout() {
   const { course: moodleCourse, isTeacher } = useMoodleCourse();
-  const { data: workflow, error, loading, reload } = useApi(() => findWorkflowForCourse(moodleCourse.id), [moodleCourse.id]);
+  // Workflow kursus dicari lewat nomor kursus Moodle-nya (moodle_course_id), bukan id kursus backend.
+  const moodleId = moodleCourseIdOf(moodleCourse);
+  const { data: workflow, error, loading, reload } = useApi(() => (moodleId ? findWorkflowForCourse(moodleId) : null), [moodleId]);
   const [version, setVersion] = useState(0);
   // ?rps=<id>: hasil analisis RPS yang belum punya workflow (mis. data seed), tanpa project kursus.
   const [params] = useSearchParams();

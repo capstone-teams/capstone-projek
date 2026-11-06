@@ -203,7 +203,8 @@ describe('halaman dosen', () => {
     ['/course/2/ai/rps', 'Hasil analisis RPS'],
     ['/course/2/ai/target', 'Pilih Target Course Moodle'],
     ['/course/2/ai/plan', 'Rencana course · versi 1'],
-    ['/course/4/ai/plan', 'Setujui rencana'],
+    // Setujui/tolak hanya untuk course plan workflow (BE-14); rencana project dibaca saja.
+    ['/course/4/ai/plan', 'Rencana tersimpan pada project kursus (hanya dibaca).'],
     ['/course/3/ai', 'Mulai generator AI'],
     ['/ai', 'Ikhtisar kursus'],
     ['/tidak-ada', 'Halaman tidak ditemukan'],

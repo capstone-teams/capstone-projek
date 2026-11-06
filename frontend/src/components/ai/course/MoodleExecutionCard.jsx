@@ -5,6 +5,8 @@ import { useAction, useApi } from '../../../hooks/useApi';
 import { usePolling } from '../../../hooks/usePolling';
 import { Alert, Badge, Card, ErrorAlert, Modal, ProgressBar, Spinner } from '../../ui';
 import { formatDateTime } from '../../../utils/format';
+import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
+import PendingFeatureNote from '../PendingFeatureNote';
 
 const EXEC_TONES = { completed: 'success', failed: 'danger', cancelled: 'neutral', queued: 'info', running: 'info' };
 
@@ -33,9 +35,10 @@ export default function MoodleExecutionCard() {
           <p>
             Backend akan membuat section, materi, dan aktivitas di course Moodle <strong>{course.moodle_course_id || '(baru)'}</strong>.
           </p>
-          <button type="button" className="btn btn--primary" onClick={() => setConfirming(true)}>
+          <button type="button" className="btn btn--primary" disabled={!COURSE_ACTIONS_AVAILABLE} onClick={() => setConfirming(true)}>
             {ex ? 'Kirim ulang ke Moodle' : 'Kirim ke Moodle'}
           </button>
+          {!COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Pengiriman konten ke Moodle belum tersedia.</PendingFeatureNote>}
         </div>
       )}
 

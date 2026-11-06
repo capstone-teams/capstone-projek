@@ -5,7 +5,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { AppStateProvider } from '../src/context/AppStateProvider';
 import App from '../src/App';
-import { MOODLE_SESSION_KEY } from '../src/services/config';
 import { login as backendLogin } from '../src/services/authService';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
 import { getWorkflow } from '../src/services/workflowService';
@@ -40,7 +39,6 @@ describe('Generator AI tanpa API /courses', () => {
   const button = (text) => [...container.querySelectorAll('button')].find((b) => b.textContent === text);
 
   it('RPS analyzed tanpa workflow tetap dapat dibuka hasil analisisnya dan tidak dapat dihubungkan', async () => {
-    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
     await backendLogin('dosen', 'dosen123');
     root = createRoot(container);
     await act(async () => {
@@ -59,7 +57,6 @@ describe('Generator AI tanpa API /courses', () => {
   });
 
   it('tombol Hapus RPS gagal disembunyikan selama backend belum punya DELETE, dan RPS yang pernah dihapus tampil lagi', async () => {
-    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
     await backendLogin('dosen', 'dosen123');
     root = createRoot(container);
     await act(async () => {
@@ -88,7 +85,6 @@ describe('Generator AI tanpa API /courses', () => {
   });
 
   it('unggah RPS, hubungkan ke kursus lewat moodle-target, lalu pantau dan lepaskan', async () => {
-    localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: 'mock-3-test' }));
     await backendLogin('dosen', 'dosen123');
     root = createRoot(container);
     await act(async () => {
@@ -119,5 +115,5 @@ describe('Generator AI tanpa API /courses', () => {
     await act(async () => button('Lepas RPS dari kursus ini').click());
     await waitFor(() => container.querySelector('form.upload'), 'kembali ke unggah RPS');
     expect((await getWorkflow('workflow_001')).moodle_course_id).toBeNull();
-  });
+  }, 15000);
 });

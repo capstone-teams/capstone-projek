@@ -6,6 +6,7 @@ import { useWorkflowEvents } from './useWorkflowEvents';
 import { getRps, listRps, processRps, reanalyzeRps } from '../services/rpsService';
 import { RPS_STATUS, isRpsInProgress } from '../utils/rpsStatus';
 import { RPS_DELETE_AVAILABLE } from '../services/config';
+import { WORKFLOW_EVENT } from '../utils/workflowStatus';
 
 // Polling hanya cadangan: event workflow (§17) memicu pembaruan lebih cepat bila tersedia.
 const POLL_MS = 3000;
@@ -86,7 +87,8 @@ export function useRpsLibrary() {
     const item = items.find((candidate) => candidate.workflow_id === event.workflow_id);
     if (!item) return;
     setProgress((current) => ({ ...current, [item.id]: { stage: event.stage, progress: event.progress, message: event.message, event: event.event } }));
-    refreshOne(item);
+    // Event progres hanya memperbarui keterangan tahap; status RPS berubah pada awal/akhir tahap atau workflow.
+    if (event.event !== WORKFLOW_EVENT.STAGE_PROGRESS) refreshOne(item);
   });
 
   /** Dipanggil RpsUploadForm setelah file tersimpan di server. */

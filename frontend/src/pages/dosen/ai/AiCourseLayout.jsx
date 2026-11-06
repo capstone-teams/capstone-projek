@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom';
 import { findCourseByMoodleId } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
-import { useWorkflow } from '../../../hooks/useWorkflow';
+import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
+import { getRps } from '../../../services/rpsService';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { ErrorAlert, ErrorBoundary, Spinner, StatusBadge } from '../../../components/ui';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
@@ -40,12 +41,18 @@ function CourseProjectLayout() {
     return findCourseByMoodleId(moodleCourse.id);
   }, [moodleCourse?.id]);
 
-  const {
-    workflowId,
-    workflow,
-    events,
-    reload: reloadWorkflow,
-  } = useWorkflow(course);
+  // ?rps=<id>: hasil analisis RPS dari daftar RPS, walau kursus ini belum punya project.
+  const [params] = useSearchParams();
+  const rpsParam = params.get('rps');
+
+  // Workflow project: dari project bila ada, atau dari RPS-nya (GET /rps/{id}); dipantau real-time (FE-10.2).
+  const projectRps = useApi(
+    () => (course?.rps_id && !course?.workflow_id ? getRps(course.rps_id) : null),
+    [course?.rps_id, course?.workflow_id],
+  );
+  const workflowId = course?.workflow_id ?? projectRps.data?.workflow_id ?? null;
+  const monitor = useWorkflowMonitor(workflowId);
+  const { reload: reloadWorkflow, workflow, events } = monitor;
 
   const refresh = useCallback(() => {
     setVersion((v) => v + 1);
@@ -56,7 +63,7 @@ function CourseProjectLayout() {
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
   if (error && !course) return <ErrorAlert error={error} />;
-  if (!course && onStatusPage) return <Outlet context={{ course: null, events: [], version, refresh }} />;
+  if (!course && (onStatusPage || rpsParam)) return <Outlet context={{ course: rpsParam ? { rps_id: rpsParam } : null, events: [], version, refresh }} />;
   if (!course) return <AiProjectStart moodleCourse={moodleCourse} onCreated={() => reload()} />;
 
   return (
@@ -78,7 +85,7 @@ function CourseProjectLayout() {
       </nav>
 
       <ErrorBoundary>
-        <Outlet context={{ course, workflow, workflowId, events, version, refresh }} />
+        <Outlet context={{ course, workflow, workflowId, events, connection: monitor.connection, version, refresh }} />
       </ErrorBoundary>
     </>
   );

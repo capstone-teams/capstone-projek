@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../src/services/apiClient';
-import { clearWorkflowCache, findWorkflowForCourse, setMoodleTarget } from '../src/services/workflowService';
+import { clearWorkflowCache, findWorkflowForCourse, moodleCourseIdOf, setMoodleTarget } from '../src/services/workflowService';
 
 const item = (id, status, updated = '2026-11-02T08:00:00Z') => ({ id, status, stage: null, rps_id: `rps-${id}`, created_at: updated, updated_at: updated });
 const detail = (id, status, course = null, updated = '2026-11-02T08:00:00Z') => ({ ...item(id, status, updated), moodle_course_id: course });
@@ -78,5 +78,19 @@ describe('findWorkflowForCourse', () => {
     await expect(findWorkflowForCourse(7)).rejects.toThrow('jaringan');
     gets.mockImplementation(async (path) => (path === '/workflows' ? { items: list } : details[path.split('/').pop()]));
     expect(await findWorkflowForCourse(7)).toMatchObject({ id: 'b' });
+  });
+});
+
+describe('moodleCourseIdOf', () => {
+  it('memakai moodle_course_id dari kursus backend (id teks), atau id angka dari data Moodle', () => {
+    expect(moodleCourseIdOf({ id: '5AH7inFLxJDRKEa34saR9c', moodle_course_id: 42 })).toBe(42);
+    expect(moodleCourseIdOf({ id: 'course_001', moodle_course_id: '2' })).toBe(2);
+    expect(moodleCourseIdOf({ id: 3 })).toBe(3);
+  });
+
+  it('null bila kursus belum punya kursus Moodle (PUT moodle-target hanya menerima angka positif)', () => {
+    expect(moodleCourseIdOf({ id: '5AH7inFLxJDRKEa34saR9c', moodle_course_id: null })).toBeNull();
+    expect(moodleCourseIdOf({ id: 0 })).toBeNull();
+    expect(moodleCourseIdOf(null)).toBeNull();
   });
 });

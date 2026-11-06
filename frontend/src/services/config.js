@@ -12,3 +12,8 @@ export const PREFERENCES_STORAGE_KEY = 'agentic-lms.preferences';
 // false = tampilan workflow saja (WorkflowLayout).
 export const COURSE_API_AVAILABLE = true;
 export const RPS_DELETE_AVAILABLE = import.meta.env.VITE_RPS_DELETE === 'true';
+
+// Aksi project kursus yang belum punya endpoint di backend: membuat project (POST /courses), konfigurasi
+// aktivitas, generate/regenerasi konten, validasi dan review konten, eksekusi serta verifikasi Moodle.
+// Kontrolnya tampil tetapi nonaktif; backend mock untuk tes (VITE_USE_MOCK=true) sudah menyediakannya.
+export const COURSE_ACTIONS_AVAILABLE = import.meta.env.VITE_USE_MOCK === 'true';
