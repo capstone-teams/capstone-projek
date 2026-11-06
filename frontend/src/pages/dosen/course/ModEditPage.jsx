@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
+import { useCourseBreadcrumb, useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useCourseEditing } from '../../../hooks/useCourseEditing';
 import { CAN_CREATE_IN_APP } from '../../../services/moodle/courseEditing';
 import { EmptyState } from '../../../components/ui';
@@ -24,6 +24,7 @@ export default function ModEditPage() {
   const type = TYPES[modname];
   const section = sections.find((s) => s.section === Number(params.get('section')));
   const coursePath = `/course/${course.id}`;
+  useCourseBreadcrumb(type && section ? [{ label: section.name, to: `${coursePath}#section-${section.section}` }, { label: `New ${type.name}` }] : []);
 
   if (!canEdit) {
     return <EmptyState title="Anda tidak dapat menambah aktivitas di kursus ini." action={<Link to={coursePath}>Kembali ke kursus</Link>} />;
@@ -33,23 +34,18 @@ export default function ModEditPage() {
   }
 
   const sectionPath = `${coursePath}#section-${section.section}`;
-  // Argumen ketiga dari formulir ({ aiPrompt }) sengaja tidak dipakai di sini: pembuatan aktivitas dengan AI
-  // belum punya API di backend, dan prompt tidak boleh ikut terkirim sebagai isian aktivitas.
-  const submit = async (fields, display) => {
+  // Argumen kedua dari formulir (prompt tambahan dan pilihan generate) sengaja tidak dipakai: backend belum punya
+  // endpoint generate konten aktivitas, dan prompt tidak boleh ikut terkirim sebagai isian aktivitas. Begitu
+  // endpoint tersedia, berikan `onGenerate` ke formulir agar tombol "Generate dengan AI" aktif.
+  const submit = async (fields) => {
     setError(null);
     const result = await editing.createActivity(section, modname, fields, type.successMessage, setError);
-    if (!result) return;
-    // Save and display membuka aktivitas baru; Save and return to course kembali ke section-nya.
-    navigate(display && result.cmid ? `${coursePath}/mod/${result.cmid}` : sectionPath);
+    // Simpan selalu kembali ke section tempat aktivitas ditambahkan.
+    if (result) navigate(sectionPath);
   };
 
   return (
     <div>
-      <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb aktivitas">
-        <Link to={sectionPath}>{section.name}</Link>
-        {' / '}
-        <span aria-current="page">New {type.name}</span>
-      </nav>
       <div className="mb-4 flex items-center gap-3">
         <ActivityIcon modname={modname} />
         <h2 className="text-2xl">New {type.name}</h2>

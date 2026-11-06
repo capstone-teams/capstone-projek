@@ -69,6 +69,15 @@ function courseTargetOf(item) {
   return targetCache.get(key);
 }
 
+/**
+ * Nomor kursus Moodle dari data kursus: moodle_course_id (kursus dari backend, id-nya teks) atau id angka
+ * (data Moodle). null bila kursus belum punya kursus Moodle; PUT moodle-target hanya menerima angka positif.
+ */
+export function moodleCourseIdOf(course) {
+  const id = Number(course?.moodle_course_id ?? course?.id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 /** PUT /workflows/{id}/moodle-target: id kursus memilih target, null melepaskannya. */
 export function setMoodleTarget(workflowId, moodleCourseId) {
   return api.put(`/workflows/${workflowId}/moodle-target`, { moodle_course_id: moodleCourseId }).then((workflow) => {
@@ -77,6 +86,11 @@ export function setMoodleTarget(workflowId, moodleCourseId) {
     writeStored((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !stale(key))));
     return workflow;
   });
+}
+
+/** Seperti setMoodleTarget, tetapi id kursus dinormalisasi ke angka (dipakai halaman pemilihan course target). */
+export function setWorkflowMoodleTarget(workflowId, moodleCourseId) {
+  return setMoodleTarget(workflowId, moodleCourseId == null ? null : Number(moodleCourseId));
 }
 
 /** Workflow yang menargetkan kursus ini, dengan data terbaru dari GET /workflows/{id}; null bila tidak ada. */

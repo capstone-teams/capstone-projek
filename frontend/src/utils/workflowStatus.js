@@ -164,8 +164,11 @@ export function eventTypeOf(event) {
 
 // ---- Event real-time (FE-10.2)
 
-/** Batas event yang disimpan per workflow di state aplikasi. */
-export const MAX_WORKFLOW_EVENTS = 500;
+/**
+ * Batas event yang disimpan per workflow di state aplikasi. Riwayat dari GET /events dipakai utuh oleh timeline
+ * (FE-10.3), jadi batasnya jauh di atas riwayat nyata (puluhan event per proses) dan hanya menjaga memori.
+ */
+export const MAX_WORKFLOW_EVENTS = 2000;
 
 const timeOf = (value) => {
   const time = Date.parse(value);
@@ -217,6 +220,23 @@ export function applyWorkflowEvent(workflow, event) {
     default:
       return workflow;
   }
+}
+
+/**
+ * Riwayat untuk timeline (FE-10.3): tiap event diberi kategori (`type`, lihat eventTypeOf) dan nomor proses
+ * (`run`). Proses baru dimulai pada setiap WORKFLOW_STARTED, mis. setelah analisis ulang pada workflow yang sama.
+ */
+export function eventTimeline(events = []) {
+  let run = 0;
+  return events.map((event) => {
+    if (run === 0 || event.event === WORKFLOW_EVENT.STARTED) run += 1;
+    return { ...event, type: eventTypeOf(event), run };
+  });
+}
+
+/** Jumlah event per kategori, untuk filter timeline. */
+export function countEventTypes(timeline) {
+  return timeline.reduce((counts, event) => ({ ...counts, [event.type]: (counts[event.type] ?? 0) + 1 }), {});
 }
 
 /** Event yang mengakhiri workflow; setelahnya status akhir diambil lewat HTTP. */

@@ -307,7 +307,7 @@ describe('Edit mode: halaman kursus', () => {
 
   it('membuat tugas lewat halaman New Assignment seperti Moodle', async () => {
     await openModEdit('Assignment');
-    expect(q('[aria-label="Breadcrumb aktivitas"]').textContent).toBe('Minggu 1: Pengantar Pemrograman Web / New Assignment');
+    expect(q('[aria-label="Breadcrumb"]').textContent).toBe('Kursus saya / IF2105 / Minggu 1: Pengantar Pemrograman Web / New Assignment');
     // Bagian dan bawaan mengikuti mod_form.php: General, Availability, Submission types terbuka; Grade tertutup.
     expect(['General', 'Availability', 'Submission types', 'Grade'].map((t) => sectionToggle(t).getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true', 'false']);
     expect(enable('Allow submissions from').checked).toBe(true);
@@ -316,7 +316,8 @@ describe('Edit mode: halaman kursus', () => {
     expect(dateSelect('Cut-off date', 'Day').disabled).toBe(true);
     expect(field('Online text').checked).toBe(false);
     expect(field('File submissions').checked).toBe(true);
-    expect(button('Save and display')).toBeTruthy();
+    // Satu tombol simpan saja.
+    expect(button('Save and display')).toBeUndefined();
 
     await click(button('Save and return to course'));
     expect(container.textContent).toContain('You must supply a value here.');
@@ -352,13 +353,13 @@ describe('Edit mode: halaman kursus', () => {
     expect(button('Collapse all')).toBeTruthy();
     await act(async () => fill(field('Maximum grade'), '150'));
     await click(sectionToggle('Grade'));
-    await click(button('Save and display'));
+    await click(button('Save and return to course'));
     expect(container.textContent).toContain('Invalid grade value. This must be an integer between 1 and 100');
     await waitFor(() => sectionToggle('Grade').getAttribute('aria-expanded') === 'true', 'bagian Grade terbuka');
     await act(async () => fill(field('Maximum grade'), '80'));
 
-    await click(button('Save and display'));
-    await waitFor(() => [...container.querySelectorAll('h2')].some((h) => h.textContent === 'Tugas Pengantar'), 'halaman tugas baru');
+    await click(button('Save and return to course'));
+    await waitFor(() => q('#section-1 [aria-label="Aksi untuk Tugas Pengantar"]'), 'tugas baru di Minggu 1');
     expect(container.textContent).toContain('Tugas ditambahkan.');
     const created = (await getAssignments([2])).find((a) => a.name === 'Tugas Pengantar');
     expect(created).toMatchObject({ grade: 80, intro: '<p>Buat ringkasan <strong>HTTP</strong>.</p>' });

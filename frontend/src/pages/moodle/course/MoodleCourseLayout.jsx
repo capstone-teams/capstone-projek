@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { useApi } from '../../../hooks/useApi';
@@ -16,6 +16,8 @@ export default function MoodleCourseLayout() {
   const courseId = Number.isNaN(Number(rawCourseId)) ? rawCourseId : Number(rawCourseId);
   const { user } = useAuth();
   const { pathname } = useLocation();
+  // Lanjutan breadcrumb dari halaman di dalam kursus (aktivitas, New <aktivitas>, edit submission).
+  const [trail, setTrail] = useState([]);
   const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen';
 
   const { data, error, loading, reload } = useApi(
@@ -57,7 +59,18 @@ export default function MoodleCourseLayout() {
   return (
     <PageContainer>
       <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb">
-        <Link to="/my/courses">Kursus saya</Link> / <span>{course.shortname}</span>
+        <Link to="/my/courses">Kursus saya</Link>
+        {' / '}
+        {trail.length ? <Link to={base}>{course.shortname}</Link> : <span aria-current="page">{course.shortname}</span>}
+        {trail.map((item, index) => {
+          const last = index === trail.length - 1;
+          return (
+            <Fragment key={`${index}-${item.label}`}>
+              {' / '}
+              {item.to && !last ? <Link to={item.to}>{item.label}</Link> : <span aria-current={last ? 'page' : undefined}>{item.label}</span>}
+            </Fragment>
+          );
+        })}
       </nav>
       <h1 className="moodle-h1 mb-4">{course.fullname}</h1>
       <nav className="tabs" aria-label="Navigasi kursus">
@@ -91,7 +104,7 @@ export default function MoodleCourseLayout() {
         </details>
       )}
       <ErrorBoundary>
-        <Outlet context={{ course, sections, isTeacher, canEdit, editMode, reload }} />
+        <Outlet context={{ course, sections, isTeacher, canEdit, editMode, reload, setTrail }} />
       </ErrorBoundary>
     </PageContainer>
   );

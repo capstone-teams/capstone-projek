@@ -3,67 +3,93 @@ import { Badge } from '../../ui';
 import MoodleHtml from '../MoodleHtml';
 import { AddActivityModal, InlineNameEditor, SectionEditMenu } from '../editing';
 import ActivityRow from './ActivityRow';
+import { COURSE_CARD } from './courseCard';
 
-/** Satu section kursus (dapat dilipat). Pada Edit mode: ubah nama, menu ⋮, dan tombol tambah aktivitas. */
-export default function CourseSection({ course, section, sections, isTeacher, collapsed, onToggle, editMode, editing }) {
+/**
+ * Satu section kursus, mengikuti LMS ITK.
+ * - Dengan `onClose`: panel pertemuan yang dibuka dari tile (judul bergaris bawah biru, tombol ×), berisi
+ *   ringkasan (Sub-CPMK, bahan kajian) lalu kartu aktivitas.
+ * - Tanpa `onClose` (section umum): judul sebagai kartu bergaris biru di kiri, lalu tiap aktivitas sebagai
+ *   kartu sendiri.
+ * Pada Edit mode: ubah nama, menu ⋮, dan tombol tambah aktivitas.
+ */
+export default function CourseSection({ course, section, sections, isTeacher, onClose, editMode, editing }) {
   const [adding, setAdding] = useState(false);
   const modules = section.modules.filter((m) => isTeacher || m.uservisible !== false || m.availabilityinfo);
   const hidden = section.visible === 0;
+  const panel = !!onClose;
 
-  return (
-    // .course-section .section-item: kartu putih, border gray-200, radius 1rem.
-    <section id={`section-${section.section}`} className="scroll-mt-20 rounded-2xl border border-line-subtle bg-white" aria-label={section.name}>
-      <div className="flex items-center gap-2 p-4">
+  const heading = (
+    <h3 className={`text-2xl font-bold text-ink max-phone:text-xl ${panel ? 'inline-block border-b-[3px] border-primary pb-1' : ''}`}>
+      {section.name}
+    </h3>
+  );
+  const header = (
+    <div className="flex items-start gap-2">
+      <div className={`flex min-w-0 flex-1 flex-wrap items-center gap-2 ${panel ? '' : 'border-l-4 border-primary pl-3'}`}>
+        {editMode ? (
+          <InlineNameEditor name={section.name} itemLabel={section.name} disabled={!!editing.pending} onSave={(name) => editing.renameSection(section, name)}>
+            {heading}
+          </InlineNameEditor>
+        ) : heading}
+        {isTeacher && hidden && <Badge tone="warning">Disembunyikan dari mahasiswa</Badge>}
+      </div>
+      {editMode && <SectionEditMenu section={section} editing={editing} />}
+      {panel && (
         <button
           type="button"
-          className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-primary-light text-primary hover:bg-primary hover:text-white"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? `Buka section ${section.name}` : `Tutup section ${section.name}`}
-          onClick={onToggle}
+          className="grid size-9 shrink-0 cursor-pointer place-items-center rounded-full text-2xl leading-none text-muted hover:bg-surface hover:text-ink"
+          aria-label={`Tutup ${section.name}`}
+          onClick={onClose}
         >
-          <span className={`text-sm transition-transform ${collapsed ? '-rotate-90' : ''}`}>▾</span>
+          <span aria-hidden="true">×</span>
         </button>
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {editMode ? (
-            <InlineNameEditor name={section.name} itemLabel={section.name} disabled={!!editing.pending} onSave={(name) => editing.renameSection(section, name)}>
-              <h3 className="text-xl font-bold text-ink">{section.name}</h3>
-            </InlineNameEditor>
-          ) : (
-            <h3 className="text-xl font-bold text-ink">{section.name}</h3>
-          )}
-          {isTeacher && hidden && <Badge tone="warning">Disembunyikan dari mahasiswa</Badge>}
-        </div>
-        {editMode && <SectionEditMenu section={section} editing={editing} />}
-      </div>
-
-      {!collapsed && (
-        <div>
-          {section.summary && <MoodleHtml html={section.summary} className="pr-4 pb-4 pl-16 text-ink" />}
-          {/* .section-content-inner: border-top, latar gray-100, sudut bawah membulat. */}
-          <div className="rounded-b-2xl border-t border-line-subtle bg-surface p-4">
-            {modules.length ? (
-              <ul className="flex flex-col gap-2">
-                {modules.map((m) => (
-                  <ActivityRow key={m.id} courseId={course.id} mod={m} isTeacher={isTeacher} editMode={editMode} sections={sections} editing={editing} />
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted">Belum ada aktivitas.</p>
-            )}
-            {editMode && (
-              <button
-                type="button"
-                className="mt-3 flex w-full cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-primary/50 bg-white px-4 py-3 text-left font-semibold text-primary transition-colors hover:bg-primary-light"
-                onClick={() => setAdding(true)}
-              >
-                <span aria-hidden="true" className="grid size-7 place-items-center rounded-md border border-primary text-lg leading-none">+</span>
-                Tambah aktivitas atau sumber
-              </button>
-            )}
-          </div>
-        </div>
+      )}
+    </div>
+  );
+  const activities = (
+    <>
+      {modules.length > 0 && (
+        <ul className="flex flex-col gap-3">
+          {modules.map((m) => (
+            <ActivityRow key={m.id} courseId={course.id} mod={m} isTeacher={isTeacher} editMode={editMode} sections={sections} editing={editing} />
+          ))}
+        </ul>
+      )}
+      {panel && !modules.length && <p className="text-sm text-muted">Belum ada aktivitas.</p>}
+      {editMode && (
+        <button
+          type="button"
+          className="flex w-full cursor-pointer items-center gap-3 rounded-md border border-dashed border-primary/50 bg-white px-4 py-3 text-left font-semibold text-primary transition-colors hover:bg-primary-light"
+          onClick={() => setAdding(true)}
+        >
+          <span aria-hidden="true" className="grid size-7 place-items-center rounded-md border border-primary text-lg leading-none">+</span>
+          Tambah aktivitas atau sumber
+        </button>
       )}
       {adding && <AddActivityModal open courseId={course.id} section={section} onClose={() => setAdding(false)} />}
+    </>
+  );
+
+  if (panel) {
+    return (
+      <section id={`section-${section.section}`} className={`${COURSE_CARD} scroll-mt-20 flex flex-col gap-4 border-primary/40 p-5`} aria-label={section.name}>
+        {header}
+        {section.summary && <MoodleHtml html={section.summary} className="text-ink" />}
+        {activities}
+      </section>
+    );
+  }
+
+  return (
+    <section id={`section-${section.section}`} className="scroll-mt-20 flex flex-col gap-3" aria-label={section.name}>
+      {(section.name || section.summary || editMode) && (
+        <div className={COURSE_CARD}>
+          {header}
+          {section.summary && <MoodleHtml html={section.summary} className="mt-2 text-sm text-ink" />}
+        </div>
+      )}
+      {activities}
     </section>
   );
 }

@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useWorkflowMonitor } from '../../hooks/useWorkflowMonitor';
 import { formatDateTime } from '../../utils/format';
 import { Card, ErrorAlert, Spinner } from '../ui';
-import EventLog from './EventLog';
 import WorkflowConnectionNote from './WorkflowConnectionNote';
+import WorkflowEventTimeline from './WorkflowEventTimeline';
 import WorkflowStatusPanel from './WorkflowStatusPanel';
 
 // Event beruntun (satu tahap bisa menerbitkan belasan event dalam sekejap) digabung menjadi satu panggilan.
@@ -43,8 +43,8 @@ export default function WorkflowDetail({ workflowId, rpsName, onChanged }) {
         <WorkflowConnectionNote workflow={workflow} connection={connection} />
         <WorkflowStatusPanel workflow={workflow} events={events} />
       </Card>
-      <Card title="Aktivitas agent">
-        <EventLog events={events} />
+      <Card title="Riwayat event">
+        <WorkflowEventTimeline events={events} />
       </Card>
     </div>
   );

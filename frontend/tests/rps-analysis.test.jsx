@@ -46,6 +46,25 @@ describe('FE-08.3 utilitas hasil analisis', () => {
   });
 });
 
+describe('FE-08.3 label jenis minggu', () => {
+  it('memberi label minggu kuis, UTS, dan UAS sesuai RPSWeekType backend', async () => {
+    const { act: run } = await import('react');
+    const node = document.createElement('div');
+    document.body.appendChild(node);
+    const view = createRoot(node);
+    const analysis = normalizeRpsAnalysis({ rps_id: 'x', data: { weeks: [
+      { week: 1, week_type: 'regular' }, { week: 4, week_type: 'kuis' }, { week: 8, week_type: 'uts' }, { week: 16, week_type: 'uas' },
+    ] } });
+    await run(async () => view.render(<RpsAnalysisDetails analysis={analysis} />));
+    expect(node.textContent).toContain('4 (Kuis)');
+    expect(node.textContent).toContain('8 (UTS)');
+    expect(node.textContent).toContain('16 (UAS)');
+    expect(node.textContent).not.toContain('1 (');
+    run(() => view.unmount());
+    node.remove();
+  });
+});
+
 describe('FE-08.3 tampilan hasil analisis', () => {
   let container;
   let root;

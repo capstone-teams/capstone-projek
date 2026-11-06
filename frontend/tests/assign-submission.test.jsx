@@ -157,7 +157,7 @@ describe('Pengumpulan tugas: halaman mahasiswa', () => {
 
   it('halaman Edit submission meniru Moodle: editor, file manager, simpan', async () => {
     await openEditPage('Tugas 4: JavaScript Dasar');
-    expect(container.querySelector('[aria-label="Breadcrumb aktivitas"]').textContent).toContain('Tugas 4: JavaScript Dasar / Edit submission');
+    expect(container.querySelector('[aria-label="Breadcrumb"]').textContent).toContain('Tugas 4: JavaScript Dasar / Edit submission');
     expect(container.textContent).toContain('Opened:');
     expect(container.textContent).toContain('Due:');
     expect(button('Add submission').getAttribute('aria-expanded')).toBe('true');

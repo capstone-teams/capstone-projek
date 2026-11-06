@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
-import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
+import { useCourseBreadcrumb, useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useApi } from '../../../hooks/useApi';
 import { getAssignments, getPages } from '../../../services/moodle/moodleApi';
 import { withToken } from '../../../services/moodle/moodleClient';
@@ -76,6 +76,7 @@ export default function ActivityView({ renderAssign }) {
   const { course, sections } = useMoodleCourse();
   const section = sections.find((s) => (s.modules ?? []).some((m) => String(m.id) === String(cmid)));
   const mod = section?.modules?.find((m) => String(m.id) === String(cmid));
+  useCourseBreadcrumb(mod ? [{ label: section.name, to: `/course/${course.id}#section-${section.section}` }, { label: mod.name }] : []);
 
   if (!mod) {
     return (
@@ -85,9 +86,6 @@ export default function ActivityView({ renderAssign }) {
 
   return (
     <div>
-      <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb aktivitas">
-        <Link to={`/course/${course.id}#section-${section.section}`}>{section.name}</Link>
-      </nav>
       <div className="mb-4 flex items-center gap-3">
         <ActivityIcon modname={mod.modname} src={mod.modicon} />
         <h2 className="text-2xl">{mod.name}</h2>

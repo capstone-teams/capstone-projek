@@ -260,15 +260,65 @@ server; unggah file yang sama menampilkannya kembali. Saat flag mati, RPS yang p
 
 Setelah backend punya endpoint hapus: aktifkan flag, lalu ganti isi `hide` di `useRpsLibrary` agar memanggilnya.
 
-### Tanpa API /courses
+### Rencana, target, dan publikasi lewat endpoint backend
 
-Backend belum punya `/courses`, jadi `COURSE_API_AVAILABLE` (services/config.js) hanya
-benar di mode mock. Dengan `VITE_USE_MOCK=false`, project kursus adalah workflow RPS:
-`WorkflowLayout` membaca `GET /workflows` dan detailnya, mencari `moodle_course_id` yang
-sama dengan kursus. Bila belum ada, dosen mengunggah RPS lalu **Hubungkan RPS**
-(`PUT /workflows/{id}/moodle-target`). Setelah terhubung, Generator AI hanya memuat tab
-Ringkasan (status dan riwayat event) dan RPS; Rencana, Konten, Review, dan Publikasi
-disembunyikan sampai API-nya tersedia.
+- **Rencana** (`CoursePlanPage`, `coursePlanService.js`) memakai course plan per workflow: `GET/POST
+  /workflows/{id}/plan`, `/plan/approve`, `/plan/reject` (catatan wajib), `/plan/regenerate` (prompt tambahan
+  opsional, maks. 2000 karakter), dan `/plan/versions[/{version}]`. Aturan backend diikuti: generate bila RPS sudah
+  ANALYZED, setujui/tolak versi DRAFT saat workflow menunggu review, regenerasi setelah ditolak. Tanpa course plan
+  workflow, rencana project (`GET /courses/{id}/plan`) tampil sebagai bacaan.
+- **Course Target** menampilkan target saat ini (`GET /integrations/moodle/courses/{id}`) dan pratinjau isi kursus
+  di dialog konfirmasi (`GET .../contents`). `POST /integrations/moodle/courses` (khusus pengujian menurut backend)
+  tersedia di service tanpa tombol untuk dosen.
+- **Publikasi** punya kartu **Section mingguan di Moodle** (`POST .../courses/{id}/sections`): satu section
+  "Minggu N: judul" per minggu, setelah target dipilih dan rencana disetujui, dengan konfirmasi.
+- **Pengguna** (`/admin/users`, peran ADMIN): daftar dan detail dari `GET /admin/users[/{id}]`.
+- Aksi yang endpoint-nya belum ada (membuat project, konfigurasi aktivitas, generate/review konten, eksekusi dan
+  verifikasi Moodle, riwayat agent run) tampil nonaktif dengan keterangan (`COURSE_ACTIONS_AVAILABLE`).
+- Pesan galat untuk pengguna tidak memuat kode HTTP atau teks proxy/Cloudflare; detailnya ke konsol (`apiClient`).
+
+### Form aktivitas, tab Kursus, dan login
+
+- Form **New Assignment / Quiz / Text and media area**: satu tombol simpan, breadcrumb utuh di atas
+  ("Kursus saya / kursus / section / aktivitas", juga di halaman detail aktivitas dan edit submission), dan bagian
+  **Generate otomatis (AI)** berisi prompt tambahan serta tombol generate. Quiz punya bagian **Soal**: soal pilihan
+  ganda manual (2 sampai 6 pilihan, kunci jawaban, validasi) atau generate otomatis (prompt, jumlah, tingkat
+  kesulitan). Backend belum punya endpoint generate konten aktivitas, jadi tombol generate nonaktif sampai halaman
+  memberi `onGenerate`.
+- **Prompt tambahan** tidak lagi di Profil; diisi saat generate. Profil tidak mengirim `additional_prompt`, sehingga
+  `PUT /instructors/me/setup` (parsial) tidak mengubah nilai tersimpan.
+- Bagian atas tab **Kursus** (dosen) menampilkan RPS kursus dengan tautan **Lihat RPS** dan **Hasil analisis**
+  (aktif setelah ANALYZED). Backend belum menyediakan unduhan berkas RPS.
+- Halaman login memakai foto kampus ITK (`public/latar belakang login.jpeg`).
+
+### Riwayat event workflow (FE-10.3)
+
+Tab **Workflow** menampilkan kartu **Riwayat event** (`WorkflowEventTimeline`): seluruh event dari
+`GET /workflows/{id}/events` (backend mengirim riwayat lengkap dari yang paling lama, juga setelah workflow
+selesai atau gagal), ditambah event baru dari WebSocket (FE-10.2). Tiap event menampilkan jenis event
+(`eventTypeOf`: Perubahan tahap, Aktivitas agent, Operasi kursus, Percobaan ulang, Kegagalan), nama event,
+tahap, pesan, dan waktu sampai detik. `ERROR_FAILURE` ditandai merah dengan ✕ dan `RETRY_FIX` kuning dengan ↻.
+Filter per jenis event menampilkan jumlahnya; jenis tanpa event tidak ditawarkan. Bila workflow dijalankan
+ulang (mis. analisis ulang), awal tiap proses ditandai "Proses ke-n". State aplikasi menyimpan hingga 2000
+event per workflow (`MAX_WORKFLOW_EVENTS`). Halaman Ringkasan tetap memakai daftar singkat event terbaru.
+
+### Project kursus dari API /courses
+
+Backend kini punya `GET /courses`, `GET /courses/{id}`, `GET /courses/{id}/plan`, dan
+`GET /courses/{id}/content`, jadi `COURSE_API_AVAILABLE` (services/config.js) aktif secara bawaan.
+Tab Generator AI memakai tampilan project kursus seperti FE-09: langkah Rencana sampai Selesai, lalu
+tab Ringkasan, RPS, Course Target, Rencana, Konten, Review, dan Publikasi, ditambah Workflow (FE-10)
+di ujung. Endpoint aksi (membuat project, menyetujui rencana, generate, review, publikasi) belum ada
+di backend, sehingga tombolnya menampilkan galat dari server.
+
+Dengan `VITE_COURSE_API=false`, project kursus adalah workflow RPS: `WorkflowLayout` membaca
+`GET /workflows` dan detailnya, mencari `moodle_course_id` yang sama dengan kursus. Bila belum ada,
+dosen mengunggah RPS lalu **Hubungkan RPS** (`PUT /workflows/{id}/moodle-target`).
+
+Tab **Course Target** (`/course/:id/ai/target`) memilih kursus Moodle dari
+`GET /integrations/moodle/courses` dan status dari `GET /integrations/moodle/status`, lalu
+menyimpannya lewat `PUT /workflows/{id}/moodle-target` (`moodle_course_id` berupa angka). Bila
+backend tidak dapat menjangkau Moodle, halaman menampilkan koneksi terputus, tanpa daftar pengganti.
 
 ### Hasil analisis RPS (FE-08.3)
 
@@ -540,6 +590,13 @@ lain; di sistem lain pasang Chromium melalui `npx playwright install chromium`.
 Server pengujian memakai port 4173. Report berada di .cache/playwright/ dan
 .cache/design-conformance/. Jika cache npm di drive C penuh, gunakan
 `npm ci --cache .cache/npm`.
+
+Aplikasi selalu memanggil backend nyata (single gateway). Saat unit test (`VITE_USE_MOCK=true`),
+`tests/setup/mockBackend.js` mengalihkan `fetch`, `XMLHttpRequest` (unggah RPS), dan WebSocket
+`/ws/workflows/{id}` ke backend mock (`src/services/mock/mockServer.js`) dengan kontrak yang sama:
+workflow RPS dimulai saat pemrosesan (tahap `rps_processing` lalu `rps_analysis`), `POST /rps/{id}/process`
+mengembalikan `workflow_id`, dan langganan hanya menerima event baru. FE-08.2 diuji di
+`tests/rps-processing-status.test.jsx` (status otomatis lewat event dan polling, analisis ulang, tautan).
 
 Pengujian mock tidak membuktikan persistensi, generation AI, atau publikasi Moodle
 nyata. Pembacaan Moodle melalui browser berbeda dari boundary backend pada
