@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
-import { generatePlan, getAgentRuns } from '../../../services/courseService';
+import { getAgentRuns } from '../../../services/courseService';
+import { generateWorkflowPlan } from '../../../services/coursePlanService';
+import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import EventLog from '../../../components/ai/EventLog';
@@ -22,9 +24,10 @@ const NEXT_STEP = {
 };
 
 export default function CourseOverviewPage() {
-  const { course, workflow, events, version, refresh } = useCourse();
-  const runs = useApi(() => getAgentRuns(course.id), [course.id, version]);
-  const plan = useAction(generatePlan);
+  const { course, workflow, workflowId, events, version, refresh } = useCourse();
+  // GET /courses/{id}/agent-runs belum ada di backend; riwayat run hanya dimuat bila tersedia.
+  const runs = useApi(() => (COURSE_ACTIONS_AVAILABLE ? getAgentRuns(course.id) : null), [course.id, version]);
+  const plan = useAction(() => generateWorkflowPlan(workflowId));
   const busy = isBusy(course.status) || workflow?.status === 'RUNNING';
   const next = NEXT_STEP[course.status];
   const progress = workflow?.progress || course?.progress;
@@ -63,8 +66,8 @@ export default function CourseOverviewPage() {
                 <button
                   type="button"
                   className="btn btn--primary"
-                  disabled={plan.pending}
-                  onClick={() => plan.run(course.id).then(refresh).catch(() => {})}
+                  disabled={!workflowId || plan.pending}
+                  onClick={() => plan.run().then(refresh).catch(() => {})}
                 >
                   {plan.pending ? 'Meminta…' : 'Generate rencana'}
                 </button>
@@ -95,6 +98,7 @@ export default function CourseOverviewPage() {
           <EventLog events={events} limit={15} />
         </Card>
 
+        {COURSE_ACTIONS_AVAILABLE && (
         <Card title="Riwayat agent run">
           <ErrorAlert error={runs.error} />
           {runs.loading && !runs.data ? (
@@ -115,6 +119,7 @@ export default function CourseOverviewPage() {
             <p className="muted">Belum ada agent run.</p>
           )}
         </Card>
+        )}
       </div>
     </div>
   );

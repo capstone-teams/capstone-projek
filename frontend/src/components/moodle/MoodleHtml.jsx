@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
 import DOMPurify from 'dompurify';
-import { MOODLE_URL } from '../../services/config';
 import { withToken } from '../../services/moodle/moodleClient';
 
 /**
- * Menampilkan HTML isi kursus (summary, intro, isi halaman).
+ * Menampilkan HTML dari Moodle (summary, intro, isi page).
  * HTML disanitasi dulu, lalu URL file pluginfile diberi token agar gambar/lampiran bisa dimuat.
  */
 export default function MoodleHtml({ html, className = '' }) {
@@ -13,7 +12,11 @@ export default function MoodleHtml({ html, className = '' }) {
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
     doc.querySelectorAll('img[src]').forEach((img) => img.setAttribute('src', withToken(img.getAttribute('src'))));
     doc.querySelectorAll('a[href]').forEach((a) => {
-      a.setAttribute('href', withToken(new URL(a.getAttribute('href'), MOODLE_URL).href));
+      try {
+        a.setAttribute('href', withToken(new URL(a.getAttribute('href'), window.location.origin).href));
+      } catch {
+        // biarkan URL asli jika parsing gagal
+      }
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noreferrer');
     });

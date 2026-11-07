@@ -8,6 +8,8 @@ import CourseTargetSelectionPage from '../src/pages/dosen/ai/CourseTargetSelecti
 const moodleService = vi.hoisted(() => ({
   getMoodleStatus: vi.fn(),
   getMoodleCourses: vi.fn(),
+  getMoodleCourse: vi.fn(),
+  getMoodleCourseContents: vi.fn(),
 }));
 
 const workflowService = vi.hoisted(() => ({
@@ -79,11 +81,19 @@ beforeEach(() => {
 
   moodleService.getMoodleStatus.mockResolvedValue({
     status: 'CONNECTED',
-    moodle_url: 'http://localhost:8080',
+    connected: true,
+    site_name: 'Moodle ITK',
     message: 'Terhubung ke Moodle LMS ITK.',
   });
   moodleService.getMoodleCourses.mockResolvedValue({
     courses: SAMPLE_COURSES,
+  });
+  moodleService.getMoodleCourseContents.mockResolvedValue({
+    moodle_course_id: 3,
+    sections: [
+      { moodle_section_id: 30, section_number: 0, name: 'General', modules: [{ name: 'Pengumuman', modname: 'forum' }] },
+      { moodle_section_id: 31, section_number: 1, name: 'Minggu 1: Konsep basis data', modules: [] },
+    ],
   });
   workflowService.listWorkflows.mockResolvedValue({
     items: [SAMPLE_WORKFLOW],
@@ -124,16 +134,17 @@ describe('FE-09.1 MoodleConnectionBanner', () => {
     expect(node.textContent).toContain('Memeriksa koneksi Moodle LMS');
   });
 
-  it('renders connected state with Moodle URL and message', async () => {
+  it('renders connected state with site name and message', async () => {
     await renderComponent(
       <MoodleConnectionBanner
         status="CONNECTED"
-        moodleUrl="http://localhost:8080"
+        connected
+        siteName="Moodle ITK"
         message="Terhubung ke Moodle LMS ITK."
       />
     );
     expect(node.textContent).toContain('Moodle LMS Terhubung');
-    expect(node.textContent).toContain('http://localhost:8080');
+    expect(node.textContent).toContain('Moodle ITK');
     expect(node.textContent).toContain('Terhubung ke Moodle LMS ITK.');
   });
 
@@ -339,6 +350,55 @@ describe('FE-09.2 CourseTargetSelectionPage (Workflow Integration & Modal Confir
 
     expect(node.textContent).toContain('Koneksi ke Moodle LMS Terputus');
     expect(node.textContent).toContain('Gagal terhubung ke host Moodle');
-    expect(node.textContent).toContain('Koneksi Moodle terputus');
+    // Gagal memuat bukan berarti kosong: tanpa keadaan "tidak ada kursus" dan tanpa pesan ganda.
+    expect(node.textContent).not.toContain('Tidak ada kursus Moodle ditemukan');
+    expect(node.textContent).not.toContain('Koneksi Moodle terputus');
+    expect(node.querySelector('input[type="text"]')).toBeNull();
+  });
+
+  it('shows the course list error once when only the course list fails', async () => {
+    moodleService.getMoodleCourses.mockRejectedValue(new Error('Daftar kursus belum dapat dimuat.'));
+
+    await renderComponent(<CourseTargetSelectionPage />);
+
+    expect(node.textContent).toContain('Moodle LMS Terhubung');
+    expect(node.textContent.match(/Daftar kursus belum dapat dimuat\./g)).toHaveLength(1);
+    expect(node.textContent).not.toContain('Tidak ada kursus Moodle ditemukan');
+  });
+
+  it('menampilkan target saat ini dari daftar kursus', async () => {
+    await renderComponent(<CourseTargetSelectionPage />);
+    expect(node.querySelector('[aria-label="Target saat ini"]').textContent).toContain('Pemrograman Web (IF2105)');
+    expect(moodleService.getMoodleCourse).not.toHaveBeenCalled();
+  });
+
+  it('target yang tidak ada di daftar diambil dari GET /integrations/moodle/courses/{id}', async () => {
+    workflowService.getWorkflow.mockResolvedValue({ ...SAMPLE_WORKFLOW, moodle_course_id: 99 });
+    moodleService.getMoodleCourse.mockResolvedValue({ id: 99, fullname: 'Kursus Arsip', shortname: 'ARS-1' });
+    await renderComponent(<CourseTargetSelectionPage />);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(moodleService.getMoodleCourse).toHaveBeenCalledWith('99');
+    expect(node.querySelector('[aria-label="Target saat ini"]').textContent).toContain('Kursus Arsip (ARS-1)');
+  });
+
+  it('dialog konfirmasi menampilkan pratinjau isi kursus Moodle yang dipilih', async () => {
+    await renderComponent(<CourseTargetSelectionPage />);
+    const selectButtons = Array.from(node.querySelectorAll('button')).filter((b) => b.textContent.includes('Pilih Course Target'));
+    await act(async () => selectButtons[0].click());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(moodleService.getMoodleCourseContents).toHaveBeenCalledWith(3);
+    const preview = node.querySelector('[aria-label="Isi kursus Moodle saat ini"]');
+    expect(preview.textContent).toContain('General · 1 aktivitas');
+    expect(preview.textContent).toContain('Minggu 1: Konsep basis data · 0 aktivitas');
+  });
+
+  it('pratinjau yang gagal dimuat tidak menghalangi konfirmasi', async () => {
+    moodleService.getMoodleCourseContents.mockRejectedValue(new Error('Layanan sedang tidak dapat diakses.'));
+    await renderComponent(<CourseTargetSelectionPage />);
+    const selectButtons = Array.from(node.querySelectorAll('button')).filter((b) => b.textContent.includes('Pilih Course Target'));
+    await act(async () => selectButtons[0].click());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(node.querySelector('[aria-label="Isi kursus Moodle saat ini"]').textContent).toContain('Isi kursus belum dapat dimuat.');
+    expect(Array.from(node.querySelectorAll('button')).find((b) => b.textContent.includes('Konfirmasi & Simpan')).disabled).toBe(false);
   });
 });

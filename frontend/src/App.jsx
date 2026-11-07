@@ -36,6 +36,8 @@ import MahasiswaParticipantsPage from './pages/mahasiswa/course/ParticipantsPage
 import MahasiswaGradesPage from './pages/mahasiswa/course/GradesPage';
 import MahasiswaActivityPage from './pages/mahasiswa/course/ActivityPage';
 import EditSubmissionPage from './pages/mahasiswa/course/EditSubmissionPage';
+// Admin
+import AdminUsersPage from './pages/admin/AdminUsersPage';
 
 /** "/" membuka halaman awal sesuai role: dosen ke dashboard, mahasiswa ke halaman course. */
 function HomeRedirect() {
@@ -57,6 +59,10 @@ export default function App() {
             <Route path="my" element={<DashboardPage />} />
           </Route>
           <Route path="my/courses" element={<MyCoursesPage />} />
+          {/* Administrasi pengguna (GET /admin/users), khusus ADMIN. */}
+          <Route element={<RequireAuth roles={[ROLE.ADMIN]} />}>
+            <Route path="admin/users" element={<AdminUsersPage />} />
+          </Route>
           <Route path="user/profile" element={<ProfilePage />} />
 
           {/* URL kursus sama untuk semua; ByCourseRole memilih halaman dosen (pengajar kursus) atau mahasiswa. */}
@@ -72,6 +78,7 @@ export default function App() {
               <Route path="ai" element={<AiCourseLayout />}>
                 <Route index element={COURSE_API_AVAILABLE ? <CourseOverviewPage /> : <WorkflowOverviewPage />} />
                 <Route path="rps" element={<CourseRpsPage />} />
+                <Route path="target" element={<CourseTargetSelectionPage />} />
                 <Route path="workflows" element={<WorkflowStatusPage />} />
                 {/* Tahap berikut butuh API /courses, yang belum ada di backend. */}
                 {COURSE_API_AVAILABLE && (

@@ -7,7 +7,8 @@ const STATUS_LABELS = {
   [SECTION_STATUS.NOT_FOUND]: 'Tidak ditemukan',
 };
 const ASSESSMENT_LABELS = { assignment: 'Tugas', quiz: 'Kuis', exam: 'Ujian', project: 'Proyek' };
-const EXAM_LABELS = { uts: 'UTS', uas: 'UAS' };
+// Jenis minggu dari backend (RPSWeekType): regular, kuis, uts, uas.
+const WEEK_TYPE_LABELS = { kuis: 'Kuis', uts: 'UTS', uas: 'UAS' };
 
 const Missing = () => <span className="muted">–<span className="sr-only">tidak tercantum</span></span>;
 const joined = (items) => (items.length ? items.join(', ') : <Missing />);
@@ -82,7 +83,7 @@ const WEEK_COLUMNS = [
   ['Bobot', (week) => (week.assessment?.weight_percent != null ? `${week.assessment.weight_percent}%` : <Missing />)],
 ];
 
-const weekLabel = (week) => (EXAM_LABELS[week.week_type] ? `${week.week} (${EXAM_LABELS[week.week_type]})` : week.week);
+const weekLabel = (week) => (WEEK_TYPE_LABELS[week.week_type] ? `${week.week} (${WEEK_TYPE_LABELS[week.week_type]})` : week.week);
 
 function WeeklyPlan({ weeks }) {
   return (

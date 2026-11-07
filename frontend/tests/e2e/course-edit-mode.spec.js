@@ -73,7 +73,7 @@ for (const width of [375, 1440]) {
     await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
     await chooser.getByRole('button', { name: 'Assignment', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'New Assignment' })).toBeVisible();
-    await expect(page.getByLabel('Breadcrumb aktivitas')).toHaveText('Minggu 1: Pengantar Pemrograman Web / New Assignment');
+    await expect(page.getByLabel('Breadcrumb', { exact: true })).toHaveText('Kursus saya / IF2105 / Minggu 1: Pengantar Pemrograman Web / New Assignment');
     await page.getByRole('button', { name: 'Save and return to course' }).click();
     await expect(page.getByText('You must supply a value here.')).toBeVisible();
     await expect(page.getByLabel('Assignment name')).toBeFocused();
@@ -85,9 +85,8 @@ for (const width of [375, 1440]) {
     await page.getByRole('button', { name: 'Expand all' }).click();
     await page.getByLabel('Maximum grade').fill('80');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.getByRole('button', { name: 'Save and display' }).click();
-    await expect(page.getByRole('heading', { name: 'Tugas Ringkasan HTTP' })).toBeVisible();
-    await expect(page.getByText('Ringkas protokol HTTP.')).toBeVisible();
+    await page.getByRole('button', { name: 'Save and return to course' }).click();
+    await expect(week1.getByRole('link', { name: 'Tugas Ringkasan HTTP', exact: true })).toBeVisible();
 
     // Quiz: Save and return to course.
     await page.goto('/course/2');
@@ -97,7 +96,7 @@ for (const width of [375, 1440]) {
     await page.getByRole('button', { name: 'Save and return to course' }).click();
     await expect(week1.getByRole('link', { name: 'Kuis Pengantar HTTP', exact: true })).toBeVisible();
 
-    // Text and media area: tanpa Save and display.
+    // Satu tombol simpan untuk semua jenis aktivitas.
     await week1.getByRole('button', { name: 'Tambah aktivitas atau sumber' }).click();
     await chooser.getByRole('button', { name: 'Text and media area', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Save and display' })).toHaveCount(0);
@@ -139,7 +138,7 @@ for (const width of [375, 1440]) {
     await page.goto('/course/2');
     await page.locator('#section-4').getByRole('link', { name: 'Tugas 4: JavaScript Dasar', exact: true }).click();
     await page.getByRole('link', { name: 'Add submission' }).click();
-    await expect(page.getByLabel('Breadcrumb aktivitas')).toContainText('Edit submission');
+    await expect(page.getByLabel('Breadcrumb', { exact: true })).toContainText('Edit submission');
     await expect(page.getByText('Maximum file size: 1 MB, maximum number of files: 20')).toBeVisible();
     await expect(page.getByText('You can drag and drop files here to add them.')).toBeVisible();
     await expect(page.getByRole('menubar', { name: 'Menu editor' })).toBeVisible();

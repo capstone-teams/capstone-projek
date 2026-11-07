@@ -3,6 +3,7 @@ import { useCourseEditing } from '../../../hooks/useCourseEditing';
 import { ErrorAlert } from '../../../components/ui';
 import CourseOutline from '../../../components/moodle/course/CourseOutline';
 import CourseSection from '../../../components/moodle/course/CourseSection';
+import CourseRpsBar from '../../../components/ai/course/CourseRpsBar';
 
 /**
  * Halaman kursus untuk dosen: semua section termasuk yang disembunyikan dari mahasiswa, dan
@@ -16,16 +17,20 @@ export default function CourseViewPage() {
     <CourseOutline
       course={course}
       sections={sections}
-      before={editMode && <ErrorAlert error={editing.error} onClose={editing.clearError} />}
-      renderSection={(s, { collapsed, onToggle }) => (
+      before={(
+        <>
+          <CourseRpsBar course={course} />
+          {editMode && <ErrorAlert error={editing.error} onClose={editing.clearError} />}
+        </>
+      )}
+      renderSection={(s, { onClose }) => (
         <CourseSection
           key={s.id}
           course={course}
           section={s}
           sections={sections}
           isTeacher
-          collapsed={collapsed}
-          onToggle={onToggle}
+          onClose={onClose}
           editMode={editMode}
           editing={editing}
         />

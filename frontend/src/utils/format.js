@@ -1,10 +1,18 @@
 const dateTimeFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 const timeFormat = new Intl.DateTimeFormat('id-ID', { timeStyle: 'medium' });
+const timestampFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'medium' });
 
 export function formatDateTime(value) {
   if (!value) return '-';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : dateTimeFormat.format(d);
+}
+
+/** Tanggal dan jam sampai detik, mis. untuk timeline event yang bisa terjadi berdekatan. */
+export function formatTimestamp(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : timestampFormat.format(d);
 }
 
 export function formatTime(value) {

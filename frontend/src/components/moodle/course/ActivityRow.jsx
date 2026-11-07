@@ -4,6 +4,7 @@ import ActivityIcon from '../ActivityIcon';
 import MoodleHtml from '../MoodleHtml';
 import { ActivityEditMenu, InlineNameEditor } from '../editing';
 import { formatUnixDateTime } from '../../../utils/format';
+import { COURSE_CARD } from './courseCard';
 
 const MOD_LABELS = {
   assign: 'Tugas',
@@ -23,7 +24,32 @@ const DATE_LABELS = { 'Opened:': 'Dibuka:', 'Due:': 'Tenggat:', 'Closes:': 'Ditu
 // Rujukan Moodle: indentasi aktivitas (Geser ke kanan), satu tingkat ≈ 1.5rem.
 const indentStyle = (mod) => (mod.indent > 0 ? { marginLeft: `${Math.min(mod.indent, 16) * 1.5}rem` } : undefined);
 
-/** Satu aktivitas di halaman kursus. Pada Edit mode menampilkan pensil ubah nama dan menu ⋮. */
+/**
+ * Status penyelesaian di pojok kanan kartu seperti LMS ITK: "✓ Selesai" bila sudah selesai, selain itu tombol
+ * "Tandai selesai" untuk mahasiswa (nonaktif karena endpoint penyelesaian belum tersedia).
+ */
+function Completion({ mod, isTeacher }) {
+  if (mod.completiondata?.state === 1) {
+    return (
+      <span className="shrink-0 rounded bg-success px-2 py-0.5 text-xs font-bold whitespace-nowrap text-white">
+        <span aria-hidden="true">✓ </span>Selesai
+      </span>
+    );
+  }
+  if (isTeacher) return null;
+  return (
+    <button
+      type="button"
+      className="shrink-0 rounded border border-ink-subtle bg-white px-2 py-0.5 text-xs whitespace-nowrap text-ink-subtle disabled:cursor-not-allowed"
+      disabled
+      title="Fitur ini belum tersedia."
+    >
+      Tandai selesai
+    </button>
+  );
+}
+
+/** Satu aktivitas di halaman kursus sebagai kartu tersendiri. Pada Edit mode menampilkan pensil ubah nama dan menu ⋮. */
 export default function ActivityRow({ courseId, mod, isTeacher, editMode, sections, editing }) {
   const hidden = !mod.visible || mod.visibleoncoursepage === 0;
   const hiddenBadge = isTeacher && hidden && <Badge tone="warning">Disembunyikan dari mahasiswa</Badge>;
@@ -31,9 +57,10 @@ export default function ActivityRow({ courseId, mod, isTeacher, editMode, sectio
 
   if (mod.modname === 'label') {
     return (
-      <li className={`flex items-start gap-2 px-1 py-2 ${editMode ? 'rounded-2xl border border-dashed border-line bg-white px-4' : ''}`} style={indentStyle(mod)}>
-        <MoodleHtml html={mod.description} className="min-w-0 flex-1" />
+      <li className={`${COURSE_CARD} flex items-start gap-2 ${editMode ? 'border-dashed' : ''}`} style={indentStyle(mod)}>
+        <MoodleHtml html={mod.description} className="min-w-0 flex-1 text-sm" />
         {hiddenBadge}
+        <Completion mod={mod} isTeacher={isTeacher} />
         {menu}
       </li>
     );
@@ -48,33 +75,33 @@ export default function ActivityRow({ courseId, mod, isTeacher, editMode, sectio
   );
 
   return (
-    // Rujukan CSS Moodle 5.3 (.activity-item): padding 1.25rem, radius 1rem, latar abu muda, putih saat hover.
-    <li
-      className={`flex items-start gap-3 rounded-2xl border border-line-subtle bg-surface p-5 transition-colors hover:bg-white focus-within:outline-2 focus-within:outline-primary ${hidden && isTeacher ? 'opacity-80' : ''}`}
-      style={indentStyle(mod)}
-    >
-      <ActivityIcon modname={mod.modname} src={mod.modicon} />
-      <div className="min-w-0 flex-1">
-        <div className="text-xs uppercase tracking-wide text-muted">{MOD_LABELS[mod.modname] ?? mod.modplural ?? mod.modname}</div>
-        {editMode ? (
-          <InlineNameEditor name={mod.name} itemLabel={mod.name} disabled={!!editing.pending} onSave={(name) => editing.renameCm(mod, name)}>
-            {title}
-          </InlineNameEditor>
-        ) : title}
-        {mod.dates?.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-x-4 text-sm">
-            {mod.dates.map((d) => (
-              <span key={d.label}>
-                <strong>{DATE_LABELS[d.label] ?? d.label}</strong> {formatUnixDateTime(d.timestamp)}
-              </span>
-            ))}
-          </div>
-        )}
-        {mod.availabilityinfo && <div className="mt-1 text-sm text-muted">Dibatasi: {mod.availabilityinfo.replace(/<[^>]+>/g, ' ')}</div>}
+    <li className={`${COURSE_CARD} focus-within:outline-2 focus-within:outline-primary ${hidden && isTeacher ? 'opacity-80' : ''}`} style={indentStyle(mod)}>
+      <div className="flex items-center gap-3">
+        <ActivityIcon modname={mod.modname} src={mod.modicon} boxed />
+        <div className="min-w-0 flex-1">
+          <span className="sr-only">{MOD_LABELS[mod.modname] ?? mod.modplural ?? mod.modname}: </span>
+          {editMode ? (
+            <InlineNameEditor name={mod.name} itemLabel={mod.name} disabled={!!editing.pending} onSave={(name) => editing.renameCm(mod, name)}>
+              {title}
+            </InlineNameEditor>
+          ) : title}
+          {mod.dates?.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-x-4 text-sm">
+              {mod.dates.map((d) => (
+                <span key={d.label}>
+                  <strong>{DATE_LABELS[d.label] ?? d.label}</strong> {formatUnixDateTime(d.timestamp)}
+                </span>
+              ))}
+            </div>
+          )}
+          {mod.availabilityinfo && <div className="mt-1 text-sm text-muted">Dibatasi: {mod.availabilityinfo.replace(/<[^>]+>/g, ' ')}</div>}
+        </div>
+        {hiddenBadge}
+        <Completion mod={mod} isTeacher={isTeacher} />
+        {menu}
       </div>
-      {hiddenBadge}
-      {mod.completiondata?.state === 1 && <Badge tone="success">Selesai</Badge>}
-      {menu}
+      {/* Deskripsi yang ditampilkan di halaman kursus (mis. petunjuk folder) dalam kotak abu-abu. */}
+      {mod.description && <MoodleHtml html={mod.description} className="mt-3 rounded bg-surface p-3 text-sm" />}
     </li>
   );
 }

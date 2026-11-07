@@ -1,5 +1,4 @@
-import { API_BASE_URL, TOKEN_STORAGE_KEY, USE_MOCK } from './config';
-import { handleMockRequest } from './mock/mockServer';
+import { API_BASE_URL, TOKEN_STORAGE_KEY } from './config';
 import { readString, writeString } from '../utils/storage';
 import { MSG_REQUEST_FAILED, MSG_UNAVAILABLE, logTechnical } from '../utils/userMessages';
 
@@ -98,10 +97,10 @@ function defaultErrorCode(status) {
   return 'API_ERROR';
 }
 
-// Pesan cadangan untuk pengguna; kode HTTP hanya dicatat ke konsol.
+// Pesan cadangan untuk pengguna; kode HTTP dan isi mentah hanya dicatat ke konsol.
 const fallbackMessage = (status) => (status >= 500 || status === 0 ? MSG_UNAVAILABLE : MSG_REQUEST_FAILED);
 
-export function toApiError(status, payload) {
+function toApiError(status, payload) {
   if (payload?.error && typeof payload.error === 'object') {
     const err = payload.error;
     return new ApiError(
@@ -110,6 +109,13 @@ export function toApiError(status, payload) {
       err.message || fallbackMessage(status),
       Array.isArray(err.details) ? err.details : (err.details != null ? [err.details] : []),
     );
+  }
+
+  // Galat server di luar kontrak backend (mis. halaman galat Cloudflare atau proxy): teksnya teknis dan bukan
+  // untuk pengguna, jadi hanya dicatat ke konsol.
+  if (status >= 500 || status === 0) {
+    logTechnical('api', { status, body: payload });
+    return new ApiError(status, status === 0 ? 'NETWORK_ERROR' : 'INTERNAL_ERROR', MSG_UNAVAILABLE);
   }
 
   if (typeof payload?.error === 'string') {
@@ -143,8 +149,7 @@ export function toApiError(status, payload) {
 }
 
 /**
- * Satu pintu untuk semua request ke Backend API.
- * Saat USE_MOCK aktif, request dijawab oleh mockServer dengan kontrak yang sama.
+ * Satu pintu untuk semua request ke Backend API (Single Gateway).
  */
 export async function request(method, path, { body, query, headers = {} } = {}) {
   const qs = query
@@ -153,13 +158,6 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
   const token = getToken();
   const normalizedPath = path.replace(/\/+$/, '');
   const isAuthLogin = normalizedPath === '/auth/login';
-
-  if (USE_MOCK) {
-    const res = await handleMockRequest({ method, path, query, body, token });
-    if (res.status === 401 && token && !isAuthLogin && unauthorizedHandler) unauthorizedHandler();
-    if (res.status >= 400) throw fail(res.status, res.data);
-    return res.data;
-  }
 
   const isForm = body instanceof FormData;
   const init = {
@@ -207,22 +205,10 @@ function settle(status, text, { token, isAuthLogin }) {
 
 /**
  * Upload multipart dengan laporan progres (fetch tidak melaporkan progres pengiriman).
- * onProgress(persen 0–100). Mode mock tidak mengirim data sungguhan, jadi progres disimulasikan
- * bertahap (maks. 90%) selama request berjalan, lalu 100% setelah selesai.
+ * onProgress(persen 0–100).
  */
 export function upload(path, form, { onProgress } = {}) {
   const token = getToken();
-  if (USE_MOCK) {
-    let simulated = 0;
-    onProgress?.(simulated);
-    const timer = onProgress && setInterval(() => onProgress((simulated = Math.min(simulated + 15, 90))), 60);
-    return request('POST', path, { body: form })
-      .finally(() => clearInterval(timer))
-      .then((data) => {
-        onProgress?.(100);
-        return data;
-      });
-  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE_URL}${path}`);

@@ -6,6 +6,8 @@ import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
 import InstructionModal from '../../../components/ai/InstructionModal';
 import { formatDateTime } from '../../../utils/format';
+import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
+import PendingFeatureNote from '../../../components/ai/PendingFeatureNote';
 
 const SEVERITY_TONES = { high: 'danger', medium: 'warning', low: 'neutral' };
 const REVIEWABLE = ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
@@ -48,7 +50,7 @@ export default function CourseReviewPage() {
               <button
                 type="button"
                 className="btn btn--ghost btn--sm"
-                disabled={validate.pending}
+                disabled={!COURSE_ACTIONS_AVAILABLE || validate.pending}
                 onClick={() => validate.run().then(refresh).catch(() => {})}
               >
                 {validate.pending ? 'Memvalidasi…' : 'Validasi ulang'}
@@ -58,6 +60,7 @@ export default function CourseReviewPage() {
         }
       >
         <ErrorAlert error={validate.error} onClose={validate.clearError} />
+        {!COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Validasi dan review konten belum tersedia.</PendingFeatureNote>}
         {issues.length === 0 ? (
           <p className="muted">Tidak ada temuan. Konten konsisten dengan RPS dan struktur yang diharapkan.</p>
         ) : (
@@ -82,13 +85,13 @@ export default function CourseReviewPage() {
         actions={
           waiting && (
             <>
-              <button type="button" className="btn btn--danger-ghost" onClick={() => setRejecting(true)}>
+              <button type="button" className="btn btn--danger-ghost" disabled={!COURSE_ACTIONS_AVAILABLE} onClick={() => setRejecting(true)}>
                 Tolak
               </button>
               <button
                 type="button"
                 className="btn btn--primary"
-                disabled={approve.pending || blocking}
+                disabled={!COURSE_ACTIONS_AVAILABLE || approve.pending || blocking}
                 title={blocking ? 'Selesaikan temuan tingkat high terlebih dahulu' : undefined}
                 onClick={() => approve.run().then(refresh).catch(() => {})}
               >

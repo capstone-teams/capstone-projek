@@ -2,15 +2,11 @@ import { useEffect, useState } from 'react';
 import { updateInstructorSetup } from '../../services/instructorService';
 import { useAction } from '../../hooks/useApi';
 import { Alert, ErrorAlert, Field, Spinner } from '../ui';
-import {
-  ACTIVITY_OPTIONS,
-  DEFAULT_ACTIVITY_CONFIGURATION,
-  MAX_PROMPT_LENGTH,
-} from './instructorSetupConstants';
+import { ACTIVITY_OPTIONS, DEFAULT_ACTIVITY_CONFIGURATION } from './instructorSetupConstants';
 
-function countCharacters(text) {
-  return Array.from(text || '').length;
-}
+// Prompt tambahan tidak lagi diatur di profil: diisi saat meminta generate (mis. regenerasi rencana atau
+// generate konten aktivitas). Formulir tidak mengirim additional_prompt, sehingga PUT parsial
+// /instructors/me/setup tidak mengubah nilai yang tersimpan di server.
 
 function getInitialForm(initial) {
   const data = initial || {};
@@ -19,7 +15,6 @@ function getInitialForm(initial) {
     teaching_style: profile.teaching_style ?? data.teaching_style ?? '',
     expertise: profile.expertise ?? data.expertise ?? '',
     delivery_preference: profile.delivery_preference ?? data.delivery_preference ?? profile.content_preference ?? data.content_preference ?? '',
-    additional_prompt: data.additional_prompt ?? '',
     activity_configuration: {
       ...DEFAULT_ACTIVITY_CONFIGURATION,
       ...(data.activity_configuration ?? {}),
@@ -38,8 +33,6 @@ function parseBackendErrors(err) {
       if (!field) continue;
       if (field === 'activity_configuration') {
         fieldErrors.activity_configuration = message;
-      } else if (field === 'additional_prompt') {
-        fieldErrors.additional_prompt = message;
       } else if (field === 'instructor_profile' || field === 'body') {
         // top-level container error - keep in alert
       } else {
@@ -100,21 +93,11 @@ export default function InstructorSetupForm({
     const value = e.target.value;
     setForm((f) => ({ ...f, [key]: value }));
     if (errors[key]) {
-      if (key === 'additional_prompt') {
-        if (countCharacters(value) <= MAX_PROMPT_LENGTH) {
-          setErrors((errs) => {
-            const next = { ...errs };
-            delete next.additional_prompt;
-            return next;
-          });
-        }
-      } else {
-        setErrors((errs) => {
-          const next = { ...errs };
-          delete next[key];
-          return next;
-        });
-      }
+      setErrors((errs) => {
+        const next = { ...errs };
+        delete next[key];
+        return next;
+      });
     }
   };
 
@@ -154,10 +137,6 @@ export default function InstructorSetupForm({
     if (!hasActiveActivity) {
       validationErrors.activity_configuration = 'Minimal satu jenis aktivitas pembelajaran harus diaktifkan.';
     }
-    const promptLen = countCharacters(form.additional_prompt);
-    if (promptLen > MAX_PROMPT_LENGTH) {
-      validationErrors.additional_prompt = `Prompt tambahan tidak boleh melebihi ${MAX_PROMPT_LENGTH} karakter.`;
-    }
 
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -173,7 +152,6 @@ export default function InstructorSetupForm({
         delivery_preference: form.delivery_preference,
         language_preference: form.language_preference || 'Bahasa Indonesia',
       },
-      additional_prompt: form.additional_prompt,
       activity_configuration: { ...form.activity_configuration },
     };
 
@@ -215,9 +193,6 @@ export default function InstructorSetupForm({
       </div>
     );
   }
-
-  const promptCharCount = countCharacters(form.additional_prompt);
-  const isPromptOverLimit = promptCharCount > MAX_PROMPT_LENGTH;
 
   return (
     <form onSubmit={handleSubmit} className="form" noValidate>
@@ -288,42 +263,9 @@ export default function InstructorSetupForm({
         </Field>
       </div>
 
-      {/* Section 2: Additional Prompt */}
-      <div className="flex flex-col gap-4 border-b border-line pb-4">
-        <h3 className="text-base font-bold text-ink">2. Prompt Tambahan (AI Agent)</h3>
-
-        <Field
-          label="Prompt tambahan"
-          hint="Instruksi tambahan opsional untuk memandu AI agent dalam merancang rencana pembelajaran dan materi mingguan."
-          error={errors.additional_prompt}
-          errorId="additional_prompt_error"
-        >
-          <textarea
-            id="instructor_additional_prompt"
-            name="additional_prompt"
-            rows={4}
-            value={form.additional_prompt}
-            onChange={update('additional_prompt')}
-            placeholder="Masukkan instruksi khusus atau konteks tambahan untuk agent..."
-            aria-describedby={errors.additional_prompt ? 'additional_prompt_error' : undefined}
-            aria-invalid={errors.additional_prompt ? 'true' : undefined}
-            className={errors.additional_prompt ? 'border-danger focus:border-danger focus:ring-danger/20' : undefined}
-            disabled={isSaving}
-          />
-          <div className="mt-1 flex justify-end text-xs text-muted">
-            <span
-              data-testid="prompt-char-counter"
-              className={isPromptOverLimit ? 'font-semibold text-danger' : ''}
-            >
-              {promptCharCount} / {MAX_PROMPT_LENGTH} karakter
-            </span>
-          </div>
-        </Field>
-      </div>
-
-      {/* Section 3: Activity Configuration */}
+      {/* Section 2: Activity Configuration */}
       <div className="flex flex-col gap-3 border-b border-line pb-4">
-        <h3 className="text-base font-bold text-ink">3. Konfigurasi Aktivitas Pembelajaran</h3>
+        <h3 className="text-base font-bold text-ink">2. Konfigurasi Aktivitas Pembelajaran</h3>
         <p className="text-xs text-muted">
           Pilih jenis aktivitas pembelajaran yang boleh dihasilkan oleh AI agent:
         </p>

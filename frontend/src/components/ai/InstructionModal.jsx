@@ -1,8 +1,11 @@
 import { useId, useState } from 'react';
 import { ErrorAlert, Field, Modal } from '../ui';
 
-/** Modal berisi satu textarea wajib, mis. instruksi regenerasi atau alasan penolakan. */
-export default function InstructionModal({ open, title, label, hint, placeholder, submitLabel, danger, onSubmit, onClose }) {
+/**
+ * Modal berisi satu textarea, mis. catatan penolakan (wajib) atau prompt tambahan regenerasi (`optional`).
+ * `maxLength` membatasi panjang teks sesuai batas backend.
+ */
+export default function InstructionModal({ open, title, label, hint, placeholder, submitLabel, danger, optional = false, maxLength, onSubmit, onClose }) {
   const [text, setText] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -23,7 +26,7 @@ export default function InstructionModal({ open, title, label, hint, placeholder
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!text.trim()) {
+    if (!optional && !text.trim()) {
       setFieldError(`${label} wajib diisi.`);
       return;
     }
@@ -44,13 +47,14 @@ export default function InstructionModal({ open, title, label, hint, placeholder
     <Modal open={open} title={title} onClose={close}>
       <form className="form" onSubmit={submit} noValidate>
         <ErrorAlert error={error} />
-        <Field label={label} hint={hint} required error={fieldError} errorId={errorId}>
+        <Field label={label} hint={maxLength ? `${hint ?? ''} ${text.length}/${maxLength}`.trim() : hint} required={!optional} error={fieldError} errorId={errorId}>
           <textarea
             rows={4}
             value={text}
             onChange={change}
             placeholder={placeholder}
-            aria-required="true"
+            maxLength={maxLength}
+            aria-required={optional ? undefined : 'true'}
             aria-invalid={fieldError ? 'true' : undefined}
             aria-describedby={fieldError ? errorId : undefined}
             className={fieldError ? 'border-danger focus:border-danger focus:ring-danger/20' : undefined}

@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
-import { useWorkflow } from '../../../hooks/useWorkflow';
+import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
 import { getRps, getRpsAnalysis, processRps, reanalyzeRps } from '../../../services/rpsService';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { useApi } from '../../../hooks/useApi';
+import { useOnChange } from '../../../hooks/useOnChange';
 import { usePolling } from '../../../hooks/usePolling';
 import { Card, ErrorAlert, Spinner } from '../../../components/ui';
 import RpsStatusBadge from '../../../components/ai/RpsStatusBadge';
@@ -13,10 +14,12 @@ import RpsUploadForm from '../../../components/ai/RpsUploadForm';
 import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsStatus';
 import { formatDateTime } from '../../../utils/format';
+import { WORKFLOW_EVENT } from '../../../utils/workflowStatus';
 
 // Course planning (FE-05) baru tersedia di backend pada M03; di mode mock sudah dapat dicoba.
 const COURSE_PLANNING_AVAILABLE = COURSE_API_AVAILABLE;
 const POLL_MS = 3000;
+const RPS_REFRESH_DEBOUNCE_MS = 300;
 
 /**
  * RPS yang belum ANALYZED: GET /rps/{id}/analysis menjawab 422, jadi tampilkan statusnya dan aksi
@@ -30,8 +33,9 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
   const canAnalyze = rps.has_source_document && [RPS_STATUS.PROCESSED, RPS_STATUS.FAILED].includes(rps.status);
   const canProcess = !rps.has_source_document && [RPS_STATUS.UPLOADED, RPS_STATUS.FAILED].includes(rps.status);
 
-  const failureEvent = events?.slice()?.reverse()?.find((e) => e.event === 'WORKFLOW_FAILED' || e.message?.toLowerCase().includes('gagal'));
-  const failureMessage = failureEvent?.message || rps.processing_error_message || 'Pemrosesan RPS gagal.';
+  // Pesan resmi dari GET /rps/{id} lebih dulu; event WORKFLOW_FAILED terakhir hanya cadangan.
+  const failureEvent = [...events].reverse().find((e) => e.event === WORKFLOW_EVENT.FAILED);
+  const failureMessage = rps.processing_error_message || failureEvent?.message || 'Pemrosesan RPS gagal.';
 
   const run = async (action) => {
     setPending(true);
@@ -93,22 +97,36 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
 
 /** Hasil analisis RPS. */
 export default function CourseRpsPage() {
-  const { course } = useCourse();
-  const rpsId = course.rps_id;
-  // Pada backend nyata `course` adalah workflow itu sendiri; pada mock /courses itu project, jadi tanpa id workflow.
-  const workflowId = COURSE_API_AVAILABLE ? course.workflow_id : course.id;
+  const { course, events = [], refresh } = useCourse();
+  // ?rps=<id> dari daftar RPS membuka RPS itu; RPS yang baru diunggah dari halaman ini didahulukan.
+  const [params] = useSearchParams();
+  const [activeRpsId, setActiveRpsId] = useState(null);
+  const rpsId = activeRpsId || params.get('rps') || course.rps_id;
   // Status dulu (GET /rps/{id}); hasil analisis hanya diminta bila sudah ANALYZED.
   const rpsQuery = useApi(() => (rpsId ? getRps(rpsId) : null), [rpsId]);
   const rps = rpsQuery.data;
   const analyzed = rps?.status === RPS_STATUS.ANALYZED;
   const analysisQuery = useApi(() => (analyzed ? getRpsAnalysis(rpsId) : null), [rpsId, analyzed]);
   const analysis = useMemo(() => (analysisQuery.data ? normalizeRpsAnalysis(analysisQuery.data) : null), [analysisQuery.data]);
-  usePolling(() => rpsQuery.reload({ silent: true }), POLL_MS, !!rps && isRpsInProgress(rps));
 
-  // Ambil event spesifik milik workflow RPS ini jika berbeda dari workflow course
-  const rpsWorkflowId = rps?.workflow_id;
-  const { events: rpsEvents } = useWorkflow(null, rpsWorkflowId);
-  const effectiveEvents = rpsEvents?.length > 0 ? rpsEvents : events;
+  // Status diperbarui lewat event workflow RPS ini (FE-10.2): setiap perubahan workflow memicu GET /rps/{id}.
+  // Polling tetap berjalan sebagai cadangan selama pemrosesan belum berhenti.
+  const monitor = useWorkflowMonitor(rps?.workflow_id);
+  const workflowChange = monitor.workflow ? `${monitor.workflow.status}|${monitor.workflow.stage}|${monitor.workflow.updated_at}` : null;
+  const { reload: reloadRps } = rpsQuery;
+  // Event beruntun (puluhan event progres per tahap) digabung menjadi satu GET /rps/{id}.
+  useOnChange(workflowChange, () => reloadRps({ silent: true }), RPS_REFRESH_DEBOUNCE_MS);
+  usePolling(() => rpsQuery.reload({ silent: true }), POLL_MS, !!rps && isRpsInProgress(rps));
+  const effectiveEvents = monitor.events.length > 0 ? monitor.events : events;
+  // Workflow RPS dari GET /rps/{id}; project /courses di backend tidak memuat workflow_id.
+  const workflowId = rps?.workflow_id ?? (COURSE_API_AVAILABLE ? course.workflow_id : course.id);
+  const hasProject = !!course.id;
+
+  // ?bagian=hasil (dari tombol "Hasil analisis" di tab Kursus): gulir ke hasil analisis setelah tampil.
+  const jumpToResult = params.get('bagian') === 'hasil' && !!analysis;
+  useEffect(() => {
+    if (jumpToResult) document.getElementById('hasil-analisis')?.scrollIntoView({ block: 'start' });
+  }, [jumpToResult]);
 
   const error = rpsQuery.error ?? analysisQuery.error;
   if ((rpsQuery.loading && !rps && rpsId) || (analyzed && analysisQuery.loading && !analysis)) return <Spinner label="Memuat hasil analisis…" />;
@@ -158,11 +176,12 @@ export default function CourseRpsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Status workflow ada di tab Workflow; RPS tanpa workflow kembali ke daftar RPS. */}
-          <Link to={course.id ? `../workflows${workflowId ? `?workflow=${workflowId}` : ''}` : '..'} relative="path" className="btn btn--ghost btn--sm">
-            {course.id ? 'Pantau workflow' : 'Kembali ke daftar RPS'}
-          </Link>
-          {COURSE_PLANNING_AVAILABLE && analyzed ? (
+          {/* Status workflow ada di tab Workflow; tanpa project kursus, RPS dibuka dari daftar RPS. */}
+          {!hasProject && <Link to=".." relative="path" className="btn btn--ghost btn--sm">Kembali ke daftar RPS</Link>}
+          {workflowId && (
+            <Link to={`../workflows?workflow=${workflowId}`} relative="path" className="btn btn--ghost btn--sm">Pantau workflow</Link>
+          )}
+          {COURSE_PLANNING_AVAILABLE && analyzed && hasProject ? (
             <Link to="../plan" relative="path" className="btn btn--primary">
               Lanjut ke Course Planning
             </Link>
@@ -172,7 +191,7 @@ export default function CourseRpsPage() {
                 Lanjut ke Course Planning
               </button>
               <span id="planning-hint" className="text-xs text-muted">
-                {analyzed ? 'Course planning aktif pada M03.' : 'Tersedia setelah RPS selesai dianalisis.'}
+                {!analyzed ? 'Tersedia setelah RPS selesai dianalisis.' : COURSE_PLANNING_AVAILABLE ? 'Mulai generator AI untuk kursus ini terlebih dahulu.' : 'Course planning aktif pada M03.'}
               </span>
             </span>
           )}
@@ -180,7 +199,9 @@ export default function CourseRpsPage() {
       </div>
 
       {analysis ? (
-        <RpsAnalysisDetails analysis={analysis} />
+        <div id="hasil-analisis" className="scroll-mt-4">
+          <RpsAnalysisDetails analysis={analysis} />
+        </div>
       ) : (
         <RpsNotAnalyzed
           rps={rps}

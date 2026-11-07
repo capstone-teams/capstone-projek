@@ -205,7 +205,7 @@ describe('FE-10.2 pemantauan workflow real-time', () => {
     expect(onChanged).not.toHaveBeenCalled(); // menunggu event beruntun selesai
     await tick(400);
     expect(onChanged).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('.event-log').textContent).toContain('WORKFLOW_STAGE_STARTED rps_analysis');
+    expect(container.querySelector('ol[aria-label="Riwayat event workflow"]').textContent).toContain('WORKFLOW_STAGE_STARTED rps_analysis');
     await connect(SOCKET_STATUS.RECONNECTING);
     expect(note().textContent).toMatch(/menyambungkan ulang/i);
     expect(container.textContent).not.toMatch(/WebSocket|socket/i);

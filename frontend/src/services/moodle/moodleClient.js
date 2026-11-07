@@ -13,7 +13,10 @@
  *
  * Kedua endpoint mengirim header Access-Control-Allow-Origin: *, jadi bisa dipanggil dari browser.
  */
-import { MOODLE_SERVICE, MOODLE_URL, USE_MOCK, USE_MOODLE_MOCK } from '../config';
+const MOODLE_URL = 'http://localhost:8080';
+const MOODLE_SERVICE = 'moodle_mobile_app';
+const USE_MOCK = false;
+const USE_MOODLE_MOCK = false;
 import { mockCallWs, mockRequestToken, mockUploadDraftFiles } from '../mock/mockMoodle';
 import { MSG_UNAVAILABLE, logTechnical } from '../../utils/userMessages';
 

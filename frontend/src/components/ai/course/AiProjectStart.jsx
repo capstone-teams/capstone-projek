@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { RPS_READY } from '../../../utils/rpsStatus';
-import { COURSE_API_AVAILABLE, RPS_DELETE_AVAILABLE } from '../../../services/config';
+import { COURSE_ACTIONS_AVAILABLE, COURSE_API_AVAILABLE, RPS_DELETE_AVAILABLE } from '../../../services/config';
+import PendingFeatureNote from '../PendingFeatureNote';
 import { createCourse } from '../../../services/courseService';
-import { setMoodleTarget } from '../../../services/workflowService';
+import { moodleCourseIdOf, setMoodleTarget } from '../../../services/workflowService';
 import { useAction } from '../../../hooks/useApi';
 import { useRpsLibrary } from '../../../hooks/useRpsLibrary';
 import { Card, ErrorAlert, Field, Spinner } from '../../ui';
@@ -12,17 +13,19 @@ import RpsUploadForm from '../RpsUploadForm';
 
 /** Tanpa API /courses: RPS terpilih menjadi course target workflow-nya (PUT /workflows/{id}/moodle-target). */
 function CourseTargetCard({ moodleCourse, rps, onCreated }) {
-  const connect = useAction(() => setMoodleTarget(rps.workflow_id, moodleCourse.id));
+  const moodleId = moodleCourseIdOf(moodleCourse);
+  const connect = useAction(() => setMoodleTarget(rps.workflow_id, moodleId));
   return (
     <Card title="2. Hubungkan ke kursus">
       <p className="mb-3 text-muted">
         Gunakan RPS yang sudah dianalisis untuk <strong>{moodleCourse.fullname}</strong>.
       </p>
       <ErrorAlert error={connect.error} onClose={connect.clearError} />
-      <button type="button" className="btn btn--primary" disabled={!rps || connect.pending} onClick={() => connect.run().then(onCreated).catch(() => {})}>
+      <button type="button" className="btn btn--primary" disabled={!rps || !moodleId || connect.pending} onClick={() => connect.run().then(onCreated).catch(() => {})}>
         {connect.pending ? 'Menghubungkan…' : 'Hubungkan RPS'}
       </button>
-      {!rps && <p className="mt-2 text-sm text-muted">Unggah RPS dan tunggu sampai selesai dianalisis.</p>}
+      {!moodleId && <p className="mt-2 text-sm text-muted">Kursus ini belum terhubung ke kursus Moodle.</p>}
+      {moodleId && !rps && <p className="mt-2 text-sm text-muted">Unggah RPS dan tunggu sampai selesai dianalisis.</p>}
     </Card>
   );
 }
@@ -70,7 +73,7 @@ export default function AiProjectStart({ moodleCourse, onCreated }) {
                 onProcess={library.process}
                 onReanalyze={library.reanalyze}
                 onHide={RPS_DELETE_AVAILABLE ? library.hide : undefined}
-                analysisHref={COURSE_API_AVAILABLE ? undefined : (item) => `rps?rps=${item.id}`}
+                analysisHref={(item) => `rps?rps=${item.id}`}
                 monitorHref={(item) => `workflows?workflow=${item.workflow_id}`}
               />
             )
@@ -110,10 +113,11 @@ export default function AiProjectStart({ moodleCourse, onCreated }) {
           />
 
           <div className="form__actions">
-            <button type="submit" className="btn btn--primary" disabled={!rpsId || create.pending}>
+            <button type="submit" className="btn btn--primary" disabled={!COURSE_ACTIONS_AVAILABLE || !rpsId || create.pending}>
               {create.pending ? 'Membuat…' : 'Mulai generator AI'}
             </button>
           </div>
+          {!COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Membuat project generator untuk kursus belum tersedia.</PendingFeatureNote>}
           {!rpsId && <p className="text-sm text-muted">Unggah RPS terlebih dahulu untuk memulai.</p>}
         </form>
       </Card>
