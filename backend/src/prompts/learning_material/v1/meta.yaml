@@ -1,4 +1,4 @@
-name: content_generation
+name: learning_material
 version: v1
 description: Generate learning materials based on RPS topics.
 

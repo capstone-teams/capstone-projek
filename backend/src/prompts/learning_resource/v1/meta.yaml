@@ -1,0 +1,8 @@
+name: learning_resource
+version: v1
+description: Generate learning resources based on RPS topics.
+
+required_variables:
+  # - rps_structured
+  - week_context
+
