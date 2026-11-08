@@ -702,9 +702,9 @@ Dengan `restart: unless-stopped` di `local.yml`, Moodle menyala sendiri setelah 
 
 ### 13.3 Hubungkan backend di server
 
-Container `backend` di `docker-compose.yml` tidak membaca `backend/.env` (file itu sengaja tidak masuk image). Variabel Moodle harus dikirim lewat environment compose. Caranya tanpa mengubah file repo:
+`docker-compose.yml` meneruskan `MOODLE_BASE_URL`, `MOODLE_WEB_SERVICE_TOKEN`, dan `MOODLE_TIMEOUT_SECONDS` ke container `backend` dari file `.env` di root repo. Container tidak membaca `backend/.env` (file itu sengaja tidak masuk image).
 
-1. Di root repo server (`~/capstone-projek`), buat atau tambahkan `.env`. File ini sudah di-ignore git.
+1. Di root repo server (`~/capstone-projek`), buat atau tambahkan `.env`. File ini sudah di-ignore git, jadi token tidak ikut ter-commit.
 
 ```bash
 cd ~/capstone-projek
@@ -715,22 +715,9 @@ MOODLE_TIMEOUT_SECONDS=30
 EOF
 ```
 
-2. Buat `docker-compose.override.yml` di root repo server. Compose memuatnya otomatis bersama `docker-compose.yml`.
+Tanpa langkah ini, backend memakai nilai contoh (`localhost:8080/moodle` dan token placeholder) dan tidak akan tersambung ke Moodle.
 
-```bash
-cat > docker-compose.override.yml <<'EOF'
-services:
-  backend:
-    environment:
-      MOODLE_BASE_URL: ${MOODLE_BASE_URL}
-      MOODLE_WEB_SERVICE_TOKEN: ${MOODLE_WEB_SERVICE_TOKEN}
-      MOODLE_TIMEOUT_SECONDS: ${MOODLE_TIMEOUT_SECONDS:-30}
-EOF
-```
-
-> `docker-compose.override.yml` khusus server dan **tidak boleh di-commit** (tidak termasuk `.gitignore`, jadi akan terlihat di `git status`). Token hanya ada di `.env`.
-
-3. Terapkan dan cek:
+2. Terapkan dan cek:
 
 ```bash
 docker compose up -d backend
@@ -781,7 +768,7 @@ Hasil benar: `http://192.168.1.20:8081`, lalu `200`. Setelah itu login ke Swagge
 | Moodle kosong setelah restart | Container dibuat ulang tanpa `local.yml` (`down` lalu `up`) | Ulangi bagian 4.6 sampai 8. Untuk instalasi berikutnya pakai `local.yml` (4.4) |
 | Backend gagal start: koneksi database | `db` belum menyala | `docker compose up -d db`, tunggu `healthy` |
 | `alembic upgrade head` gagal pada database lama | Histori migrasi ditulis ulang | `docker compose down -v` di **root repo** (menghapus database aplikasi, bukan Moodle), lalu `up -d db` dan migrasi ulang |
-| Server: backend `connected: false` tapi Moodle terbuka di browser | Container backend belum menerima `MOODLE_*`, atau `MOODLE_DOCKER_WEB_PORT` tanpa `0.0.0.0:` | Bagian 13.2 dan 13.3 |
+| Server: backend `connected: false` tapi Moodle terbuka di browser | `.env` root repo belum berisi `MOODLE_*`, backend belum di-`up -d` ulang, atau `MOODLE_DOCKER_WEB_PORT` tanpa `0.0.0.0:` | Bagian 13.2 dan 13.3 |
 
 ---
 
