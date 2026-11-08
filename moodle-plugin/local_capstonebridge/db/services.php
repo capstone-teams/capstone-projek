@@ -1,3 +1,4 @@
+
 <?php
 defined('MOODLE_INTERNAL') || die();
 
@@ -18,7 +19,7 @@ $functions = [
     ],
     'local_capstonebridge_create_assign' => [
         'classname' => 'local_capstonebridge\external\create_assign',
-        'description' => 'Creates an Assignment activity in a course section.',
+        'description' => 'Creates an Assignment activity in a course section with grade and submission settings.',
         'type' => 'write',
         'ajax' => false,
         'capabilities' => 'moodle/course:manageactivities,mod/assign:addinstance',
