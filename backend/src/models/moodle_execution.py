@@ -41,7 +41,7 @@ class ExecutionStatus(str, enum.Enum):
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
-
+    SKIPPED = "SKIPPED"
 
 class MoodleExecution(BaseModel):
     __tablename__ = "moodle_executions"
