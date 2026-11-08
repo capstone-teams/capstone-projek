@@ -7,7 +7,7 @@ Configuration (content-schema §8–§9, §37):
 
 - jumlah dan nomor minggu mengikuti rencana mingguan RPS;
 - kode Sub-CPMK yang dipakai benar-benar ada pada RPS Analysis;
-- setiap Sub-CPMK RPS tercakup minimal satu kali;
+- setiap Sub-CPMK yang dipetakan RPS ke sebuah minggu tercakup minimal satu kali;
 - minggu UTS/UAS tidak memuat topik/materi baru;
 - rencana aktivitas hanya memuat jenis yang aktif pada Activity Configuration.
 
@@ -15,6 +15,13 @@ Hasilnya berbentuk ``{"passed": bool, "issues": [...]}`` dan disimpan apa adanya
 pada ``course_plans.validation_result`` (issue BE-14.1). Temuan yang sama juga
 dapat dipakai sebagai umpan balik retry oleh Course Planning Service (BE-15.3);
 karena itu setiap temuan membawa ``code``, ``week``, dan ``message``.
+
+Hanya cacat yang dapat diperbaiki perencana yang dilaporkan. RPS Structured Data
+dapat tidak lengkap karena ekstraksi melewatkan sesuatu — minggu yang hilang
+dari penomoran, atau Sub-CPMK yang dideklarasikan tetapi tidak dipetakan ke
+minggu mana pun. Kekurangan seperti itu berasal dari sumbernya: rencana tidak
+dapat menutupinya tanpa mengarang, jadi ia tidak dihitung sebagai temuan
+rencana. Bagian ``extraction.warnings`` pada RPS Analysis yang melaporkannya.
 
 ``ponytail:`` aturan di sini adalah himpunan minimum yang dibutuhkan BE-14.2
 (approve hanya untuk rencana yang lolos validasi). BE-15.1 dapat menambah aturan
@@ -79,7 +86,15 @@ def validate_plan(
 def _week_number_issues(
     rps_weeks: Mapping[int, Mapping], planned_numbers: set[int]
 ) -> list[dict]:
-    """Nomor minggu rencana harus sama persis dengan minggu RPS."""
+    """Nomor minggu rencana harus berada pada rentang minggu RPS.
+
+    Minggu RPS yang tidak dibuat rencana adalah cacat rencana. Sebaliknya,
+    minggu rencana yang mengisi *lubang* penomoran RPS (mis. RPS memuat 1, 3, 4,
+    ... karena ekstraksi melewatkan minggu 2) bukan cacat rencana: rencana
+    semester memang berurutan, dan minggu yang hilang berasal dari ekstraksi.
+    Yang tetap ditolak adalah minggu di luar rentang RPS — itu minggu yang
+    benar-benar tidak ada pada RPS.
+    """
     if not rps_weeks:
         return []
 
@@ -92,7 +107,10 @@ def _week_number_issues(
                 "message": f"Minggu {number} pada RPS belum ada di course plan.",
             }
         )
+    lowest, highest = min(rps_weeks), max(rps_weeks)
     for number in sorted(planned_numbers - set(rps_weeks)):
+        if lowest <= number <= highest:
+            continue
         issues.append(
             {
                 "code": "WEEK_NOT_IN_RPS",
@@ -106,7 +124,14 @@ def _week_number_issues(
 def _sub_cpmk_issues(
     output: CoursePlanOutput, rps_structured: Mapping | None
 ) -> list[dict]:
-    """Kode Sub-CPMK yang dipakai harus ada, dan seluruh Sub-CPMK harus tercakup."""
+    """Kode Sub-CPMK yang dipakai harus ada, dan yang dipetakan harus tercakup.
+
+    Kewajiban mencakup hanya berlaku untuk Sub-CPMK yang dipetakan RPS ke
+    sebuah minggu. Sub-CPMK yang dideklarasikan tetapi tidak dipetakan ke minggu
+    mana pun tidak punya tempat yang dapat ditelusuri pada rencana (content-schema
+    §3.3), sehingga menuntut cakupannya sama dengan meminta perencana mengarang
+    pemetaan — itu celah ekstraksi, bukan cacat rencana.
+    """
     declared = {
         entry.get("id")
         for entry in (rps_structured or {}).get("sub_cpmk") or []
@@ -116,6 +141,15 @@ def _sub_cpmk_issues(
         return []
 
     issues: list[dict] = []
+    mapped = {
+        code
+        for entry in (rps_structured or {}).get("weeks") or []
+        if isinstance(entry, Mapping)
+        for code in entry.get("sub_cpmk") or []
+        if isinstance(code, str)
+    }
+    required = declared & mapped
+
     used: set[str] = set()
     for week in sorted(output.weeks, key=lambda item: item.week_number):
         for code in week.learning_outcomes:
@@ -132,7 +166,7 @@ def _sub_cpmk_issues(
                     }
                 )
 
-    for code in sorted(declared - used):
+    for code in sorted(required - used):
         issues.append(
             {
                 "code": "SUB_CPMK_NOT_COVERED",

@@ -307,13 +307,14 @@ def _prompt_variables(request: PlanningRequest, feedback: str) -> dict[str, str]
 
 
 def _issue_feedback(issues: list[dict]) -> str:
-    """Ringkas temuan validasi akademik menjadi umpan balik untuk model."""
-    lines = [
-        f"- {issue['code']}: {issue['message']}" for issue in issues[:MAX_FEEDBACK_ITEMS]
-    ]
-    extra = len(issues) - MAX_FEEDBACK_ITEMS
-    if extra > 0:
-        lines.append(f"... dan {extra} temuan lain")
+    """Ringkas temuan validasi akademik menjadi umpan balik untuk model.
+
+    Semua temuan dikirim, tanpa dipotong: setiap temuan adalah perbaikan yang
+    dapat dilakukan model, dan memotong daftar membuat temuan yang terbuang
+    (mis. ``WEEK_NOT_IN_RPS`` yang tersortir di akhir) tidak pernah diperbaiki —
+    model tidak dapat memperbaiki apa yang tidak diberitahukan.
+    """
+    lines = [f"- {issue['code']}: {issue['message']}" for issue in issues]
     return "Perbaiki rencana agar memenuhi aturan berikut:\n" + "\n".join(lines)
 
 
