@@ -9,7 +9,16 @@ from src.models.course_plan import CoursePlan, CoursePlanStatus
 from src.models.course_plan_week import CoursePlanWeek
 from src.models.instructor_profile import InstructorProfile
 from src.models.moodle_entity_mapping import MoodleEntityMapping
-from src.models.moodle_execution import MoodleExecution, MoodleExecutionStatus
+from src.models.execution_operation import (
+    ExecutionOperation,
+    OperationStatus,
+    OperationType,
+)
+from src.models.moodle_execution import (
+    ExecutionScope,
+    ExecutionStatus,
+    MoodleExecution,
+)
 from src.models.review import Review, ReviewDecision, ReviewTargetType
 from src.models.rps import RPS, RPSStatus
 from src.models.rps_analysis import RPSAnalysis
@@ -44,10 +53,14 @@ __all__ = [ "Base",
             "CoursePlanStatus",
             "CoursePlanWeek",
             "EventType",
+            "ExecutionOperation",
+            "ExecutionScope",
+            "ExecutionStatus",
             "InstructorProfile",
             "MoodleEntityMapping",
             "MoodleExecution",
-            "MoodleExecutionStatus",
+            "OperationStatus",
+            "OperationType",
             "Review",
             "ReviewDecision",
             "ReviewTargetType",

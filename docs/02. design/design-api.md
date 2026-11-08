@@ -850,6 +850,10 @@ Request:
 
 # 13. Moodle Execution API
 
+> **Status implementasi (BE-17.2).** Endpoint eksekusi berbasis course pada
+> §13.1–§13.2 digantikan endpoint berbasis workflow §16.5–§16.8 (DL-011 dan
+> DL-012). Spesifikasi di bawah dipertahankan sebagai riwayat kontrak.
+
 ## 13.1 Execute Course
 
 ```http
@@ -1128,6 +1132,189 @@ sehingga client tidak perlu membaca ulang setelah menyimpan.
 
 Workflow milik dosen lain menghasilkan 404 `RESOURCE_NOT_FOUND` yang sama
 seperti workflow tidak ada.
+
+## 16.5 Start Moodle Execution
+
+```http
+POST /api/v1/workflows/{workflow_id}/executions
+```
+
+Request:
+
+```json
+{
+  "scope": "STRUCTURE"
+}
+```
+
+M3 baru mengimplementasikan cakupan `STRUCTURE` (section mingguan berdasarkan
+course plan yang disetujui); cakupan `FULL` menyusul pada M04 (DL-012).
+Response `202` berarti eksekusi sudah dijadwalkan di background:
+
+```json
+{
+  "execution_id": "Xa9bC2dE4fG6hJ8kLm3nP",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+  "course_plan_id": "Cp7rS9tU2vW4xY6zA8bCd",
+  "scope": "STRUCTURE",
+  "status": "PENDING",
+  "moodle_course_id": 42,
+  "summary": {
+    "total": 16,
+    "success": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "error_message": null,
+  "created_at": "2026-11-08T08:00:00Z",
+  "started_at": null,
+  "completed_at": null
+}
+```
+
+Selama eksekusi berjalan, status workflow menjadi `EXECUTING_TO_MOODLE`.
+Setelah eksekusi `STRUCTURE` berhasil, workflow kembali ke
+`WAITING_FOR_REVIEW`; bila ada operasi atau read-back yang gagal, workflow
+menjadi `FAILED` (DL-012).
+
+Prasyarat yang tidak terpenuhi ditolak `409 INVALID_REQUEST` dengan kode alasan
+pada `error.details`:
+
+| Prasyarat                                              | `error.details`                          |
+| ------------------------------------------------------ | ---------------------------------------- |
+| Course plan terbaru berstatus `APPROVED`               | `PLAN_NOT_APPROVED`                      |
+| Course target Moodle tersimpan pada workflow           | `MOODLE_TARGET_NOT_SET`                  |
+| Moodle dapat dihubungi (status service BE-04.7)        | `MOODLE_UNAVAILABLE`                     |
+| Tidak ada proses lain yang berjalan pada workflow      | `EXECUTION_IN_PROGRESS`                  |
+
+Contoh:
+
+```json
+{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "Course plan terbaru belum disetujui.",
+    "details": [
+      {
+        "field": "reason",
+        "message": "PLAN_NOT_APPROVED"
+      }
+    ]
+  }
+}
+```
+
+## 16.6 List Moodle Executions
+
+```http
+GET /api/v1/workflows/{workflow_id}/executions
+```
+
+Response memuat riwayat eksekusi workflow, terbaru lebih dulu. Bentuk tiap item
+sama dengan response §16.5.
+
+```json
+{
+  "items": [
+    {
+      "execution_id": "Xa9bC2dE4fG6hJ8kLm3nP",
+      "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+      "course_plan_id": "Cp7rS9tU2vW4xY6zA8bCd",
+      "scope": "STRUCTURE",
+      "status": "SUCCESS",
+      "moodle_course_id": 42,
+      "summary": {
+        "total": 16,
+        "success": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "error_message": null,
+      "created_at": "2026-11-08T08:00:00Z",
+      "started_at": "2026-11-08T08:00:01Z",
+      "completed_at": "2026-11-08T08:00:20Z"
+    }
+  ]
+}
+```
+
+## 16.7 Get Moodle Execution Status
+
+```http
+GET /api/v1/workflows/{workflow_id}/executions/{execution_id}
+```
+
+Response memuat status, ringkasan (jumlah berhasil/gagal/dilewati), daftar
+operasi per minggu, dan hasil read-back struktur course. Operasi yang berhasil
+menampilkan `moodle_object_id`; operasi yang gagal menampilkan
+`error_message` publik yang aman ditampilkan.
+
+```json
+{
+  "execution_id": "Xa9bC2dE4fG6hJ8kLm3nP",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+  "course_plan_id": "Cp7rS9tU2vW4xY6zA8bCd",
+  "scope": "STRUCTURE",
+  "status": "FAILED",
+  "moodle_course_id": 42,
+  "summary": {
+    "total": 16,
+    "success": 15,
+    "failed": 1,
+    "skipped": 0
+  },
+  "error_message": "1 operasi gagal diterapkan ke Moodle.",
+  "created_at": "2026-11-08T08:00:00Z",
+  "started_at": "2026-11-08T08:00:01Z",
+  "completed_at": "2026-11-08T08:00:20Z",
+  "readback": {
+    "checked": true,
+    "matches": false,
+    "expected_sections": 16,
+    "actual_sections": 16,
+    "ordered": true,
+    "missing_weeks": [],
+    "mismatched_weeks": [4]
+  },
+  "operations": [
+    {
+      "operation_id": "Op2sT4uV6wX8yZ1aB3cDe",
+      "operation_type": "SECTION",
+      "status": "SUCCESS",
+      "idempotency_key": "q7RtYx2bM8sLdWfZaKp3nQ:week:1:SECTION",
+      "week_number": 1,
+      "moodle_object_id": "201",
+      "error_message": null,
+      "retry_count": 0
+    },
+    {
+      "operation_id": "Op3sT4uV6wX8yZ1aB3cDf",
+      "operation_type": "SECTION",
+      "status": "FAILED",
+      "idempotency_key": "q7RtYx2bM8sLdWfZaKp3nQ:week:4:SECTION",
+      "week_number": 4,
+      "moodle_object_id": null,
+      "error_message": "Moodle menolak data yang dikirim.",
+      "retry_count": 0
+    }
+  ]
+}
+```
+
+## 16.8 Retry Failed Moodle Operations
+
+```http
+POST /api/v1/workflows/{workflow_id}/executions/{execution_id}/retry
+```
+
+Hanya eksekusi berstatus `FAILED` dengan operasi gagal yang dapat diulang.
+Retry menjalankan ulang **hanya operasi gagal** pada eksekusi yang sama;
+operasi yang berhasil tidak diulang. Response `202` berbentuk sama dengan
+§16.5 dengan status `PENDING` karena pekerjaan dijadwalkan ulang di background.
+
+Eksekusi dan workflow milik dosen lain menghasilkan 404 `RESOURCE_NOT_FOUND`
+yang sama seperti tidak ada; mahasiswa selalu 403 `AUTHORIZATION_DENIED`.
+Response tidak pernah memuat credential Moodle.
 
 ---
 

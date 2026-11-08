@@ -254,6 +254,26 @@ class WorkflowService:
             return None
         return await self._repository.find_by_id_and_owner(workflow_id, owner_id)
 
+    async def claim_execution(
+        self, *, workflow_id: str, owner_id: str
+    ) -> WorkflowRecord | None:
+        """Klaim workflow untuk satu run eksekusi Moodle (BE-17.1).
+
+        Hanya workflow yang menunggu tindakan dosen atau gagal yang dapat
+        dieksekusi. Klaim atomik ini mencegah dua eksekusi berjalan bersamaan
+        pada workflow yang sama; ``None`` berarti klaim gagal. Event tidak
+        ditulis di sini — orkestrator menulisnya saat run benar-benar dimulai.
+        """
+        claimed = await self._repository.claim_status(
+            workflow_id,
+            owner_id,
+            allowed=(WorkflowStatus.WAITING_FOR_REVIEW, WorkflowStatus.FAILED),
+            target=WorkflowStatus.EXECUTING_TO_MOODLE,
+        )
+        if not claimed:
+            return None
+        return await self._repository.find_by_id_and_owner(workflow_id, owner_id)
+
     async def wait_for_review(self, workflow: WorkflowRecord) -> WorkflowRecord:
         """Tahap selesai; workflow menunggu tindakan dosen (DL-012).
 

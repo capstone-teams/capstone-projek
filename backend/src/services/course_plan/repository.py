@@ -85,6 +85,15 @@ class CoursePlanRepository:
         ).scalar_one_or_none()
         return None if entity is None else await self._to_record(entity)
 
+    async def get_by_id(self, plan_id: str) -> CoursePlanRecord | None:
+        """Satu versi berdasarkan identifier.
+
+        Dipakai eksekusi (BE-17.1) untuk membaca **snapshot** rencana yang
+        dieksekusi, bukan versi terbaru yang mungkin sudah berubah.
+        """
+        entity = await self._session.get(CoursePlanEntity, plan_id)
+        return None if entity is None else await self._to_record(entity)
+
     async def get_version(
         self, workflow_id: str, version: int
     ) -> CoursePlanRecord | None:
