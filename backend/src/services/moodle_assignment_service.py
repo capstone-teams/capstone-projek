@@ -1,3 +1,4 @@
+
 """Operasi assignment ke Moodle (BE-12.2).
 
 Isi assignment diambil dari ``AssignmentData`` (``activities.activity_data``,
@@ -31,7 +32,6 @@ Idempotency dijaga di dua tempat, sama seperti resource (BE-12.1):
 from __future__ import annotations
 
 import html
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -41,7 +41,9 @@ from pydantic import ValidationError
 
 from src.schemas.content import AssignmentData
 from src.services.moodle_client import MoodleClient
+from src.services.moodle_html import inline_markdown, markdown_to_html
 from src.services.moodle_mapping import IMoodleMappingRepository, MoodleMapping
+
 
 __all__ = [
     "ASSIGNMENT_ENTITY_TYPE",
@@ -56,6 +58,7 @@ __all__ = [
     "assignment_idempotency_key",
     "render_assignment_intro",
 ]
+
 
 ASSIGNMENT_ENTITY_TYPE = "assignment"
 CREATE_FUNCTION = "local_capstonebridge_create_assign"
@@ -269,10 +272,10 @@ def _validate(
 
 def render_assignment_intro(assignment: AssignmentContent) -> str:
     """Rangkai instruksi, hasil yang dikumpulkan, dan rubric menjadi HTML."""
-    parts = [_markdown_to_html(assignment.instructions_markdown)]
+    parts = [markdown_to_html(assignment.instructions_markdown, heading_tag="h5")]
     outputs = [item.strip() for item in assignment.expected_outputs if item.strip()]
     if outputs:
-        items = "".join(f"<li>{_inline(item)}</li>" for item in outputs)
+        items = "".join(f"<li>{inline_markdown(item)}</li>" for item in outputs)
         parts.append(f"<h5>Hasil yang Dikumpulkan</h5><ul>{items}</ul>")
     if assignment.rubric:
         rows = "".join(
@@ -291,65 +294,3 @@ def render_assignment_intro(assignment: AssignmentContent) -> str:
             "</table>"
         )
     return "".join(parts)
-
-
-_BULLET = re.compile(r"^[-*]\s+(.*)$")
-_NUMBERED = re.compile(r"^\d+[.)]\s+(.*)$")
-_HEADING = re.compile(r"^#{1,6}\s+(.*)$")
-
-
-def _markdown_to_html(text: str) -> str:
-    """Konversi Markdown sederhana (paragraf, list, heading, bold, italic, code).
-
-    Teks di-escape lebih dulu sehingga HTML mentah dari hasil generation tidak
-    pernah ikut dirender. Konversi Markdown lengkap menjadi bagian BE-21.1.
-    """
-    blocks: list[str] = []
-    paragraph: list[str] = []
-    list_tag: str | None = None
-    list_items: list[str] = []
-
-    def flush_paragraph() -> None:
-        if paragraph:
-            blocks.append("<p>" + "<br>".join(_inline(line) for line in paragraph) + "</p>")
-            paragraph.clear()
-
-    def flush_list() -> None:
-        nonlocal list_tag
-        if list_tag:
-            items = "".join(f"<li>{_inline(item)}</li>" for item in list_items)
-            blocks.append(f"<{list_tag}>{items}</{list_tag}>")
-            list_items.clear()
-            list_tag = None
-
-    for raw in text.strip().splitlines():
-        line = raw.strip()
-        bullet, numbered, heading = _BULLET.match(line), _NUMBERED.match(line), _HEADING.match(line)
-        if not line:
-            flush_paragraph()
-            flush_list()
-        elif heading:
-            flush_paragraph()
-            flush_list()
-            blocks.append(f"<h5>{_inline(heading.group(1))}</h5>")
-        elif bullet or numbered:
-            flush_paragraph()
-            tag = "ul" if bullet else "ol"
-            if list_tag != tag:
-                flush_list()
-                list_tag = tag
-            list_items.append((bullet or numbered).group(1))
-        else:
-            flush_list()
-            paragraph.append(line)
-    flush_paragraph()
-    flush_list()
-    return "".join(blocks)
-
-
-def _inline(text: str) -> str:
-    escaped = html.escape(text.strip())
-    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
-    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
-    escaped = re.sub(r"(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])", r"<em>\1</em>", escaped)
-    return escaped
