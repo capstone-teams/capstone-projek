@@ -124,7 +124,7 @@ Pembuatan soal berhasil dengan mekanisme plugin (DL-003), sehingga tidak ada usu
 | Belum dipanggil dari workflow | Eksekusi di develop baru mencakup struktur section. Service BE-12 siap dipanggil dari eksekusi konten lengkap |
 | Jenis soal | Hanya pilihan ganda satu jawaban (sesuai `QuizData`). True/false dan short answer (§18) belum didukung |
 | Markdown assignment | Konversi sederhana (paragraf, list, heading, bold, italic, code). Konversi lengkap di BE-21.1 |
-| Learning material (Page) | Function plugin `create_page`/`update_page` sudah ada, service backend-nya belum termasuk BE-12 |
+| Learning material (Page) | Bukan bagian BE-12; dikerjakan di BE-04.4 sebagai `MoodlePageService` dengan pola idempotency yang sama |
 
 ---
 

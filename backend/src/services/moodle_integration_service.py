@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -20,6 +21,13 @@ UPDATE_COURSES_FUNCTION = "core_course_update_courses"
 UPDATE_COURSE_FORMAT_FUNCTION = "core_courseformat_update_course"
 RENAME_SECTION_FUNCTION = "core_update_inplace_editable"
 GET_PAGES_FUNCTION = "mod_page_get_pages_by_courses"
+GET_USERS_BY_FIELD_FUNCTION = "core_user_get_users_by_field"
+CREATE_USERS_FUNCTION = "core_user_create_users"
+ENROL_USERS_FUNCTION = "enrol_manual_enrol_users"
+GET_ENROLLED_USERS_FUNCTION = "core_enrol_get_enrolled_users"
+
+#: Role bawaan Moodle yang dipakai integrasi (ID default instalasi Moodle).
+ROLE_IDS = {"teacher": 3, "student": 5}  # teacher = editingteacher
 
 MONITORED_FUNCTIONS = (
     SITE_INFO_FUNCTION,
@@ -111,6 +119,20 @@ class MoodleCourseContents:
 
 
 @dataclass(frozen=True)
+class MoodleUser:
+    moodle_user_id: int
+    username: str
+    fullname: str
+    email: str = ""
+
+
+@dataclass(frozen=True)
+class MoodleEnrolment:
+    user: MoodleUser
+    roles: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SectionWriteResult:
     section: MoodleSection
     created: bool
@@ -121,7 +143,8 @@ class MoodleIntegrationService:
         self._client = client
 
     async def get_status(self) -> MoodleStatus:
-        info = _expect_dict(await self._client.call(SITE_INFO_FUNCTION), SITE_INFO_FUNCTION)
+        # Probe status harus cepat dan jujur: tidak di-retry.
+        info = _expect_dict(await self._client.call(SITE_INFO_FUNCTION, retry=False), SITE_INFO_FUNCTION)
         available = {item.get("name") for item in info.get("functions") or []}
         return MoodleStatus(
             connected=True,
@@ -150,7 +173,7 @@ class MoodleIntegrationService:
         if not raw_courses:
             raise MoodleEntityNotFoundError(f"Course Moodle {moodle_course_id} tidak ditemukan.")
         return _to_course(raw_courses[0])
-    
+
     async def get_course_by_shortname(self, shortname: str) -> MoodleCourse:
         """Baca course berdasarkan shortname (unik di Moodle)."""
         if not shortname.strip():
@@ -266,6 +289,82 @@ class MoodleIntegrationService:
             wsfunction=RENAME_SECTION_FUNCTION,
         )
 
+    # --- User dan enrolment (BE-04.5) ----------------------------------------
+
+    async def get_user_by_username(self, username: str) -> MoodleUser | None:
+        """Cari akun Moodle berdasarkan username; ``None`` bila tidak ada."""
+        if not username.strip():
+            raise ValueError("username tidak boleh kosong")
+        users = _expect_list(
+            await self._client.call(
+                GET_USERS_BY_FIELD_FUNCTION, {"field": "username", "values": [username.strip().lower()]}
+            ),
+            GET_USERS_BY_FIELD_FUNCTION,
+        )
+        return _to_user(users[0]) if users else None
+
+    async def create_user(
+        self, *, username: str, password: str, firstname: str, lastname: str, email: str
+    ) -> MoodleUser:
+        """Buat akun Moodle (auth manual). Password tidak pernah dicatat di log."""
+        values = {"username": username, "password": password, "firstname": firstname,
+                  "lastname": lastname, "email": email}
+        empty = [name for name, value in values.items() if not value.strip()]
+        if empty:
+            raise ValueError(f"field akun wajib diisi: {', '.join(empty)}")
+        created = _expect_list(
+            await self._client.call(
+                CREATE_USERS_FUNCTION,
+                {"users": [{**values, "username": username.strip().lower(), "auth": "manual"}]},
+            ),
+            CREATE_USERS_FUNCTION,
+        )
+        if not created or "id" not in created[0]:
+            raise MoodleAPIError(
+                "Moodle tidak mengembalikan ID akun baru", code="invalid_response", wsfunction=CREATE_USERS_FUNCTION
+            )
+        user = await self.get_user_by_username(username)
+        if user is None:
+            raise MoodleAPIError(
+                "Akun tidak ditemukan setelah dibuat", code="user_not_found", wsfunction=CREATE_USERS_FUNCTION
+            )
+        return user
+
+    async def enrol_users(self, moodle_course_id: int, enrolments: Sequence[tuple[int, str]]) -> None:
+        """Daftarkan user ke course dengan role ``teacher`` atau ``student`` (enrolment manual).
+
+        Aman diulang: mendaftarkan user yang sudah terdaftar tidak membuat enrolment ganda.
+        """
+        if not enrolments:
+            raise ValueError("daftar enrolment kosong")
+        unknown = sorted({role for _, role in enrolments} - ROLE_IDS.keys())
+        if unknown:
+            raise ValueError(f"role tidak dikenal: {unknown}; gunakan 'teacher' atau 'student'")
+        await self.get_course(moodle_course_id)
+        await self._client.call(
+            ENROL_USERS_FUNCTION,
+            {
+                "enrolments": [
+                    {"roleid": ROLE_IDS[role], "userid": user_id, "courseid": moodle_course_id}
+                    for user_id, role in enrolments
+                ]
+            },
+        )
+
+    async def get_enrolled_users(self, moodle_course_id: int) -> list[MoodleEnrolment]:
+        """Daftar user yang terdaftar di course beserta role-nya."""
+        users = _expect_list(
+            await self._client.call(GET_ENROLLED_USERS_FUNCTION, {"courseid": moodle_course_id}),
+            GET_ENROLLED_USERS_FUNCTION,
+        )
+        return [
+            MoodleEnrolment(
+                user=_to_user(raw),
+                roles=tuple(role.get("shortname", "") for role in raw.get("roles") or []),
+            )
+            for raw in users
+        ]
+
     async def _add_section(
         self, moodle_course_id: int, existing: list[MoodleSection]
     ) -> MoodleSection:
@@ -339,6 +438,15 @@ def _to_course(raw: dict[str, Any]) -> MoodleCourse:
         category_id=int(category_id) if category_id is not None else None,
         course_format=raw.get("format") or "topics",
         category=raw.get("categoryname") or None,
+    )
+
+
+def _to_user(raw: dict[str, Any]) -> MoodleUser:
+    return MoodleUser(
+        moodle_user_id=int(raw["id"]),
+        username=raw.get("username", ""),
+        fullname=raw.get("fullname") or f"{raw.get('firstname', '')} {raw.get('lastname', '')}".strip(),
+        email=raw.get("email") or "",
     )
 
 
