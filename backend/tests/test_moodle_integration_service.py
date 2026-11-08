@@ -315,3 +315,89 @@ def test_updating_an_unknown_course_is_not_found():
         run(with_service(fake, lambda service: service.update_course(99, fullname="X")))
 
     assert fake.called("core_course_update_courses") == []
+
+
+def test_user_is_found_by_username_or_reported_missing():
+    fake = FakeMoodle()
+
+    found = run(with_service(fake, lambda service: service.get_user_by_username("Admin")))
+    missing = run(with_service(fake, lambda service: service.get_user_by_username("tidak.ada")))
+
+    assert found.moodle_user_id == 2
+    assert found.fullname == "Admin User"
+    assert missing is None
+    assert fake.called("core_user_get_users_by_field")[0]["values[0]"] == "admin"
+
+
+def test_user_is_created_and_read_back_without_logging_the_password(caplog):
+    fake = FakeMoodle()
+
+    user = run(
+        with_service(
+            fake,
+            lambda service: service.create_user(
+                username="Mhs.Uji", password="Rahasia#123", firstname="Mahasiswa", lastname="Uji",
+                email="mhs.uji@example.com",
+            ),
+        )
+    )
+
+    [sent] = fake.called("core_user_create_users")
+    assert sent["users[0][username]"] == "mhs.uji"
+    assert sent["users[0][auth]"] == "manual"
+    assert user.username == "mhs.uji"
+    assert user.moodle_user_id in fake.users
+    assert "Rahasia#123" not in caplog.text
+
+
+def test_incomplete_user_is_rejected_before_calling_moodle():
+    fake = FakeMoodle()
+
+    with pytest.raises(ValueError):
+        run(with_service(fake, lambda service: service.create_user(
+            username="x", password=" ", firstname="A", lastname="B", email="x@example.com")))
+
+    assert fake.called("core_user_create_users") == []
+
+
+def test_users_are_enrolled_with_their_roles_and_reenrolment_is_safe():
+    fake = FakeMoodle()
+
+    async def scenario(service):
+        teacher = await service.create_user(username="dosen.uji", password="P#ss1234", firstname="Dosen",
+                                            lastname="Uji", email="dosen.uji@example.com")
+        student = await service.create_user(username="mhs.uji", password="P#ss1234", firstname="Mhs",
+                                            lastname="Uji", email="mhs.uji@example.com")
+        enrolments = [(teacher.moodle_user_id, "teacher"), (student.moodle_user_id, "student")]
+        await service.enrol_users(2, enrolments)
+        await service.enrol_users(2, enrolments)
+        return await service.get_enrolled_users(2)
+
+    enrolled = run(with_service(fake, scenario))
+
+    assert sorted((item.user.username, item.roles) for item in enrolled) == [
+        ("dosen.uji", ("editingteacher",)),
+        ("mhs.uji", ("student",)),
+    ]
+    sent = fake.called("enrol_manual_enrol_users")[0]
+    assert sent["enrolments[0][roleid]"] == "3"
+    assert sent["enrolments[1][roleid]"] == "5"
+
+
+@pytest.mark.parametrize("enrolments", [[], [(10, "manager")]])
+def test_invalid_enrolment_is_rejected_before_calling_moodle(enrolments):
+    fake = FakeMoodle()
+
+    with pytest.raises(ValueError):
+        run(with_service(fake, lambda service: service.enrol_users(2, enrolments)))
+
+    assert fake.called("enrol_manual_enrol_users") == []
+
+
+def test_enrolling_into_an_unknown_course_is_not_found():
+    fake = FakeMoodle()
+
+    with pytest.raises(MoodleEntityNotFoundError):
+        run(with_service(fake, lambda service: service.enrol_users(99, [(2, "student")])))
+
+    assert fake.called("enrol_manual_enrol_users") == []

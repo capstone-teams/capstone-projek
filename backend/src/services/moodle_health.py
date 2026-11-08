@@ -80,7 +80,7 @@ class MoodleHealthChecker:
     async def check(self) -> MoodleHealth:
         started = time.perf_counter()
         try:
-            info = await self._client.call(SITE_INFO_FUNCTION)
+            info = await self._client.call(SITE_INFO_FUNCTION, retry=False)
         except MoodleError as exc:
             return MoodleHealth(
                 available=False,

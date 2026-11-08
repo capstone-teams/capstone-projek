@@ -21,6 +21,8 @@ Panduan ini ditulis supaya anggota tim bisa membuat Moodle yang **sama persis** 
 | BE-04.1 | Integration contract & capability discovery | 7 |
 | BE-04.2 | Moodle client & health check | 10.2 |
 | BE-04.3 | Mapping ID internal ↔ ID Moodle | 10.1 |
+| BE-04.4 | Operasi inti: course, section, page learning material | 10.1, 10.2 |
+| BE-04.5 | Retry, akun dan enrolment uji, test akses | 8.2, 10.1, 10.2 |
 | BE-04.6 | Plugin `local_capstonebridge` (Page, Assignment, URL, Quiz) | 6, 10.2 |
 | BE-04.7 | Endpoint `/api/v1/integrations/moodle` | 11 |
 | BE-12.1 | Learning resource (URL) | 10.2 |
@@ -277,7 +279,7 @@ Setiap kali plugin di repo berubah, ulangi 6.1 dan 6.2.
 
 1. **Site administration → Server → Web services → External services → Add**.
 2. Isi **Name**: `Capstone Integration`, centang **Enabled**, biarkan **Authorised users only** tercentang → **Add service**.
-3. Pada service itu, klik **Add functions** dan tambahkan **26 function** berikut. Cari satu per satu; satu kotak isian bisa diisi beberapa function sekaligus sebelum **Add functions**.
+3. Pada service itu, klik **Add functions** dan tambahkan **27 function** berikut. Cari satu per satu; satu kotak isian bisa diisi beberapa function sekaligus sebelum **Add functions**.
 
 | # | Function | Dipakai oleh |
 | :-- | :--- | :--- |
@@ -307,6 +309,7 @@ Setiap kali plugin di repo berubah, ulangi 6.1 dan 6.2.
 | 24 | `enrol_manual_enrol_users` | Test akses mahasiswa (enrol akun uji) |
 | 25 | `local_capstonebridge_create_quiz` | Plugin (BE-12.3) |
 | 26 | `local_capstonebridge_update_quiz` | Plugin (BE-12.3) |
+| 27 | `core_user_create_users` | Script akun uji (BE-04.5) |
 
 Function 17–22, 25, dan 26 baru muncul setelah plugin terpasang (bagian 6).
 
@@ -328,7 +331,7 @@ PowerShell/CMD (pakai `curl.exe` supaya tidak terpakai alias PowerShell). Ganti 
 curl.exe "http://localhost:8000/webservice/rest/server.php?wstoken=TOKEN_KAMU&wsfunction=core_webservice_get_site_info&moodlewsrestformat=json"
 ```
 
-Hasil benar: JSON berisi `"sitename":"Capstone Local"`, `"release":"5.2.x+ (Build: ...)"`, dan daftar `functions` berisi 26 function di atas.
+Hasil benar: JSON berisi `"sitename":"Capstone Local"`, `"release":"5.2.x+ (Build: ...)"`, dan daftar `functions` berisi 27 function di atas.
 
 > Response ini juga memuat `sitesecret` dan `userprivateaccesskey`. **Jangan** di-screenshot atau dibagikan. Backend hanya mengambil nama site, versi, dan daftar function.
 
@@ -350,23 +353,55 @@ Hasil benar: JSON berisi `"sitename":"Capstone Local"`, `"release":"5.2.x+ (Buil
 
 Course `id=1` adalah front page Moodle, bukan course sungguhan; endpoint backend sengaja tidak menampilkannya.
 
-### 8.2 Akun mahasiswa uji
+### 8.2 Akun uji, course uji, dan enrolment (BE-04.5)
 
-Dipakai untuk membuktikan activity hasil backend bisa dibuka mahasiswa (acceptance criteria BE-12).
+Dipakai untuk membuktikan activity hasil backend bisa dibuka mahasiswa, dan untuk menguji akses dosen serta mahasiswa (BE-04.5, BE-12, M03, M04). Akun ini milik **Moodle**, terpisah dari akun aplikasi di bagian 9.1.
 
-1. **Site administration → Users → Accounts → Add a new user**.
-2. Isi:
+| Akun | Role di course uji | Dipakai untuk |
+| :--- | :--- | :--- |
+| `dosen.uji` | Teacher | Akses dosen |
+| `mhs.uji` | Student | Mahasiswa yang terdaftar |
+| `mhs.uji2` | Student | Mahasiswa kedua; pada test akses dipakai sebagai mahasiswa yang **tidak** terdaftar di course baru |
 
-| Field | Nilai |
-| :--- | :--- |
-| Username | `mhs.uji` |
-| New password | `Mhs#12345` (bebas, catat) |
-| First name / Last name | `Mahasiswa` / `Uji` |
-| Email | `mhs.uji@example.com` |
+Semuanya dibuat oleh satu script lewat Moodle Integration Layer. Script juga membuat course uji `capstone-uji` dan mendaftarkan ketiga akun ke course itu. Script aman dijalankan berulang kali: akun dan course yang sudah ada dipakai ulang, password akun lama tidak diubah, dan enrolment tidak ganda. Kalau Moodle di-reset, cukup jalankan ulang script ini.
 
-3. **Create user**. Tidak perlu di-enrol manual; test akan meng-enrol akun ini ke course uji secara otomatis.
+Syarat: `backend/.env` sudah benar (bagian 9), function 23, 24, 27, serta `core_course_get_courses_by_field` dan `core_enrol_get_enrolled_users` sudah ada di service (bagian 7.1), dan **Enable web services for mobile devices** sudah aktif (bagian 5.2).
 
-Pastikan **Enable web services for mobile devices** sudah aktif (bagian 5.2). Tanpa itu akun mahasiswa tidak bisa mendapat token dan test akses mahasiswa gagal dengan `servicenotavailable`.
+Dari folder `backend`, pilih salah satu:
+
+```
+uv run python -m scripts.setup_moodle_test_accounts --generate-passwords
+```
+
+Script membuat password acak dan **menampilkannya sekali**. Catat, lalu bagikan lewat kanal internal tim (jangan di-commit atau ditulis di dokumen).
+
+Atau tentukan password sendiri lewat environment (PowerShell):
+
+```
+$env:MOODLE_TEST_TEACHER_PASSWORD="isi-password-dosen"
+$env:MOODLE_TEST_STUDENT_PASSWORD="isi-password-mahasiswa"
+uv run python -m scripts.setup_moodle_test_accounts
+Remove-Item Env:MOODLE_TEST_TEACHER_PASSWORD, Env:MOODLE_TEST_STUDENT_PASSWORD
+```
+
+Password harus memenuhi password policy Moodle (bawaan: minimal 8 karakter, ada huruf besar, huruf kecil, angka, dan simbol).
+
+Hasil benar:
+
+```
+Setup Moodle uji selesai:
+  course   capstone-uji (id ..): dibuat
+  teacher  dosen.uji  (id ..): dibuat
+  student  mhs.uji    (id ..): dibuat
+  student  mhs.uji2   (id ..): dibuat
+Semua akun terdaftar di course: dosen sebagai teacher, mahasiswa sebagai student.
+```
+
+Pada run berikutnya statusnya menjadi `sudah ada`.
+
+**Cara manual (alternatif):** *Site administration → Users → Accounts → Add a new user* untuk tiap akun, lalu buka course `capstone-uji` → **Participants → Enrol users** dan pilih role yang sesuai.
+
+Tanpa **Enable web services for mobile devices**, akun uji tidak bisa mendapat token dan test akses gagal dengan `servicenotavailable`.
 
 ---
 
@@ -464,12 +499,17 @@ Test yang butuh PostgreSQL dilewati bila `db` tidak menyala; nyalakan dulu (`doc
 | `tests/test_moodle_resource_service.py` | BE-12.1: resource URL per minggu, tanpa duplikat |
 | `tests/test_moodle_assignment_service.py` | BE-12.2: assignment, rubric, pengaturan submission |
 | `tests/test_moodle_quiz_service.py` | BE-12.3: quiz, soal dan kunci jawaban, konfigurasi, soal dipertahankan bila sudah ada attempt |
+| `tests/test_moodle_page_service.py` | BE-04.4: page learning material, konversi Markdown ke HTML, tanpa duplikat |
+| `tests/test_moodle_retry.py` | BE-04.5: retry terbatas hanya untuk error transient dan operasi yang aman diulang; kegagalan di tengah tidak membuat objek ganda |
+| `tests/test_setup_moodle_test_accounts.py` | BE-04.5: script akun uji membuat akun, course, dan enrolment tanpa duplikat |
 
 Jalankan hanya test Moodle:
 
 ```
 uv run pytest tests -k moodle -v
 ```
+
+**Retry.** Client mengulang error transient (timeout, Moodle tidak terjangkau, HTTP 429/502/503/504) paling banyak 2 kali dengan jeda 0,5 lalu 1 detik, hanya untuk operasi yang aman diulang: operasi baca, update, enrolment, dan create plugin yang membawa ID number. `core_course_create_courses` dan penambahan section tidak diulang karena bisa membuat objek baru. Error authentication, permission, dan validation tidak pernah diulang. Endpoint `/status` dan health check juga tidak di-retry, supaya status Moodle dilaporkan apa adanya.
 
 ### 10.2 Test live ke Moodle sungguhan (opt-in)
 
@@ -482,6 +522,8 @@ Test live memanggil Moodle yang sedang menyala dan **dilewati secara default**. 
 | `tests/test_moodle_resource_live.py` | Resource URL di section minggu, tanpa duplikat, bisa dibuka mahasiswa (BE-12.1) | 3 |
 | `tests/test_moodle_assignment_live.py` | Assignment di section minggu, pengaturan submission, bisa dibuka dan dikumpulkan mahasiswa (BE-12.2) | 3 |
 | `tests/test_moodle_quiz_live.py` | Quiz 3 soal di section minggu, tanpa duplikat, update mengganti soal, dikerjakan mahasiswa sampai selesai, kunci jawaban benar (BE-12.3) | 3 |
+| `tests/test_moodle_core_live.py` | Course dibaca lewat id, shortname, dan daftar; course di-update; section mingguan dan page dibuat ulang tanpa duplikat (BE-04.4) | 4 |
+| `tests/test_moodle_access_live.py` | Mahasiswa terdaftar bisa membuka course, mahasiswa tidak terdaftar ditolak; dosen terdaftar sebagai teacher (BE-04.5) | 2 |
 
 Jalankan hanya file yang sudah ada di branch-mu.
 
@@ -490,9 +532,13 @@ PowerShell (dari folder `backend`):
 ```
 $env:MOODLE_LIVE_TESTS="1"
 $env:MOODLE_STUDENT_USERNAME="mhs.uji"
-$env:MOODLE_STUDENT_PASSWORD="Mhs#12345"
-uv run pytest tests/test_moodle_client_live.py tests/test_moodle_plugin_live.py tests/test_moodle_resource_live.py tests/test_moodle_assignment_live.py tests/test_moodle_quiz_live.py -v
-Remove-Item Env:MOODLE_LIVE_TESTS, Env:MOODLE_STUDENT_USERNAME, Env:MOODLE_STUDENT_PASSWORD
+$env:MOODLE_STUDENT_PASSWORD="password-mhs.uji"
+$env:MOODLE_STUDENT2_USERNAME="mhs.uji2"
+$env:MOODLE_STUDENT2_PASSWORD="password-mhs.uji2"
+$env:MOODLE_TEACHER_USERNAME="dosen.uji"
+$env:MOODLE_TEACHER_PASSWORD="password-dosen.uji"
+uv run pytest tests -k "live and moodle" -v
+Remove-Item Env:MOODLE_LIVE_TESTS, Env:MOODLE_STUDENT_USERNAME, Env:MOODLE_STUDENT_PASSWORD, Env:MOODLE_STUDENT2_USERNAME, Env:MOODLE_STUDENT2_PASSWORD, Env:MOODLE_TEACHER_USERNAME, Env:MOODLE_TEACHER_PASSWORD
 ```
 
 CMD:
@@ -500,18 +546,26 @@ CMD:
 ```
 set MOODLE_LIVE_TESTS=1
 set MOODLE_STUDENT_USERNAME=mhs.uji
-set MOODLE_STUDENT_PASSWORD=Mhs#12345
-uv run pytest tests/test_moodle_client_live.py tests/test_moodle_plugin_live.py tests/test_moodle_resource_live.py tests/test_moodle_assignment_live.py tests/test_moodle_quiz_live.py -v
+set MOODLE_STUDENT_PASSWORD=password-mhs.uji
+set MOODLE_STUDENT2_USERNAME=mhs.uji2
+set MOODLE_STUDENT2_PASSWORD=password-mhs.uji2
+set MOODLE_TEACHER_USERNAME=dosen.uji
+set MOODLE_TEACHER_PASSWORD=password-dosen.uji
+uv run pytest tests -k "live and moodle" -v
 set MOODLE_LIVE_TESTS=
 set MOODLE_STUDENT_USERNAME=
 set MOODLE_STUDENT_PASSWORD=
+set MOODLE_STUDENT2_USERNAME=
+set MOODLE_STUDENT2_PASSWORD=
+set MOODLE_TEACHER_USERNAME=
+set MOODLE_TEACHER_PASSWORD=
 ```
 
-Hasil yang diharapkan: **27 passed** bila kelima file ada. Tanpa `MOODLE_STUDENT_USERNAME`/`MOODLE_STUDENT_PASSWORD`, tiga test mahasiswa ditandai *skipped*. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
+Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **33 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
 
 Baris terakhir (mengosongkan variabel) wajib dijalankan agar `pytest` biasa tidak ikut memanggil Moodle.
 
-Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
+Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
 
 ### 10.3 Cek mata sebagai mahasiswa (untuk bukti PR)
 
@@ -756,7 +810,10 @@ Hasil benar: `http://192.168.1.20:8081`, lalu `200`. Setelah itu login ke Swagge
 | `accessexception` | Function belum ada di service | Tambahkan di *External services → Functions → Add functions* (7.1) |
 | `status.all_functions_available: false` | Ada function wajib yang belum ditambahkan | Lihat `functions` yang `available: false`, tambahkan ke service |
 | Test mahasiswa gagal: `servicenotavailable` / token mahasiswa tidak didapat | *Enable web services for mobile devices* belum aktif | Bagian 5.2 |
-| Test mahasiswa gagal: akun tidak ditemukan | Akun `mhs.uji` belum dibuat atau username beda | Bagian 8.2; samakan `MOODLE_STUDENT_USERNAME` |
+| Test mahasiswa gagal: akun tidak ditemukan | Akun uji belum dibuat atau username beda | Jalankan script bagian 8.2; samakan `MOODLE_STUDENT_USERNAME` |
+| Script akun uji atau enrolment gagal: `Message was not sent` | Moodle gagal mengirim email notifikasi enrolment (server email tidak ada) | Pakai `moodle-docker` (email ditangkap `mailpit`), atau tambahkan `$CFG->noemailever = true;` di `config.php` sebelum baris `require_once(... '/lib/setup.php')` |
+| Script akun uji gagal: `invalidpassword` | Password tidak memenuhi password policy Moodle | Pakai `--generate-passwords` atau password yang lebih kuat |
+| Mahasiswa mendapat error permission `errorcoursecontextnotvalid` | Mahasiswa tidak terdaftar di course itu (perilaku yang benar) | Enrol lewat script bagian 8.2 atau *Participants → Enrol users* |
 | Test assignment gagal di setting `grade`/`filesubmission` | Plugin masih 0.3.0 | Pasang plugin terbaru dari `develop` (bagian 6) |
 | Test quiz gagal: `Can't find data record in database table external_functions` atau `accessexception` untuk `create_quiz` | Plugin masih 0.4.0, atau function quiz belum ditambahkan ke service | Pasang plugin 0.5.0 (bagian 6), lalu tambahkan function 25–26 (bagian 7.1) |
 | `504` atau timeout pada panggilan pertama | Moodle lambat saat cache dingin | Panggil ulang. Naikkan `MOODLE_TIMEOUT_SECONDS` (60 di laptop). Matikan debug (5.1), naikkan CPU/RAM Docker, *Site administration → Development → Purge caches* |
@@ -857,7 +914,7 @@ Database Moodle tidak bisa diturunkan versinya tanpa backup, jadi langkah 15.1 w
 - [ ] Debug dimatikan di `config.php` (wajib di server).
 - [ ] Plugin Capstone Bridge terpasang dengan versi sama dengan `develop`.
 - [ ] Web service aktif, REST aktif, *Enable web services for mobile devices* aktif.
-- [ ] Service `Capstone Integration` berisi 26 function, `admin` terdaftar sebagai Authorised user.
+- [ ] Service `Capstone Integration` berisi 27 function, `admin` terdaftar sebagai Authorised user.
 - [ ] `curl` ke `core_webservice_get_site_info` mengembalikan JSON dengan `release` `5.2.x+`.
 - [ ] Akun Moodle `mhs.uji` ada.
 - [ ] `MOODLE_BASE_URL` sama persis dengan alamat Moodle di browser; `.env` tidak muncul di `git status`.
