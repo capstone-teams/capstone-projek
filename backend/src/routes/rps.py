@@ -68,7 +68,7 @@ from src.services.dependencies import (
     get_workflow_service,
     require_roles,
 )
-from src.services.rps.domain import RPSDocument
+from src.services.rps.domain import RPSMetadata
 from src.services.rps.enums import RPSStatus
 from src.services.rps.service import RPSService
 from src.services.user.domain import User
@@ -95,8 +95,8 @@ RpsIdPath = Annotated[
 ]
 
 
-def _to_detail(document: RPSDocument) -> RPSDetailResponse:
-    """Petakan domain RPS ke DTO detail."""
+def _to_detail(document: RPSMetadata) -> RPSDetailResponse:
+    """Petakan ringkasan RPS ke DTO detail."""
     return RPSDetailResponse(
         id=document.id or "",
         filename=document.file_name,
@@ -105,7 +105,7 @@ def _to_detail(document: RPSDocument) -> RPSDetailResponse:
         schema_version=document.schema_version,
         created_at=document.created_at,
         updated_at=document.updated_at,
-        has_source_document=bool(document.source_document),
+        has_source_document=document.has_source_document,
         workflow_id=document.workflow_id,
         processing_duration_ms=document.processing_duration_ms,
         processing_error_code=document.processing_error_code,
@@ -113,15 +113,15 @@ def _to_detail(document: RPSDocument) -> RPSDetailResponse:
     )
 
 
-def _to_list_item(document: RPSDocument) -> RPSListItem:
-    """Petakan domain RPS ke satu baris daftar (design-api §6.5)."""
+def _to_list_item(document: RPSMetadata) -> RPSListItem:
+    """Petakan ringkasan RPS ke satu baris daftar (design-api §6.5)."""
     return RPSListItem(
         id=document.id or "",
         filename=document.file_name,
         status=document.status,
         schema_version=document.schema_version,
         workflow_id=document.workflow_id,
-        has_source_document=bool(document.source_document),
+        has_source_document=document.has_source_document,
         created_at=document.created_at,
         updated_at=document.updated_at,
     )
@@ -195,7 +195,7 @@ async def read_rps(
     instructor lain menghasilkan 404 ``RESOURCE_NOT_FOUND`` yang sama seperti
     dokumen yang tidak ada.
     """
-    document = await service.get_rps(rps_id=rps_id, owner_id=current_user.id)
+    document = await service.get_rps_metadata(rps_id=rps_id, owner_id=current_user.id)
     return _to_detail(document)
 
 

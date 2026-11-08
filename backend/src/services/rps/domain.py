@@ -35,7 +35,7 @@ from src.services.rps.validation import (
     normalize_status,
 )
 
-__all__ = ["MAX_ERROR_CODE_LENGTH", "RPSDocument", "require_owner"]
+__all__ = ["MAX_ERROR_CODE_LENGTH", "RPSDocument", "RPSMetadata", "require_owner"]
 
 # Panjang kolom ``rps.processing_error_code`` (String(50)); kode error pada
 # design-api §18 jauh lebih pendek, batas ini hanya menjaga kolomnya.
@@ -379,6 +379,30 @@ class RPSDocument:
             f"processing_duration_ms={self.processing_duration_ms!r}, "
             f"created_at={self.created_at!r}, updated_at={self.updated_at!r})"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class RPSMetadata:
+    """Ringkasan dokumen RPS untuk daftar dan polling status.
+
+    Endpoint daftar/detail hanya membutuhkan metadata ringan, sedangkan
+    ``source_document`` (JSON hasil Docling) dan ``structured_data`` berukuran
+    besar. Query yang membaca ringkasan ini sengaja tidak memilih kedua kolom
+    itu dan menghitung ``has_source_document`` langsung di database.
+    """
+
+    id: str
+    file_name: str
+    file_hash: str
+    schema_version: str
+    status: RPSStatus
+    has_source_document: bool
+    workflow_id: str | None = None
+    processing_duration_ms: int | None = None
+    processing_error_code: str | None = None
+    processing_error: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 def _normalize_error_code(value: object) -> str | None:
