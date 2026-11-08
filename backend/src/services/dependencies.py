@@ -28,6 +28,7 @@ from src.config.settings import Settings, get_settings
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
+from src.services.content.service import ContentReviewService
 from src.services.course.service import CourseReadService
 from src.services.course_plan.service import CoursePlanService
 from src.services.execution.service import ExecutionService
@@ -66,6 +67,7 @@ __all__ = [
     "CoursePlanningRunner",
     "ExecutionRunner",
     "get_auth_service",
+    "get_content_service",
     "get_course_plan_service",
     "get_course_planning_runner",
     "get_course_service",
@@ -150,6 +152,13 @@ def get_course_service(
     ``course_plan``; endpoint ini hanya membaca data yang sudah tersimpan.
     """
     return CourseReadService.from_session(session)
+
+
+def get_content_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> ContentReviewService:
+    """Content Review Service untuk endpoint review konten (BE-19.2)."""
+    return ContentReviewService.from_session(session)
 
 
 def get_course_plan_service(

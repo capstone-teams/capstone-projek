@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.services.auth.errors import AuthDomainError
+from src.services.content.errors import ContentDomainError
 from src.services.course.errors import CourseDomainError
 from src.services.course_plan.errors import CoursePlanDomainError
 from src.services.execution.errors import ExecutionDomainError
@@ -196,6 +197,25 @@ async def course_plan_error_handler(
     )
 
 
+async def content_error_handler(
+    request: Request, exc: ContentDomainError
+) -> JSONResponse:
+    """Translate a generated-content failure into the standard API error format (BE-19.2).
+
+    Konten yang tidak ada atau milik workflow dosen lain menjadi 404
+    ``RESOURCE_NOT_FOUND``; keputusan review yang tidak sah (belum lolos
+    validasi, sudah ditolak, sudah dieksekusi) menjadi 409 ``INVALID_REQUEST``;
+    input tidak valid 422. Identifier dan pesan internal hanya dicatat
+    server-side.
+    """
+    logger.warning("Content failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+    )
+
+
 async def execution_error_handler(
     request: Request, exc: ExecutionDomainError
 ) -> JSONResponse:
@@ -347,6 +367,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RPSDomainError, rps_error_handler)
     app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
     app.add_exception_handler(CoursePlanDomainError, course_plan_error_handler)
+    app.add_exception_handler(ContentDomainError, content_error_handler)
     app.add_exception_handler(ExecutionDomainError, execution_error_handler)
     app.add_exception_handler(CourseDomainError, course_error_handler)
     app.add_exception_handler(WorkflowDomainError, workflow_error_handler)
