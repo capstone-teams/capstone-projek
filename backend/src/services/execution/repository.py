@@ -124,6 +124,16 @@ class ExecutionRepository:
         entity.error_message = None
         await self._session.commit()
 
+    async def reset_for_retry(self, execution_id: str) -> None:
+        """Kembalikan eksekusi gagal ke ``PENDING`` sebelum dijadwalkan ulang."""
+        entity = await self._session.get(MoodleExecutionEntity, execution_id)
+        if entity is None:
+            return
+        entity.status = ExecutionStatus.PENDING
+        entity.error_message = None
+        entity.completed_at = None
+        await self._session.commit()
+
     async def finish(
         self,
         execution_id: str,
