@@ -1,13 +1,13 @@
 # Capstone Bridge (`local_capstonebridge`)
 
-Local plugin Moodle yang menyediakan external function untuk membuat dan memperbarui activity (Page, Assignment, dan URL resource) melalui Moodle Web Service. Plugin ini merupakan mekanisme pembuatan activity yang dipilih pada DL-003, karena Moodle tidak menyediakan external function bawaan untuk membuat course module.
+Local plugin Moodle yang menyediakan external function untuk membuat dan memperbarui activity (Page, Assignment, URL resource, dan Quiz beserta soalnya) melalui Moodle Web Service. Plugin ini merupakan mekanisme pembuatan activity yang dipilih pada DL-003, karena Moodle tidak menyediakan external function bawaan untuk membuat course module.
 
 | Item               | Value                                            |
 | ------------------ | ------------------------------------------------ |
 | Component          | `local_capstonebridge`                           |
-| Release            | 0.4.0 (`2026110800`)                             |
+| Release            | 0.5.0 (`2026110900`)                             |
 | Requires           | Moodle 4.5 (`2024100700`) atau lebih baru        |
-| Teruji pada        | Moodle 4.5.14+ dan 4.5.15+                       |
+| Teruji pada        | Moodle 4.5.14+, 4.5.15+, dan 5.2.4+              |
 | Modifikasi core    | Tidak ada                                        |
 
 ---
@@ -22,6 +22,8 @@ Local plugin Moodle yang menyediakan external function untuk membuat dan memperb
 | `local_capstonebridge_update_assign` | Memperbarui nama, deskripsi, due date, nilai, submission, dan section Assignment | `moodle/course:manageactivities`                             |
 | `local_capstonebridge_create_url`    | Membuat URL resource (tautan referensi)                        | `moodle/course:manageactivities`, `mod/url:addinstance`      |
 | `local_capstonebridge_update_url`    | Memperbarui nama, alamat, deskripsi, dan section URL resource  | `moodle/course:manageactivities`                             |
+| `local_capstonebridge_create_quiz`   | Membuat Quiz beserta soal pilihan ganda dan kunci jawabannya   | `moodle/course:manageactivities`, `mod/quiz:addinstance`, `moodle/question:add` |
+| `local_capstonebridge_update_quiz`   | Memperbarui nama, deskripsi, konfigurasi, soal, dan section Quiz | `moodle/course:manageactivities`, `mod/quiz:manage`, `moodle/question:add` |
 
 Aturan umum:
 
@@ -41,6 +43,24 @@ Aturan umum:
 | `duedate`        | Unix timestamp, `0` berarti tanpa due date            | `0`              | `0`                 |
 
 Ukuran file mengikuti batas course dan semua jenis file diterima. Pengaturan lain (feedback comment aktif, tanpa draft, tanpa batas attempt) mengikuti nilai tetap plugin. Pada `update_assign`, setting plugin submission yang tidak dikirim tetap dipertahankan, termasuk jumlah file maksimal dan batas ukuran.
+
+### 1.2 Quiz dan Soal
+
+| Parameter          | Keterangan                                                       | Default |
+| ------------------ | ---------------------------------------------------------------- | ------- |
+| `idnumber`         | Wajib pada `create_quiz`. Dipakai sebagai ID number quiz dan kategori soalnya | — |
+| `timelimit`        | Batas waktu dalam detik, `0` berarti tanpa batas                 | `0`     |
+| `attempts`         | Jumlah attempt, `0` berarti tidak terbatas                       | `1`     |
+| `passpercent`      | Nilai lulus dalam persen dari nilai maksimum 100, `0` berarti tidak diatur | `0` |
+| `shufflequestions` | `1` untuk mengacak urutan soal                                   | `0`     |
+| `questions`        | Daftar soal: `text` (HTML), `generalfeedback` (pembahasan, HTML), `answers` (`text`, `correct`) | — |
+
+Aturan soal:
+
+* Hanya soal pilihan ganda dengan **tepat satu** jawaban benar dan minimal dua opsi. Soal lain ditolak sebelum quiz dibuat.
+* Soal disimpan pada **question bank course** dalam satu kategori per quiz (nama kategori = nama quiz, ID number = `idnumber` quiz). Pada Moodle 5.0+, question bank course adalah activity *System shared question bank* yang dibuat otomatis bila belum ada; pada Moodle 4.5, kategori soal berada di context course.
+* `update_quiz` mengganti seluruh soal dengan daftar baru **hanya bila quiz belum memiliki attempt**. Bila sudah ada attempt, soal dipertahankan agar jawaban dan nilai mahasiswa tidak rusak, dan hasil function mengembalikan `questionsreplaced = 0`.
+* Pengaturan tetap: nilai maksimum 100, setiap soal bernilai 1, satu soal per halaman, opsi jawaban diacak, perilaku *deferred feedback*, dan mahasiswa dapat melihat jawaban, kunci, serta pembahasan setelah attempt dikirim.
 
 ---
 
@@ -75,9 +95,9 @@ Setelah upgrade, plugin tampil di *Site administration → Plugins → Plugins o
 
 ### 2.3 Daftarkan function ke service
 
-Buka *Site administration → Server → Web services → External services → Capstone Integration → Functions → Add functions*, lalu tambahkan keenam function pada bagian 1.
+Buka *Site administration → Server → Web services → External services → Capstone Integration → Functions → Add functions*, lalu tambahkan seluruh function pada bagian 1.
 
-Untuk test live, tambahkan juga `mod_page_get_pages_by_courses`, `mod_url_get_urls_by_courses`, dan `mod_assign_get_assignments` bila belum ada.
+Untuk test live, tambahkan juga `mod_page_get_pages_by_courses`, `mod_url_get_urls_by_courses`, `mod_assign_get_assignments`, dan `mod_quiz_get_quizzes_by_courses` bila belum ada.
 
 ### 2.4 Pastikan capability tersedia
 

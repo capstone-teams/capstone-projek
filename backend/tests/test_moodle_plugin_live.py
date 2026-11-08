@@ -442,3 +442,47 @@ async def test_assignment_rejects_an_invalid_grade(client):
             "local_capstonebridge_create_assign",
             {"courseid": course_id, "section": 1, "name": "Tugas", "grade": 0},
         )
+        
+
+def quiz_question(text, correct_flags):
+    return {
+        "text": f"<p>{text}</p>",
+        "answers": [{"text": f"Opsi {i}", "correct": flag} for i, flag in enumerate(correct_flags)],
+    }
+
+
+@pytest.mark.asyncio
+async def test_quiz_rejects_a_question_without_exactly_one_correct_answer(client):
+    course_id = await create_course(client)
+
+    with pytest.raises(MoodleAPIError):
+        await client.call(
+            "local_capstonebridge_create_quiz",
+            {
+                "courseid": course_id,
+                "section": 1,
+                "name": "Kuis",
+                "idnumber": "quiz_two_correct",
+                "questions": [quiz_question("Soal", [1, 1, 0])],
+            },
+        )
+
+    contents = await client.call("core_course_get_contents", {"courseid": course_id})
+    assert all(module["modname"] != "quiz" for module in (m for s in contents for m in s.get("modules", [])))
+
+
+@pytest.mark.asyncio
+async def test_quiz_requires_an_idnumber(client):
+    course_id = await create_course(client)
+
+    with pytest.raises(MoodleAPIError):
+        await client.call(
+            "local_capstonebridge_create_quiz",
+            {
+                "courseid": course_id,
+                "section": 1,
+                "name": "Kuis",
+                "idnumber": "",
+                "questions": [quiz_question("Soal", [1, 0])],
+            },
+        )
