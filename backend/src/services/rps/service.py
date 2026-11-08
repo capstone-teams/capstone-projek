@@ -64,7 +64,7 @@ from src.services.rps.converter import (
     DocumentConverter,
     has_extractable_content,
 )
-from src.services.rps.domain import RPSDocument, require_owner
+from src.services.rps.domain import RPSDocument, RPSMetadata, require_owner
 from src.services.rps.errors import (
     DocumentConversionError,
     RPSAnalysisFailedError,
@@ -376,13 +376,33 @@ class RPSService:
             document=result.document, reused=False, conversion=result.conversion
         )
 
-    async def list_rps(self, *, owner_id: str) -> list[RPSDocument]:
+    async def list_rps(self, *, owner_id: str) -> list[RPSMetadata]:
         """Daftar RPS milik dosen yang login (design-api §6.5).
 
         Scoping owner dilakukan repository, sehingga daftar ini tidak pernah
-        memuat dokumen milik dosen lain.
+        memuat dokumen milik dosen lain. Hasilnya ringkasan metadata: JSON hasil
+        konversi/analisis tidak ikut dimuat hanya untuk menampilkan daftar.
         """
-        return await self._repository.list_by_owner(require_owner(owner_id))
+        return await self._repository.list_metadata_by_owner(require_owner(owner_id))
+
+    async def get_rps_metadata(self, *, rps_id: str, owner_id: str) -> RPSMetadata:
+        """Ringkasan satu dokumen untuk endpoint detail/polling status.
+
+        Berbeda dari :meth:`get_rps` yang memuat dokumen utuh untuk pemrosesan,
+        jalur ini tidak mengambil JSONB besar. Dokumen milik instruktur lain
+        menghasilkan error yang sama seperti dokumen yang tidak ada.
+        """
+        owner = require_owner(owner_id)
+        identifier = normalize_identifier(rps_id)
+        if identifier is None:
+            raise RPSNotFoundError(rps_id)
+
+        metadata = await self._repository.find_metadata_by_id_and_owner(
+            identifier, owner
+        )
+        if metadata is None:
+            raise RPSNotFoundError(identifier)
+        return metadata
 
     async def get_analysis(self, *, rps_id: str, owner_id: str) -> RPSDocument:
         """Dokumen yang hasil analisisnya sudah tersedia (design-api §6.4).
