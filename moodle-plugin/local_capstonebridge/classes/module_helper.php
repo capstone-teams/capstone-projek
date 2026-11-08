@@ -80,6 +80,28 @@ class module_helper {
         $data->popupheight = $options['popupheight'] ?? 450;
     }
 
+        /**
+     * Validasi pengaturan Assignment yang dikirim lewat web service.
+     * Nilai negatif berarti "tidak diubah" (hanya dipakai oleh update).
+     */
+    public static function validate_assign_settings(int $grade, int $onlinetext, int $filesubmission, int $maxfiles): void {
+        global $CFG;
+
+        $gradepointmax = (int) ($CFG->gradepointmax ?? 100);
+        if ($grade === 0 || $grade > $gradepointmax) {
+            throw new \invalid_parameter_exception("grade must be between 1 and {$gradepointmax}");
+        }
+        foreach (['onlinetext' => $onlinetext, 'filesubmission' => $filesubmission] as $name => $value) {
+            if ($value > 1) {
+                throw new \invalid_parameter_exception("{$name} must be 0 or 1");
+            }
+        }
+        $limit = (int) get_config('assignsubmission_file', 'maxfiles');
+        if ($maxfiles === 0 || ($limit > 0 && $maxfiles > $limit)) {
+            throw new \invalid_parameter_exception("maxfiles must be between 1 and {$limit}");
+        }
+    }
+
     public static function result(int $cmid, int $instanceid, bool $created): array {
         return [
             'cmid' => $cmid,

@@ -335,3 +335,110 @@ async def test_assignment_is_updated_without_disabling_online_text_submission(cl
     assert assignment["duedate"] == new_due_date
     assert "Versi 2" in assignment["intro"]
     assert configs[("onlinetext", "assignsubmission", "enabled")] == "1"
+
+
+async def get_assignment(client, course_id, cmid):
+    result = await client.call(
+        "mod_assign_get_assignments",
+        {"courseids": [course_id], "includenotenrolledcourses": 1},
+    )
+    return next(
+        item
+        for course in result["courses"]
+        for item in course["assignments"]
+        if item["cmid"] == cmid
+    )
+
+
+def submission_configs(assignment):
+    """Config plugin submission; plugin nonaktif tidak dikembalikan Moodle sehingga dianggap "0"."""
+    configs = {
+        (config["plugin"], config["name"]): config["value"]
+        for config in assignment["configs"]
+        if config["subtype"] == "assignsubmission"
+    }
+    for plugin in ("onlinetext", "file"):
+        configs.setdefault((plugin, "enabled"), "0")
+    return configs
+
+
+@pytest.mark.asyncio
+async def test_assignment_is_created_with_grade_and_submission_settings(client):
+    course_id = await create_course(client)
+
+    created = await client.call(
+        "local_capstonebridge_create_assign",
+        {
+            "courseid": course_id,
+            "section": 2,
+            "name": "Tugas ERD",
+            "intro": "<p>Unggah ERD</p>",
+            "grade": 80,
+            "onlinetext": 0,
+            "filesubmission": 1,
+            "maxfiles": 3,
+        },
+    )
+
+    assignment = await get_assignment(client, course_id, created["cmid"])
+    configs = submission_configs(assignment)
+    assert assignment["grade"] == 80
+    assert configs[("onlinetext", "enabled")] == "0"
+    assert configs[("file", "enabled")] == "1"
+    assert configs[("file", "maxfilesubmissions")] == "3"
+
+
+@pytest.mark.asyncio
+async def test_assignment_update_changes_settings_and_keeps_what_is_not_given(client):
+    course_id = await create_course(client)
+    created = await client.call(
+        "local_capstonebridge_create_assign",
+        {
+            "courseid": course_id,
+            "section": 1,
+            "name": "Tugas 1",
+            "grade": 90,
+            "onlinetext": 1,
+            "filesubmission": 1,
+            "maxfiles": 4,
+        },
+    )
+
+    await client.call(
+        "local_capstonebridge_update_assign",
+        {"courseid": course_id, "cmid": created["cmid"], "name": "Tugas 1 (revisi)"},
+    )
+    kept = await get_assignment(client, course_id, created["cmid"])
+
+    await client.call(
+        "local_capstonebridge_update_assign",
+        {
+            "courseid": course_id,
+            "cmid": created["cmid"],
+            "name": "Tugas 1 (revisi 2)",
+            "grade": 50,
+            "onlinetext": 0,
+            "maxfiles": 2,
+        },
+    )
+    changed = await get_assignment(client, course_id, created["cmid"])
+
+    assert kept["grade"] == 90
+    assert submission_configs(kept)[("onlinetext", "enabled")] == "1"
+    assert submission_configs(kept)[("file", "enabled")] == "1"
+    assert submission_configs(kept)[("file", "maxfilesubmissions")] == "4"
+    assert changed["grade"] == 50
+    assert submission_configs(changed)[("onlinetext", "enabled")] == "0"
+    assert submission_configs(changed)[("file", "enabled")] == "1"
+    assert submission_configs(changed)[("file", "maxfilesubmissions")] == "2"
+
+
+@pytest.mark.asyncio
+async def test_assignment_rejects_an_invalid_grade(client):
+    course_id = await create_course(client)
+
+    with pytest.raises(MoodleAPIError):
+        await client.call(
+            "local_capstonebridge_create_assign",
+            {"courseid": course_id, "section": 1, "name": "Tugas", "grade": 0},
+        )
