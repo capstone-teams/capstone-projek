@@ -129,8 +129,12 @@ describe('FE-08.3 tampilan hasil analisis', () => {
     const analysisText = [...container.querySelectorAll('section[aria-label]')].map((el) => el.textContent).join(' ');
     expect(analysisText).not.toMatch(/[✓✕⚠]/);
 
-    const planning = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Lanjut ke Course Planning');
-    expect(planning.getAttribute('href')).toBe('/course/2/ai/plan');
+    // FE-12.1: tombol memulai course planning (POST /workflows/{id}/plan); alurnya diuji di course-planning-flow.test.jsx.
+    const planning = () => [...container.querySelectorAll('button')].find((el) => el.textContent === 'Lanjut ke Course Planning');
+    // RPS contoh tidak memiliki workflow, jadi course planning belum dapat dimulai dan alasannya ditampilkan.
+    await waitFor(() => planning(), 'tombol course planning');
+    expect(planning().disabled).toBe(true);
+    expect(container.querySelector('#planning-hint').textContent).toBe('Course planning belum dapat dimulai untuk RPS ini.');
   });
 
   it('RPS yang belum dianalisis menampilkan status dan dapat dianalisis tanpa memanggil /analysis', async () => {
