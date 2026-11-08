@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from src.services.auth.errors import AuthDomainError
 from src.services.course.errors import CourseDomainError
 from src.services.course_plan.errors import CoursePlanDomainError
+from src.services.execution.errors import ExecutionDomainError
 from src.services.instructor.errors import InstructorSetupError
 from src.services.llm.base import LLMProviderError
 from src.services.moodle_adapter_exceptions import (
@@ -195,6 +196,25 @@ async def course_plan_error_handler(
     )
 
 
+async def execution_error_handler(
+    request: Request, exc: ExecutionDomainError
+) -> JSONResponse:
+    """Translate an execution domain failure into the standard API error format.
+
+    Penolakan prasyarat (BE-17.1) membawa ``details`` berisi kode alasan yang
+    stabil (``field = "reason"``), sehingga frontend dapat menampilkan sebabnya
+    tanpa mem-parsing pesan. Eksekusi milik dosen lain menjadi 404 yang sama
+    seperti eksekusi tidak ada. Pesan Moodle mentah tidak pernah diteruskan.
+    """
+    logger.warning("Execution failure on %s: %s", request.url.path, exc.log_message)
+    return _error_response(
+        status_code=exc.status_code,
+        error_code=exc.error_code,
+        message=exc.public_message,
+        details=getattr(exc, "details", None),
+    )
+
+
 async def course_error_handler(request: Request, exc: CourseDomainError) -> JSONResponse:
     """Translate a course read failure into the standard API error format.
 
@@ -327,6 +347,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RPSDomainError, rps_error_handler)
     app.add_exception_handler(InstructorSetupError, instructor_setup_error_handler)
     app.add_exception_handler(CoursePlanDomainError, course_plan_error_handler)
+    app.add_exception_handler(ExecutionDomainError, execution_error_handler)
     app.add_exception_handler(CourseDomainError, course_error_handler)
     app.add_exception_handler(WorkflowDomainError, workflow_error_handler)
     app.add_exception_handler(MoodleError, moodle_error_handler)

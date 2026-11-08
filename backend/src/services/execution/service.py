@@ -178,7 +178,8 @@ class ExecutionService:
                 EXECUTION_IN_PROGRESS,
                 log_message=f"workflow {workflow.id} sedang menjalankan proses lain",
             )
-        return execution
+        await self._repository.reset_for_retry(execution.id or "")
+        return await self._repository.get(execution.id or "") or execution
 
     async def list_executions(
         self, *, workflow_id: str, owner_id: str
