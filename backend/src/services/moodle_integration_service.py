@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 
 SITE_INFO_FUNCTION = "core_webservice_get_site_info"
 GET_COURSES_FUNCTION = "core_course_get_courses"
+GET_COURSES_BY_FIELD_FUNCTION = "core_course_get_courses_by_field"
 GET_CONTENTS_FUNCTION = "core_course_get_contents"
 CREATE_COURSES_FUNCTION = "core_course_create_courses"
+UPDATE_COURSES_FUNCTION = "core_course_update_courses"
 UPDATE_COURSE_FORMAT_FUNCTION = "core_courseformat_update_course"
 RENAME_SECTION_FUNCTION = "core_update_inplace_editable"
 GET_PAGES_FUNCTION = "mod_page_get_pages_by_courses"
@@ -22,9 +24,10 @@ GET_PAGES_FUNCTION = "mod_page_get_pages_by_courses"
 MONITORED_FUNCTIONS = (
     SITE_INFO_FUNCTION,
     GET_COURSES_FUNCTION,
+    GET_COURSES_BY_FIELD_FUNCTION,
     GET_CONTENTS_FUNCTION,
     CREATE_COURSES_FUNCTION,
-    "core_course_update_courses",
+    UPDATE_COURSES_FUNCTION,
     "core_course_edit_section",
     UPDATE_COURSE_FORMAT_FUNCTION,
     RENAME_SECTION_FUNCTION,
@@ -147,6 +150,60 @@ class MoodleIntegrationService:
         if not raw_courses:
             raise MoodleEntityNotFoundError(f"Course Moodle {moodle_course_id} tidak ditemukan.")
         return _to_course(raw_courses[0])
+    
+    async def get_course_by_shortname(self, shortname: str) -> MoodleCourse:
+        """Baca course berdasarkan shortname (unik di Moodle)."""
+        if not shortname.strip():
+            raise ValueError("shortname tidak boleh kosong")
+        payload = _expect_dict(
+            await self._client.call(
+                GET_COURSES_BY_FIELD_FUNCTION, {"field": "shortname", "value": shortname.strip()}
+            ),
+            GET_COURSES_BY_FIELD_FUNCTION,
+        )
+        courses = [raw for raw in payload.get("courses") or [] if raw.get("format") != SITE_COURSE_FORMAT]
+        if not courses:
+            raise MoodleEntityNotFoundError(f"Course Moodle dengan shortname '{shortname}' tidak ditemukan.")
+        return _to_course(courses[0])
+
+    async def update_course(
+        self,
+        moodle_course_id: int,
+        *,
+        fullname: str | None = None,
+        shortname: str | None = None,
+        summary: str | None = None,
+        visible: bool | None = None,
+    ) -> MoodleCourse:
+        """Perbarui field course yang diberikan; field ``None`` tidak diubah."""
+        changes: dict[str, Any] = {}
+        for field_name, value in (("fullname", fullname), ("shortname", shortname)):
+            if value is not None:
+                if not value.strip():
+                    raise ValueError(f"{field_name} tidak boleh kosong")
+                changes[field_name] = value.strip()
+        if summary is not None:
+            changes["summary"] = summary
+            changes["summaryformat"] = 1  # FORMAT_HTML
+        if visible is not None:
+            changes["visible"] = int(visible)
+        if not changes:
+            raise ValueError("tidak ada field course yang diperbarui")
+
+        await self.get_course(moodle_course_id)
+        payload = await self._client.call(
+            UPDATE_COURSES_FUNCTION, {"courses": [{"id": moodle_course_id, **changes}]}
+        )
+        warnings = payload.get("warnings") if isinstance(payload, dict) else None
+        if warnings:
+            # Moodle melaporkan kegagalan per course sebagai warning, bukan exception.
+            warning = warnings[0]
+            raise MoodleAPIError(
+                warning.get("message") or "Moodle menolak perubahan course",
+                code=warning.get("warningcode") or "update_failed",
+                wsfunction=UPDATE_COURSES_FUNCTION,
+            )
+        return await self.get_course(moodle_course_id)
 
     async def get_course_contents(self, moodle_course_id: int) -> MoodleCourseContents:
         await self.get_course(moodle_course_id)

@@ -244,3 +244,74 @@ def test_public_error_message_never_contains_the_moodle_message():
 
     assert TOKEN not in normalized.message
     assert "detail internal" not in normalized.message
+
+
+def test_course_can_be_read_by_shortname():
+    fake = FakeMoodle()
+
+    course = run(with_service(fake, lambda service: service.get_course_by_shortname("PW101")))
+
+    assert course.moodle_course_id == 2
+    assert course.fullname == "Pemrograman Web"
+    assert fake.called("core_course_get_courses_by_field")[0]["field"] == "shortname"
+
+
+def test_unknown_or_site_shortname_is_not_found():
+    fake = FakeMoodle()
+
+    with pytest.raises(MoodleEntityNotFoundError):
+        run(with_service(fake, lambda service: service.get_course_by_shortname("TIDAK-ADA")))
+    with pytest.raises(MoodleEntityNotFoundError):
+        run(with_service(fake, lambda service: service.get_course_by_shortname("ITK")))
+
+
+def test_course_is_updated_and_read_back():
+    fake = FakeMoodle()
+
+    course = run(
+        with_service(
+            fake,
+            lambda service: service.update_course(
+                2, fullname="Pemrograman Web Lanjut", summary="<p>Baru</p>", visible=False
+            ),
+        )
+    )
+
+    [sent] = fake.called("core_course_update_courses")
+    assert sent["courses[0][id]"] == "2"
+    assert "courses[0][shortname]" not in sent
+    assert sent["courses[0][summaryformat]"] == "1"
+    assert course.fullname == "Pemrograman Web Lanjut"
+    assert course.shortname == "PW101"
+    assert course.summary == "<p>Baru</p>"
+    assert course.visible is False
+
+
+def test_course_update_warning_is_raised_as_validation_error():
+    fake = FakeMoodle()
+    run(with_service(fake, lambda service: service.create_course("Basis Data", "BD101", 1)))
+
+    with pytest.raises(MoodleAPIError) as caught:
+        run(with_service(fake, lambda service: service.update_course(2, shortname="BD101")))
+
+    assert caught.value.code == "shortnametaken"
+    assert normalize_moodle_error(caught.value).category == MoodleErrorCategory.VALIDATION
+
+
+@pytest.mark.parametrize("changes", [{}, {"fullname": "  "}, {"shortname": ""}])
+def test_invalid_course_update_is_rejected_before_calling_moodle(changes):
+    fake = FakeMoodle()
+
+    with pytest.raises(ValueError):
+        run(with_service(fake, lambda service: service.update_course(2, **changes)))
+
+    assert fake.called("core_course_update_courses") == []
+
+
+def test_updating_an_unknown_course_is_not_found():
+    fake = FakeMoodle()
+
+    with pytest.raises(MoodleEntityNotFoundError):
+        run(with_service(fake, lambda service: service.update_course(99, fullname="X")))
+
+    assert fake.called("core_course_update_courses") == []

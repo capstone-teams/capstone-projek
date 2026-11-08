@@ -10,6 +10,7 @@ BASE_URL = "http://moodle.test/moodle"
 ALL_FUNCTIONS = [
     "core_webservice_get_site_info",
     "core_course_get_courses",
+    "core_course_get_courses_by_field",
     "core_course_get_contents",
     "core_course_create_courses",
     "core_course_update_courses",
@@ -92,6 +93,31 @@ class FakeMoodle:
                 wanted = {int(value) for key, value in params.items() if key.startswith("options[ids]")}
                 return [course for cid, course in self.courses.items() if cid in wanted]
             return list(self.courses.values())
+        if wsfunction == "core_course_get_courses_by_field":
+            field, value = params.get("field"), params.get("value")
+            return {
+                "courses": [course for course in self.courses.values() if str(course.get(field)) == value],
+                "warnings": [],
+            }
+        if wsfunction == "core_course_update_courses":
+            course_id = int(params["courses[0][id]"])
+            shortname = params.get("courses[0][shortname]")
+            if shortname and any(
+                cid != course_id and course.get("shortname") == shortname for cid, course in self.courses.items()
+            ):
+                return {
+                    "warnings": [
+                        {"item": "course", "itemid": course_id, "warningcode": "shortnametaken",
+                         "message": "Short name is already used"}
+                    ]
+                }
+            course = self.courses[course_id]
+            for field in ("fullname", "shortname", "summary"):
+                if f"courses[0][{field}]" in params:
+                    course[field] = params[f"courses[0][{field}]"]
+            if "courses[0][visible]" in params:
+                course["visible"] = int(params["courses[0][visible]"])
+            return {"warnings": []}
         if wsfunction == "core_course_get_contents":
             course_id = int(params["courseid"])
             if course_id not in self.sections:
