@@ -276,32 +276,31 @@ async def seed_sample_course(session: AsyncSession, *, username: str = "dosen.de
         session.add(course)
         await session.flush()
 
-    runs: list[AgentRun] = []
-    for run_type in (AgentRunType.PLANNING, AgentRunType.GENERATION):
-        run = (
-            await session.execute(
-                select(AgentRun).where(
-                    AgentRun.course_id == course.id, AgentRun.run_type == run_type
-                )
+    # Hanya run GENERATION yang masih dirujuk: content_plans tidak lagi menyimpan
+    # agent run (kolom itu dihapus pada BE-14.1), sedangkan contents masih.
+    generation_run = (
+        await session.execute(
+            select(AgentRun).where(
+                AgentRun.course_id == course.id,
+                AgentRun.run_type == AgentRunType.GENERATION,
             )
-        ).scalars().first()
-        if run is None:
-            run = AgentRun(
-                course_id=course.id,
-                run_type=run_type,
-                status=AgentRunStatus.COMPLETED,
-                current_stage="done",
-                model_name="seed-sample",
-                model_runtime="local",
-                input_context={"source": "seed_sample_course"},
-                output_reference={"seeded": True},
-                started_at=datetime.now(UTC),
-                completed_at=datetime.now(UTC),
-            )
-            session.add(run)
-            await session.flush()
-        runs.append(run)
-    planning_run, generation_run = runs
+        )
+    ).scalars().first()
+    if generation_run is None:
+        generation_run = AgentRun(
+            course_id=course.id,
+            run_type=AgentRunType.GENERATION,
+            status=AgentRunStatus.COMPLETED,
+            current_stage="done",
+            model_name="seed-sample",
+            model_runtime="local",
+            input_context={"source": "seed_sample_course"},
+            output_reference={"seeded": True},
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+        )
+        session.add(generation_run)
+        await session.flush()
 
     plan = (
         await session.execute(
@@ -314,7 +313,6 @@ async def seed_sample_course(session: AsyncSession, *, username: str = "dosen.de
             rps_analysis_id=analysis.id,
             version=1,
             status=CoursePlanStatus.PENDING_REVIEW,
-            generated_by_agent_run_id=planning_run.id,
             plan_data={
                 "course": {"name": COURSE_NAME, "code": COURSE_CODE, "weeks": 16},
                 "weeks": [
