@@ -2,10 +2,11 @@
 
 - ``domain`` — jenis konten, status approval, dan record versi konten;
 - ``repository`` — akses tabel ``contents``/``activities`` beserta hasil
-  validasinya.
+  validasinya;
+- ``service`` — operasi review: baca per minggu/jenis, riwayat versi, dan
+  keputusan approve/reject dosen pemilik workflow.
 
-Endpoint review (BE-19.2) dan tahap generation (BE-19.3) dibangun di atas
-lapisan ini.
+Tahap generation (BE-19.3) dibangun di atas lapisan ini.
 """
 
 from src.services.content.domain import (
@@ -16,14 +17,26 @@ from src.services.content.domain import (
     ValidationRecord,
     content_key_for,
 )
+from src.services.content.errors import (
+    ContentDomainError,
+    ContentNotFoundError,
+    ContentStateError,
+    ContentValidationError,
+)
 from src.services.content.repository import ContentRepository
+from src.services.content.service import ContentReviewService
 
 __all__ = [
     "ApprovalStatus",
+    "ContentDomainError",
     "ContentDraft",
     "ContentKind",
+    "ContentNotFoundError",
     "ContentRecord",
     "ContentRepository",
+    "ContentReviewService",
+    "ContentStateError",
+    "ContentValidationError",
     "ValidationRecord",
     "content_key_for",
 ]
