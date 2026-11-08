@@ -147,6 +147,79 @@ async def test_planner_retries_after_schema_mismatch():
     assert retry["reason_code"] == "SCHEMA_VALIDATION_FAILED"
 
 
+# RPS dengan dua Sub-CPMK; rencana yang hanya mencakup satu di antaranya gagal
+# validasi akademik meskipun schema-nya benar.
+REQUEST_TWO_SUBS = PlanningRequest(
+    rps_structured={
+        "course": {"name": "Basis Data"},
+        "sub_cpmk": [{"id": "SUB-1"}, {"id": "SUB-2"}],
+        "weeks": [{"week": 1, "week_type": "regular"}],
+    },
+    activity_configuration={"learning_material": True},
+)
+
+OUTPUT_MISSING_SUB = {
+    "course": {"title": "Basis Data", "code": "IF2230", "description": None},
+    "weeks": [
+        {
+            "week_number": 1,
+            "title": "Pengenalan Basis Data",
+            "learning_outcomes": ["SUB-1"],
+            "topics": ["Pengenalan Basis Data"],
+            "teaching_methods": ["Ceramah"],
+            "planned_activities": ["learning_material"],
+        }
+    ],
+}
+
+OUTPUT_COVERING_SUBS = {
+    "course": {"title": "Basis Data", "code": "IF2230", "description": None},
+    "weeks": [
+        {
+            "week_number": 1,
+            "title": "Pengenalan Basis Data",
+            "learning_outcomes": ["SUB-1", "SUB-2"],
+            "topics": ["Pengenalan Basis Data"],
+            "teaching_methods": ["Ceramah"],
+            "planned_activities": ["learning_material"],
+        }
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_planner_retries_when_sub_cpmk_coverage_is_incomplete():
+    provider = StubProvider(
+        [json.dumps(OUTPUT_MISSING_SUB), json.dumps(OUTPUT_COVERING_SUBS)]
+    )
+    collected, emit = await _events()
+    planner = LLMCoursePlanner(service=LLMService(provider), max_fix_attempts=1)
+
+    result = await planner.generate(REQUEST_TWO_SUBS, emit_event=emit)
+
+    assert result.attempts == 2
+    retry = [event for event in collected if event["event"] == "RETRY_FIX"][0]
+    assert retry["reason_code"] == "VALIDATION_FAILED"
+    assert any("SUB-2" in detail for detail in retry["details"])
+    # Temuan benar-benar dikirim balik ke model pada percobaan kedua.
+    assert "SUB-2" in provider.prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_planner_still_returns_plan_with_issues_when_budget_is_exhausted():
+    """Rencana yang tetap tidak memenuhi aturan dikembalikan agar dosen dapat
+    melihat temuannya dan meminta regenerasi (BE-14.2), bukan gagal total."""
+
+    provider = StubProvider([json.dumps(OUTPUT_MISSING_SUB)] * 2)
+    collected, emit = await _events()
+    planner = LLMCoursePlanner(service=LLMService(provider), max_fix_attempts=1)
+
+    result = await planner.generate(REQUEST_TWO_SUBS, emit_event=emit)
+
+    assert result.attempts == 2
+    assert collected[-1]["event"] == "PLANNING_COMPLETED"
+
+
 @pytest.mark.asyncio
 async def test_planner_fails_after_retry_budget_is_exhausted():
     provider = StubProvider(["bukan json", "tetap bukan json"])

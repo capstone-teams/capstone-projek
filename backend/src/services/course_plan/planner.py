@@ -14,6 +14,13 @@ maupun penyimpanan. Adapter di sini sengaja minimal: satu prompt
 Mode regenerasi memakai konteks yang sama ditambah versi sebelumnya, catatan
 penolakan terakhir, dan instruksi dosen — sehingga agent memperbaiki rencana
 yang ada, bukan menyusun dari nol (issue BE-14.3).
+
+Retry tidak hanya untuk output yang salah schema: aturan akademik
+(:func:`~src.services.course_plan.validation.validate_plan`) ikut diperiksa di
+sini dan temuannya dikirim balik ke model, karena prompt sudah mewajibkan
+cakupan Sub-CPMK dan minggu RPS. Tanpa itu model hanya punya satu kesempatan
+memenuhi aturan yang tidak dapat ia periksa sendiri, sehingga rencana dapat
+tersimpan tidak dapat disetujui meskipun penyedia berhasil.
 """
 
 from __future__ import annotations
@@ -30,6 +37,7 @@ from pydantic import ValidationError
 from src.config.settings import get_settings
 from src.schemas.course_plan import CoursePlanOutput
 from src.services.course_plan.errors import CoursePlanGenerationError
+from src.services.course_plan.validation import validate_plan
 from src.services.llm import LLMService
 from src.services.llm.base import LLMInvalidOutputError, LLMProviderError
 from src.services.llm.structured_output import make_openai_strict_schema
@@ -233,6 +241,28 @@ class LLMCoursePlanner:
                     f"output tidak valid setelah {total} percobaan: {detail}"
                 ) from exc
 
+            # Aturan akademik (cakupan Sub-CPMK, minggu RPS, minggu ujian,
+            # aktivitas) tidak dapat diperiksa model sendiri. Beri kesempatan
+            # perbaikan selama jatah percobaan masih ada; pada percobaan
+            # terakhir rencana tetap dikembalikan agar dosen dapat melihat
+            # temuannya dan meminta regenerasi (BE-14.2).
+            issues = validate_plan(
+                output,
+                rps_structured=request.rps_structured,
+                activity_configuration=request.activity_configuration,
+            )["issues"]
+            if issues and attempt < total:
+                feedback = _issue_feedback(issues)
+                await _emit(
+                    emit_event,
+                    PlanningEvent.RETRY_FIX,
+                    "Rencana belum memenuhi aturan akademik; memperbaiki.",
+                    attempt=attempt,
+                    reason_code="VALIDATION_FAILED",
+                    details=feedback.splitlines(),
+                )
+                continue
+
             await _emit(
                 emit_event,
                 PlanningEvent.PLANNING_COMPLETED,
@@ -274,6 +304,17 @@ def _prompt_variables(request: PlanningRequest, feedback: str) -> dict[str, str]
         "instruction": request.instruction or "Tidak ada instruksi tambahan.",
         "validation_feedback": feedback,
     }
+
+
+def _issue_feedback(issues: list[dict]) -> str:
+    """Ringkas temuan validasi akademik menjadi umpan balik untuk model."""
+    lines = [
+        f"- {issue['code']}: {issue['message']}" for issue in issues[:MAX_FEEDBACK_ITEMS]
+    ]
+    extra = len(issues) - MAX_FEEDBACK_ITEMS
+    if extra > 0:
+        lines.append(f"... dan {extra} temuan lain")
+    return "Perbaiki rencana agar memenuhi aturan berikut:\n" + "\n".join(lines)
 
 
 def _validation_feedback(exc: Exception) -> str:
