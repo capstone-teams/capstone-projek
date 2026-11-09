@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 from sqlalchemy import select
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +56,52 @@ from src.services.content.domain import (
 
 __all__ = ["ContentRepository"]
 
+=======
+"""Akses data konten hasil generation (BE-19.1).
+
+Repository ini adalah satu-satunya tempat query tabel ``contents`` dan
+``activities`` untuk konten hasil generation, serta ``validation_results`` yang
+menempel padanya. Tabel dipilih dari :attr:`ContentKind.table`; domain tetap
+tidak tahu SQLAlchemy.
+
+Aturan versi:
+
+- versi pertama memakai kunci deterministik
+  :func:`~src.services.content.domain.content_key_for`;
+- regenerasi mengirim ``content_key`` versi lama dan mendapat nomor versi
+  berikutnya;
+- tidak ada baris versi lama yang diubah atau dihapus.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import datetime, timezone
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.models.activity import Activity as ActivityEntity
+from src.models.activity import ActivityStatus, ActivityType
+from src.models.content import Content as ContentEntity
+from src.models.content import ContentStatus, ContentType
+from src.models.validation_result import (
+    ValidationResult,
+    ValidationStatus,
+    ValidationTargetType,
+)
+from src.services.content.domain import (
+    ApprovalStatus,
+    ContentDraft,
+    ContentKind,
+    ContentRecord,
+    ValidationRecord,
+    content_key_for,
+)
+
+__all__ = ["ContentRepository"]
+
+>>>>>>> origin/develop
 _CONTENT_STATUSES = {status.value for status in ContentStatus}
 _ACTIVITY_STATUSES = {status.value for status in ActivityStatus}
 
@@ -136,6 +183,7 @@ class ContentRepository:
         if revision_notes is not None:
             entity.revision_notes = revision_notes
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     # ==========================================
     # CONTENT (tabel contents)
@@ -307,6 +355,73 @@ class ContentRepository:
 
         return activity
 =======
+=======
+        await self._session.commit()
+        await self._session.refresh(entity)
+        return await self._with_validation(self._to_record(entity))
+
+    async def add_validation(
+        self,
+        content: ContentRecord,
+        *,
+        status: ValidationStatus,
+        checks: dict | None = None,
+        errors: dict | None = None,
+        warnings: dict | None = None,
+        score: float | None = None,
+        retry_count: int = 0,
+        agent_run_id: str | None = None,
+        validated_at: datetime | None = None,
+    ) -> ValidationRecord:
+        """Simpan hasil validasi (termasuk temuan dan jumlah retry)."""
+        entity = ValidationResult(
+            agent_run_id=agent_run_id,
+            target_type=self._target_type(content),
+            target_id=content.id,
+            status=status,
+            checks=checks,
+            errors=errors,
+            warnings=warnings,
+            score=score,
+            retry_count=retry_count,
+            validated_at=validated_at or datetime.now(timezone.utc),
+        )
+        self._session.add(entity)
+        await self._session.commit()
+        await self._session.refresh(entity)
+        return _to_validation(entity)
+
+    # --- Baca -------------------------------------------------------------
+
+    async def get_by_id(self, content_id: str) -> ContentRecord | None:
+        """Satu versi berdasarkan identifier (tabel ditentukan saat lookup)."""
+        entity = await self._entity_by_id(content_id)
+        return None if entity is None else await self._with_validation(
+            self._to_record(entity)
+        )
+
+    async def get_latest(self, content_key: str) -> ContentRecord | None:
+        """Versi terbaru untuk satu kunci konten."""
+        entities = [
+            *(
+                await self._session.execute(
+                    select(ContentEntity).where(
+                        ContentEntity.content_key == content_key
+                    )
+                )
+            ).scalars(),
+            *(
+                await self._session.execute(
+                    select(ActivityEntity).where(
+                        ActivityEntity.content_key == content_key
+                    )
+                )
+            ).scalars(),
+        ]
+        if not entities:
+            return None
+
+>>>>>>> origin/develop
         latest = max(entities, key=lambda item: item.version)
         return await self._with_validation(self._to_record(latest))
 
@@ -574,4 +689,7 @@ def _to_validation(entity: ValidationResult) -> ValidationRecord:
         validated_at=entity.validated_at,
         created_at=entity.created_at,
     )
+<<<<<<< HEAD
 >>>>>>> develop
+=======
+>>>>>>> origin/develop
