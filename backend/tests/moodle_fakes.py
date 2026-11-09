@@ -18,6 +18,7 @@ ALL_FUNCTIONS = [
     "core_course_edit_section",
     "core_courseformat_update_course",
     "core_update_inplace_editable",
+    "local_capstonebridge_update_section",
     "mod_page_get_pages_by_courses",
 ]
 
@@ -212,6 +213,13 @@ class FakeMoodle:
                     if section["id"] == section_id:
                         section["name"] = params["value"]
             return {"itemid": section_id, "displayvalue": params["value"]}
+        if wsfunction == "local_capstonebridge_update_section":
+            course_id, section_id = int(params["courseid"]), int(params["sectionid"])
+            section = next((s for s in self.sections.get(course_id, []) if s["id"] == section_id), None)
+            if section is None:
+                return moodle_exception("invalidrecord", "Can't find data record in database table course_sections.")
+            section.update(name=params["name"], summary=params.get("summary", ""))
+            return {"sectionid": section_id, "section": section["section"], "name": params["name"], "updated": 1}
         if wsfunction == "mod_page_get_pages_by_courses":
             return {
                 "pages": [{"coursemodule": cmid, "content": content} for cmid, content in self.pages.items()],

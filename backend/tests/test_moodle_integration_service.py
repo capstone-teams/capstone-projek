@@ -173,7 +173,58 @@ def test_save_section_with_unknown_number_creates_a_new_section():
     result = run(with_service(fake, lambda service: service.save_section(2, "Minggu 9", 9)))
 
     assert result.created is True
-    assert len(fake.called("core_courseformat_update_course")) == 1
+    assert result.section.section_number == 9
+    assert len(fake.called("core_courseformat_update_course")) == 8
+
+
+def test_save_section_with_summary_updates_name_and_summary_through_the_plugin():
+    fake = FakeMoodle()
+
+    result = run(
+        with_service(fake, lambda service: service.save_section(2, "Minggu 1 - Pengantar", 1, summary="<p>Topik</p>"))
+    )
+
+    assert result.created is False
+    assert result.section.name == "Minggu 1 - Pengantar"
+    assert result.section.summary == "<p>Topik</p>"
+    assert fake.called("local_capstonebridge_update_section")[0] == {
+        "wstoken": TOKEN,
+        "wsfunction": "local_capstonebridge_update_section",
+        "moodlewsrestformat": "json",
+        "courseid": "2",
+        "sectionid": "202",
+        "name": "Minggu 1 - Pengantar",
+        "summary": "<p>Topik</p>",
+    }
+    assert fake.called("core_update_inplace_editable") == []
+
+
+def test_save_section_prefers_the_section_id_and_falls_back_to_the_number():
+    fake = FakeMoodle()
+    fake.sections[2].append({"id": 260, "section": 2, "name": "Lama", "summary": "", "visible": 1, "modules": []})
+
+    async def scenario(service):
+        by_id = await service.save_section(2, "Dipetakan", 1, summary="", section_id=260)
+        stale = await service.save_section(2, "Fallback", 1, summary="", section_id=999)
+        return by_id, stale
+
+    by_id, stale = run(with_service(fake, scenario))
+
+    assert (by_id.section.moodle_section_id, by_id.section.section_number, by_id.created) == (260, 2, False)
+    assert (stale.section.moodle_section_id, stale.section.name, stale.created) == (202, "Fallback", False)
+    assert fake.called("core_courseformat_update_course") == []
+
+
+def test_save_section_fills_the_gap_so_the_number_matches_the_week():
+    fake = FakeMoodle()
+
+    result = run(with_service(fake, lambda service: service.save_section(2, "Minggu 4", 4, summary="")))
+
+    numbers = [(section["section"], section["name"]) for section in fake.sections[2]]
+    assert result.created is True
+    assert result.section.section_number == 4
+    assert numbers == [(0, "General"), (1, "Minggu 1"), (2, ""), (3, ""), (4, "Minggu 4")]
+    assert len(fake.called("core_courseformat_update_course")) == 3
 
 
 def test_save_section_on_unknown_course_raises_not_found():

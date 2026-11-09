@@ -10,6 +10,8 @@ Generated Content (Proposal §3.4.6):
 - ``GET  /workflows/{workflow_id}/contents`` — daftar konten + filter
 - ``GET  /workflows/{workflow_id}/contents/{content_id}`` — detail satu versi
 - ``GET  …/contents/{content_id}/versions`` — riwayat versi
+- ``POST …/contents/generate`` — hasilkan konten seluruh/beberapa minggu
+- ``POST …/contents/regenerate`` — regenerasi scope COURSE/MINGGU/ITEM
 - ``POST …/contents/approve`` — setujui konten
 - ``POST …/contents/reject`` — tolak dengan catatan revisi
 
@@ -23,8 +25,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query
 
+from src.schemas.content_generation import (
+    ContentGenerateRequest,
+    ContentGenerationResponse,
+    ContentRegenerateRequest,
+)
 from src.schemas.content_review import (
     CONTENT_DETAIL_EXAMPLES,
     ContentApproveRequest,
@@ -44,7 +51,17 @@ from src.services.content import (
     ContentRecord,
     ContentReviewService,
 )
-from src.services.dependencies import get_content_service, require_roles
+from src.services.content.generation import (
+    ContentGenerationService,
+    ContentJob,
+)
+from src.services.dependencies import (
+    ContentGenerationRunner,
+    get_content_generation_runner,
+    get_content_generation_service,
+    get_content_service,
+    require_roles,
+)
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.validation import ID_LENGTH, SHORTUUID_PATTERN
@@ -276,4 +293,105 @@ async def reject_contents(
         workflow_id=workflow_id,
         decision="REJECTED",
         items=[_to_summary(record) for record in records],
+    )
+
+
+# --- Generate / regenerate (BE-19.3) ----------------------------------------
+
+GENERATION_MESSAGE = (
+    "Generation konten dijadwalkan; pantau status workflow dan event untuk hasilnya."
+)
+REGENERATION_MESSAGE = (
+    "Regenerasi konten dijadwalkan; pantau status workflow dan event untuk hasilnya."
+)
+
+
+@router.post(
+    "/workflows/{workflow_id}/contents/generate",
+    response_model=ContentGenerationResponse,
+    status_code=202,
+)
+async def generate_contents(
+    workflow_id: WorkflowIdPath,
+    background: BackgroundTasks,
+    payload: ContentGenerateRequest | None = None,
+    current_user: User = Depends(instructor_only),
+    service: ContentGenerationService = Depends(get_content_generation_service),
+    runner: ContentGenerationRunner = Depends(get_content_generation_runner),
+) -> ContentGenerationResponse:
+    """Mulai generation konten untuk seluruh minggu atau minggu terpilih.
+
+    Hanya untuk workflow yang course plan terbarunya ``APPROVED``. Jenis konten
+    mengikuti snapshot Activity Configuration versi rencana tersebut. Response
+    ``202`` berarti pekerjaan sudah dijadwalkan; dua permintaan bersamaan tidak
+    dapat memulai dua run karena workflow diklaim secara atomik.
+    """
+    request = payload or ContentGenerateRequest()
+    week_numbers = (
+        None if request.weeks == "all" else tuple(request.weeks)
+    )
+    workflow = await service.start(
+        workflow_id=workflow_id,
+        owner_id=current_user.id,
+        job=ContentJob(week_numbers=week_numbers),
+    )
+    background.add_task(
+        runner,
+        workflow_id=workflow.id or "",
+        owner_id=current_user.id,
+        week_numbers=week_numbers,
+    )
+    return ContentGenerationResponse(
+        workflow_id=workflow.id or "",
+        status=workflow.status.value,
+        message=GENERATION_MESSAGE,
+    )
+
+
+@router.post(
+    "/workflows/{workflow_id}/contents/regenerate",
+    response_model=ContentGenerationResponse,
+    status_code=202,
+)
+async def regenerate_contents(
+    workflow_id: WorkflowIdPath,
+    background: BackgroundTasks,
+    payload: ContentRegenerateRequest,
+    current_user: User = Depends(instructor_only),
+    service: ContentGenerationService = Depends(get_content_generation_service),
+    runner: ContentGenerationRunner = Depends(get_content_generation_runner),
+) -> ContentGenerationResponse:
+    """Regenerasi konten dengan scope ``COURSE``, ``MINGGU``, atau ``ITEM``.
+
+    Catatan revisi wajib diisi dan ikut dikirim ke prompt regenerasi. Versi lama
+    tidak diubah: hasilnya disimpan sebagai versi baru pada ``content_key`` yang
+    sama, dan hanya target pada scope yang disentuh.
+    """
+    week_numbers = (
+        (payload.week_number,) if payload.week_number is not None else None
+    )
+    workflow = await service.start(
+        workflow_id=workflow_id,
+        owner_id=current_user.id,
+        job=ContentJob(
+            week_numbers=week_numbers,
+            content_id=payload.content_id,
+            scope=payload.scope,
+            notes=payload.notes,
+        ),
+    )
+    background.add_task(
+        runner,
+        workflow_id=workflow.id or "",
+        owner_id=current_user.id,
+        week_numbers=week_numbers,
+        content_id=payload.content_id,
+        scope=payload.scope.value,
+        notes=payload.notes,
+    )
+    return ContentGenerationResponse(
+        workflow_id=workflow.id or "",
+        status=workflow.status.value,
+        scope=payload.scope,
+        message=REGENERATION_MESSAGE,
     )

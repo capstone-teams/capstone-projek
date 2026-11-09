@@ -59,4 +59,11 @@ $functions = [
         'ajax' => false,
         'capabilities' => 'moodle/course:manageactivities,mod/quiz:manage,moodle/question:add',
     ],
+        'local_capstonebridge_update_section' => [
+        'classname' => 'local_capstonebridge\external\update_section',
+        'description' => 'Updates the name and summary of a course section.',
+        'type' => 'write',
+        'ajax' => false,
+        'capabilities' => 'moodle/course:update',
+    ],
 ];

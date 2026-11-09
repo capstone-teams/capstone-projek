@@ -83,13 +83,20 @@ class FakeMoodle:
         self.connected = connected
         self.fail_weeks: set[int] = set()
         self.sections: dict[int, str] = {}
+        self.summaries: dict[int, str] = {}
         self.saved: list[tuple[int, bool]] = []
 
     async def get_status(self):
         return _FakeStatus(connected=self.connected)
 
     async def save_section(
-        self, moodle_course_id: int, name: str, section_number: int | None = None
+        self,
+        moodle_course_id: int,
+        name: str,
+        section_number: int | None = None,
+        *,
+        summary: str | None = None,
+        section_id: int | None = None,
     ) -> SectionWriteResult:
         number = section_number or 0
         if number in self.fail_weeks:
@@ -100,6 +107,7 @@ class FakeMoodle:
             )
         created = number not in self.sections
         self.sections[number] = name
+        self.summaries[number] = summary or ""
         self.saved.append((number, created))
         return SectionWriteResult(
             section=MoodleSection(

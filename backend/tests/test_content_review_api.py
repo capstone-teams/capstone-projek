@@ -430,3 +430,89 @@ async def test_openapi_examples_validate_for_every_content_kind(app):
     response = paths["/api/v1/workflows/{workflow_id}/contents/{content_id}"]["get"]
     examples = response["responses"]["200"]["content"]["application/json"]["examples"]
     assert set(examples) == set(CONTENT_DETAIL_EXAMPLES)
+
+
+# --- Generate / regenerate (BE-19.3) ----------------------------------------
+
+
+class _RecordingRunner:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def __call__(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+
+
+@pytest.mark.asyncio
+async def test_generate_requires_approved_plan_and_claims_workflow(
+    db_session, app, client, headers, workspace
+):
+    from src.services.dependencies import get_content_generation_runner
+
+    workflow, plan, _weeks = workspace
+    runner = _RecordingRunner()
+    app.dependency_overrides[get_content_generation_runner] = lambda: runner
+    url = f"{CONTENTS_URL.format(workflow_id=workflow.id)}/generate"
+
+    not_approved = await client.post(url, headers=headers, json={"weeks": [1]})
+    assert not_approved.status_code == 409
+    assert not_approved.json()["error"]["message"] == (
+        "Generate konten hanya dapat dijalankan setelah course plan disetujui."
+    )
+
+    plan.status = CoursePlanStatus.APPROVED
+    await db_session.flush()
+    await WorkflowService.from_session(
+        db_session, broker=WorkflowEventBroker()
+    ).wait_for_review(workflow)
+
+    started = await client.post(url, headers=headers, json={"weeks": [1]})
+    assert started.status_code == 202
+    assert started.json()["status"] == "GENERATING_CONTENT"
+    assert runner.calls[0]["week_numbers"] == (1,)
+
+    twice = await client.post(url, headers=headers, json={"weeks": "all"})
+    assert twice.status_code == 409
+    assert "sedang berjalan" in twice.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_regenerate_scope_and_revision_notes_are_validated(
+    db_session, app, client, headers, workspace
+):
+    from src.services.dependencies import get_content_generation_runner
+
+    workflow, plan, _weeks = workspace
+    plan.status = CoursePlanStatus.APPROVED
+    await db_session.flush()
+    await WorkflowService.from_session(
+        db_session, broker=WorkflowEventBroker()
+    ).wait_for_review(workflow)
+    runner = _RecordingRunner()
+    app.dependency_overrides[get_content_generation_runner] = lambda: runner
+    url = f"{CONTENTS_URL.format(workflow_id=workflow.id)}/regenerate"
+
+    missing_notes = await client.post(
+        url,
+        headers=headers,
+        json={"scope": "MINGGU", "week_number": 1, "notes": "  "},
+    )
+    assert missing_notes.status_code == 422
+
+    missing_item = await client.post(
+        url,
+        headers=headers,
+        json={"scope": "ITEM", "notes": "Perjelas contoh."},
+    )
+    assert missing_item.status_code == 422
+
+    started = await client.post(
+        url,
+        headers=headers,
+        json={"scope": "MINGGU", "week_number": 1, "notes": "Perjelas contoh."},
+    )
+    assert started.status_code == 202
+    assert started.json()["scope"] == "MINGGU"
+    assert runner.calls[0]["scope"] == "MINGGU"
+    assert runner.calls[0]["week_numbers"] == (1,)
+    assert runner.calls[0]["notes"] == "Perjelas contoh."
