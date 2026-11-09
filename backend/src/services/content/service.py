@@ -27,7 +27,7 @@ from src.services.content.errors import (
     ContentStateError,
     ContentValidationError,
 )
-from src.services.content.repository import ContentGenerationRepository
+from src.services.content.repository import ContentRepository
 from src.services.course_plan.service import MAX_REVISION_NOTES_LENGTH
 from src.services.workflow.domain import WorkflowRecord, stage_name
 from src.services.workflow.service import WorkflowService

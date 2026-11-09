@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = [
     "ContentDomainError",
+    "ContentGenerationFailedError",
     "ContentNotFoundError",
     "ContentStateError",
     "ContentValidationError",
@@ -50,6 +51,17 @@ class ContentValidationError(ContentDomainError):
         self.field = field
         self.message = message
         super().__init__(f"{field}: {message}")
+
+
+class ContentGenerationFailedError(ContentDomainError):
+    """Seluruh konten pada satu run gagal dihasilkan setelah batas retry."""
+
+    error_code = "LLM_GENERATION_FAILED"
+    status_code = 500
+    public_message = "Konten gagal dihasilkan. Coba generate ulang."
+
+    def __init__(self, log_message: str) -> None:
+        super().__init__(log_message)
 
 
 class ContentStateError(ContentDomainError):
