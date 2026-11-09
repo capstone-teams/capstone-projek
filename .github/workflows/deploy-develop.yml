@@ -38,6 +38,15 @@ jobs:
           git merge --ff-only origin/develop
           git log -1 --oneline
 
+      - name: Bersihkan image lama
+        run: |
+          set -euo pipefail
+          # Tiap --build meninggalkan image lama tanpa tag. Tanpa ini disk
+          # runner penuh dan deploy berikutnya gagal dengan "No space left on
+          # device" (disk 468G pernah terisi 100% oleh 442G image dung).
+          docker image prune -f
+          docker builder prune -af
+
       - name: Bangun ulang dan jalankan container
         run: |
           set -euo pipefail
