@@ -257,12 +257,12 @@ export default function CoursePlanPage() {
       {shown?.validation && <CoursePlanValidation validation={shown.validation} />}
       {latest.status === PLAN_STATUS.APPROVED && !viewingOld && (
         <Alert tone="success" title="Rencana course telah disetujui">
-          Lanjutkan dengan konten mingguan berdasarkan rencana ini.
-          {course?.id && (
-            <>
-              {' '}<Link to="../content" relative="path" className="font-semibold underline">Buka tab konten</Link>
-            </>
-          )}
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+            <span>Rencana pembelajaran 16 minggu sudah disetujui. Terapkan struktur section ke Moodle di tab Publikasi.</span>
+            <Link to="../publish" relative="path" className="btn btn--primary btn--xs">
+              Publikasikan Struktur ke Moodle →
+            </Link>
+          </div>
         </Alert>
       )}
       {shown?.revision_notes && <Alert tone="warning" title="Catatan revisi">{shown.revision_notes}</Alert>}

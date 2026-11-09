@@ -30,7 +30,7 @@ export function ErrorAlert({ error, onClose }) {
   // Kode teknis (mis. NETWORK_ERROR, RESOURCE_NOT_FOUND) tidak berguna bagi pengguna; cukup pesannya.
   return (
     <Alert tone="danger" onClose={onClose}>
-      {error.message}
+      {typeof error === 'string' ? error : (error?.message || String(error))}
     </Alert>
   );
 }
