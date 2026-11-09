@@ -125,7 +125,7 @@ function CoursePlanningAction({ analyzed, workflowId, planPath, planning }) {
 
 /** Hasil analisis RPS. */
 export default function CourseRpsPage() {
-  const { course, events = [], refresh, workflowId: projectWorkflowId } = useCourse();
+  const { course, events = [], refresh, workflowId: projectWorkflowId, selectRps } = useCourse();
   // ?rps=<id> dari daftar RPS membuka RPS itu; RPS yang baru diunggah dari halaman ini didahulukan.
   const [params] = useSearchParams();
   const [activeRpsId, setActiveRpsId] = useState(null);
@@ -179,7 +179,11 @@ export default function CourseRpsPage() {
         <div className="mt-3">
           <RpsUploadForm
             onUploaded={async ({ rps: newRps }) => {
-              if (newRps?.id) setActiveRpsId(newRps.id);
+              if (newRps?.id) {
+                setActiveRpsId(newRps.id);
+                // Tanpa project kursus, RPS yang diunggah di sini menjadi RPS kursus ini.
+                selectRps?.(newRps.id);
+              }
               refresh?.();
             }}
           />
@@ -229,6 +233,7 @@ export default function CourseRpsPage() {
           onChanged={async (newRps) => {
             if (newRps?.id) {
               setActiveRpsId(newRps.id);
+              selectRps?.(newRps.id);
               refresh?.();
             } else {
               rpsQuery.reload({ silent: true });

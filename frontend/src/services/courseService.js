@@ -1,5 +1,6 @@
 import { api, idempotencyHeader } from './apiClient';
 import { normalizeCoursePlan } from './coursePlanAdapter';
+import { isMoodleCourseId } from '../utils/courseId';
 
 export function listCourses() {
   return api.get('/courses');
@@ -13,8 +14,9 @@ export async function findCourseByMoodleId(moodleCourseId) {
   const res = await api.get('/courses', { query: { moodle_course_id: moodleCourseId } }).catch(() => null);
   const list = res?.items ?? res?.courses ?? [];
   const found = list.find((c) => String(c.moodle_course_id) === String(moodleCourseId) || String(c.id) === String(moodleCourseId));
-  const targetId = found?.id ?? moodleCourseId;
-  const detail = await api.get(`/courses/${targetId}`).catch(() => null);
+  // ID Moodle (angka) tanpa project terkait: /courses/{id} hanya menerima ID backend, jadi tidak perlu dipanggil.
+  if (!found && isMoodleCourseId(moodleCourseId)) return null;
+  const detail = await api.get(`/courses/${found?.id ?? moodleCourseId}`).catch(() => null);
   return detail ?? found ?? null;
 }
 

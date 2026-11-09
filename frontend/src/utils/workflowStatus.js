@@ -43,9 +43,9 @@ export const WORKFLOW_STATUS_META = {
   [WORKFLOW_STATUS.ANALYZING_RPS]: { label: 'Menganalisis RPS', tone: 'info', marker: 'running', description: 'Agent sedang menganalisis isi RPS.' },
   [WORKFLOW_STATUS.PLANNING_COURSE]: { label: 'Menyusun rencana', tone: 'info', marker: 'running', description: 'Agent sedang menyusun rencana mingguan.' },
   [WORKFLOW_STATUS.GENERATING_CONTENT]: { label: 'Membuat konten', tone: 'info', marker: 'running', description: 'Agent sedang membuat konten pembelajaran.' },
-  [WORKFLOW_STATUS.VALIDATING]: { label: 'Validasi konten', tone: 'info', marker: 'running', description: 'Konten sedang diperiksa.' },
-  [WORKFLOW_STATUS.WAITING_FOR_REVIEW]: { label: 'Menunggu review Anda', tone: 'warning', marker: 'review', description: 'Perlu tindakan Anda: periksa lalu setujui atau tolak.' },
-  [WORKFLOW_STATUS.EXECUTING_TO_MOODLE]: { label: 'Mengirim ke kursus', tone: 'info', marker: 'running', description: 'Konten sedang dikirim ke kursus.' },
+  [WORKFLOW_STATUS.VALIDATING]: { label: 'Validasi', tone: 'info', marker: 'running', description: 'Hasil agent sedang divalidasi.' },
+  [WORKFLOW_STATUS.WAITING_FOR_REVIEW]: { label: 'Menunggu review Anda', tone: 'warning', marker: 'review', description: 'Perlu tindakan Anda sebelum workflow berlanjut.' },
+  [WORKFLOW_STATUS.EXECUTING_TO_MOODLE]: { label: 'Eksekusi ke Moodle', tone: 'info', marker: 'running', description: 'Struktur kursus sedang dibuat di Moodle.' },
   [WORKFLOW_STATUS.VERIFYING]: { label: 'Verifikasi', tone: 'info', marker: 'running', description: 'Hasil pengiriman sedang diperiksa.' },
   [WORKFLOW_STATUS.RETRYING]: { label: 'Mencoba ulang', tone: 'warning', marker: 'retry', description: 'Tahap gagal sebagian dan sedang diperbaiki otomatis.' },
   [WORKFLOW_STATUS.COMPLETED]: { label: 'Selesai', tone: 'success', marker: 'done', description: 'Seluruh tahap selesai.' },
@@ -77,16 +77,18 @@ const STATUS_BY_STAGE = {
   [WORKFLOW_STAGE.RETRYING]: WORKFLOW_STATUS.RETRYING,
 };
 
-/** Urutan tahap workflow penuh (design-api §20). Tahap yang belum dijalankan backend tampil sebagai menunggu. */
+/**
+ * Urutan tahap workflow yang tersedia hingga M03 (DL-012): pemrosesan dan analisis RPS, course planning beserta
+ * validasinya, review dosen, lalu eksekusi struktur ke Moodle. Tahap yang belum dijalankan backend tampil sebagai
+ * menunggu. Tahap M04 (pembuatan konten, verifikasi) ikut tampil begitu backend menerbitkan event-nya.
+ */
 export const WORKFLOW_PIPELINE = [
   WORKFLOW_STAGE.RPS_PROCESSING,
   WORKFLOW_STAGE.RPS_ANALYSIS,
   WORKFLOW_STAGE.COURSE_PLANNING,
-  WORKFLOW_STAGE.CONTENT_GENERATION,
   WORKFLOW_STAGE.VALIDATION,
   WORKFLOW_STAGE.INSTRUCTOR_REVIEW,
   WORKFLOW_STAGE.MOODLE_EXECUTION,
-  WORKFLOW_STAGE.VERIFICATION,
 ];
 
 /** Nilai WorkflowStatus rinci dari response API: lifecycle terminal/antre dipakai apa adanya, RUNNING dibaca dari stage. */
@@ -136,8 +138,12 @@ export const WORKFLOW_EVENT = {
   RETRY: 'WORKFLOW_RETRY',
   // Rangkaian tahap selesai dan workflow menunggu keputusan dosen (DL-012), mis. setelah course plan tersusun.
   WAITING_FOR_REVIEW: 'WORKFLOW_WAITING_FOR_REVIEW',
-  // Course plan versi baru tersimpan (BE-14.3).
+  // Course plan versi baru tersimpan (BE-14.3), lalu keputusan dosen atasnya (BE-14.2).
   PLAN_GENERATED: 'WORKFLOW_PLAN_GENERATED',
+  PLAN_APPROVED: 'WORKFLOW_PLAN_APPROVED',
+  PLAN_REJECTED: 'WORKFLOW_PLAN_REJECTED',
+  // Satu operasi eksekusi ke Moodle (BE-17.1), mis. satu section mingguan.
+  MOODLE_OPERATION: 'WORKFLOW_MOODLE_OPERATION',
   COMPLETED: 'WORKFLOW_COMPLETED',
   FAILED: 'WORKFLOW_FAILED',
 };
@@ -150,6 +156,9 @@ export const WORKFLOW_EVENT_LABELS = {
   [WORKFLOW_EVENT.RETRY]: 'Mencoba ulang',
   [WORKFLOW_EVENT.WAITING_FOR_REVIEW]: 'Menunggu review dosen',
   [WORKFLOW_EVENT.PLAN_GENERATED]: 'Rencana tersimpan',
+  [WORKFLOW_EVENT.PLAN_APPROVED]: 'Rencana disetujui',
+  [WORKFLOW_EVENT.PLAN_REJECTED]: 'Rencana ditolak',
+  [WORKFLOW_EVENT.MOODLE_OPERATION]: 'Operasi Moodle',
   [WORKFLOW_EVENT.COMPLETED]: 'Workflow selesai',
   [WORKFLOW_EVENT.FAILED]: 'Workflow gagal',
 };
@@ -163,6 +172,8 @@ export function eventTypeOf(event) {
       return EVENT_TYPE.ERROR_FAILURE;
     case WORKFLOW_EVENT.PLAN_GENERATED:
       return EVENT_TYPE.AKTIVITAS_AGENT;
+    case WORKFLOW_EVENT.MOODLE_OPERATION:
+      return EVENT_TYPE.OPERASI_MOODLE;
     case WORKFLOW_EVENT.STAGE_PROGRESS:
       return [WORKFLOW_STAGE.MOODLE_EXECUTION, WORKFLOW_STAGE.VERIFICATION].includes(event.stage) ? EVENT_TYPE.OPERASI_MOODLE : EVENT_TYPE.AKTIVITAS_AGENT;
     default:
@@ -216,6 +227,7 @@ export function applyWorkflowEvent(workflow, event) {
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
     case WORKFLOW_EVENT.STAGE_STARTED:
     case WORKFLOW_EVENT.STAGE_PROGRESS:
+    case WORKFLOW_EVENT.MOODLE_OPERATION:
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: event.stage ?? workflow.stage };
     case WORKFLOW_EVENT.STAGE_COMPLETED:
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
@@ -225,6 +237,10 @@ export function applyWorkflowEvent(workflow, event) {
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: WORKFLOW_STAGE.INSTRUCTOR_REVIEW };
     case WORKFLOW_EVENT.PLAN_GENERATED:
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
+    // Keputusan dosen tidak mengubah tahap; updated_at baru membuat halaman yang memantau memuat ulang datanya.
+    case WORKFLOW_EVENT.PLAN_APPROVED:
+    case WORKFLOW_EVENT.PLAN_REJECTED:
+      return next;
     case WORKFLOW_EVENT.COMPLETED:
       return { ...next, status: WORKFLOW_API_STATUS.COMPLETED, stage: null };
     case WORKFLOW_EVENT.FAILED:
@@ -262,9 +278,9 @@ export const STAGE_LABELS = {
   [WORKFLOW_STAGE.RPS_ANALYSIS]: 'Analisis RPS',
   [WORKFLOW_STAGE.COURSE_PLANNING]: 'Penyusunan rencana',
   [WORKFLOW_STAGE.CONTENT_GENERATION]: 'Pembuatan konten',
-  [WORKFLOW_STAGE.VALIDATION]: 'Validasi konten',
+  [WORKFLOW_STAGE.VALIDATION]: 'Validasi rencana',
   [WORKFLOW_STAGE.INSTRUCTOR_REVIEW]: 'Review dosen',
-  [WORKFLOW_STAGE.MOODLE_EXECUTION]: 'Pengiriman ke kursus',
+  [WORKFLOW_STAGE.MOODLE_EXECUTION]: 'Eksekusi ke Moodle',
   [WORKFLOW_STAGE.VERIFICATION]: 'Verifikasi',
   [WORKFLOW_STAGE.RETRYING]: 'Percobaan ulang',
 };
@@ -290,7 +306,7 @@ export const STAGE_STATE_LABELS = {
 
 /**
  * Keadaan setiap tahap pipeline, dari workflow (GET /workflows/{id}) dan riwayat event-nya:
- * - selesai: tahap yang punya event WORKFLOW_STAGE_COMPLETED;
+ * - selesai: tahap yang punya event WORKFLOW_STAGE_COMPLETED (review dosen: pernah ada WORKFLOW_WAITING_FOR_REVIEW);
  * - berjalan, menunggu review, atau mencoba ulang: dari `stage` workflow;
  * - gagal: tahap pada event WORKFLOW_FAILED (atau tahap terakhir yang dimulai tetapi belum selesai);
  * - menunggu: sisanya, termasuk tahap yang belum dijalankan backend.
@@ -299,6 +315,8 @@ export function deriveStages(workflow, events = []) {
   const stages = new Set(WORKFLOW_PIPELINE);
   events.forEach((event) => event.stage && stages.add(event.stage));
   const completed = new Set(events.filter((event) => event.event === WORKFLOW_EVENT.STAGE_COMPLETED).map((event) => event.stage));
+  // Review dosen tidak punya event selesai: review yang pernah ditunggu dan kini tidak lagi aktif dianggap selesai.
+  if (events.some((event) => event.event === WORKFLOW_EVENT.WAITING_FOR_REVIEW)) completed.add(WORKFLOW_STAGE.INSTRUCTOR_REVIEW);
   const lastRetry = [...events].reverse().find((event) => event.event === WORKFLOW_EVENT.RETRY);
   const failedEvent = [...events].reverse().find((event) => event.event === WORKFLOW_EVENT.FAILED);
   const lastStarted = [...events].reverse().find((event) => event.event === WORKFLOW_EVENT.STAGE_STARTED);
@@ -349,4 +367,44 @@ export function coursePlanFailureOf(workflow, events = []) {
   if (workflow?.status !== WORKFLOW_API_STATUS.FAILED) return null;
   const failed = lastEvent(events, WORKFLOW_EVENT.FAILED);
   return failed && COURSE_PLAN_STAGES.includes(failed.stage) ? failed : null;
+}
+
+// ---- Tindakan yang ditunggu saat WAITING_FOR_REVIEW (DL-012)
+
+/** Tindakan dosen yang ditunggu workflow; dibedakan dari event terakhir karena statusnya sama-sama WAITING_FOR_REVIEW. */
+export const AWAITED_ACTION = {
+  START_PLANNING: 'START_PLANNING',
+  REVIEW_PLAN: 'REVIEW_PLAN',
+  REVISE_PLAN: 'REVISE_PLAN',
+  EXECUTE_STRUCTURE: 'EXECUTE_STRUCTURE',
+  GENERATE_CONTENT: 'GENERATE_CONTENT',
+};
+
+/** title/description untuk pengguna; page: tab Generator AI tujuan tautan cepat. */
+export const AWAITED_ACTION_META = {
+  [AWAITED_ACTION.START_PLANNING]: { title: 'Mulai course planning', description: 'Analisis RPS selesai. Mulai penyusunan course plan dari hasil analisis.', page: 'plan', linkLabel: 'Buka halaman Rencana' },
+  [AWAITED_ACTION.REVIEW_PLAN]: { title: 'Review course plan', description: 'Course plan selesai disusun. Periksa, lalu setujui atau tolak dengan catatan revisi.', page: 'plan', linkLabel: 'Buka Plan Review' },
+  [AWAITED_ACTION.REVISE_PLAN]: { title: 'Regenerasi course plan', description: 'Course plan ditolak. Susun ulang rencana berdasarkan catatan revisi.', page: 'plan', linkLabel: 'Buka Plan Review' },
+  [AWAITED_ACTION.EXECUTE_STRUCTURE]: { title: 'Eksekusi struktur', description: 'Course plan disetujui. Buat struktur mingguan di kursus Moodle target.', page: 'publish', linkLabel: 'Buka halaman eksekusi' },
+  [AWAITED_ACTION.GENERATE_CONTENT]: { title: 'Generate konten', description: 'Struktur kursus sudah dibuat di Moodle. Lanjutkan dengan generate konten mingguan.', page: 'content', linkLabel: 'Buka halaman Konten' },
+};
+
+const completedStage = (event, stages) => event.event === WORKFLOW_EVENT.STAGE_COMPLETED && stages.includes(event.stage);
+
+/**
+ * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap M03:
+ * eksekusi selesai -> generate konten; rencana disetujui -> eksekusi struktur; rencana ditolak -> regenerasi;
+ * rencana tersusun -> review course plan; analisis RPS selesai -> mulai course planning. null bila workflow tidak
+ * sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
+ */
+export function awaitedActionOf(workflow, events = []) {
+  if (!needsInstructorAction(workflow)) return null;
+  for (const event of [...events].reverse()) {
+    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION || completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return AWAITED_ACTION.GENERATE_CONTENT;
+    if (event.event === WORKFLOW_EVENT.PLAN_APPROVED) return AWAITED_ACTION.EXECUTE_STRUCTURE;
+    if (event.event === WORKFLOW_EVENT.PLAN_REJECTED) return AWAITED_ACTION.REVISE_PLAN;
+    if (event.event === WORKFLOW_EVENT.PLAN_GENERATED || completedStage(event, COURSE_PLAN_STAGES)) return AWAITED_ACTION.REVIEW_PLAN;
+    if (completedStage(event, [WORKFLOW_STAGE.RPS_ANALYSIS])) return AWAITED_ACTION.START_PLANNING;
+  }
+  return null;
 }

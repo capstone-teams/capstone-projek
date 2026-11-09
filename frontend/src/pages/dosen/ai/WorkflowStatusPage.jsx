@@ -63,7 +63,14 @@ export default function WorkflowStatusPage() {
           ))}
         </ul>
       </Card>
-      <WorkflowDetail key={selectedId} workflowId={selectedId} rpsName={rpsName(items.find((workflow) => workflow.id === selectedId))} onChanged={() => reload({ silent: true })} />
+      {/* Halaman ini berada di /course/{id}/ai/workflows: ".." menuju tab Generator AI lain (Rencana, Publikasi). */}
+      <WorkflowDetail
+        key={selectedId}
+        workflowId={selectedId}
+        rpsName={rpsName(items.find((workflow) => workflow.id === selectedId))}
+        onChanged={() => reload({ silent: true })}
+        linkBase=".."
+      />
     </div>
   );
 }

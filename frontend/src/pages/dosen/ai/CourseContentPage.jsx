@@ -5,12 +5,27 @@ import { useApi } from '../../../hooks/useApi';
 import { Badge, Card, EmptyState, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import ContentGeneratePanel from '../../../components/ai/course/ContentGeneratePanel';
 import WeekContentDetail from '../../../components/ai/course/WeekContentDetail';
+import PendingFeatureNote from '../../../components/ai/PendingFeatureNote';
 
 const CAN_GENERATE = ['PLAN_APPROVED', 'WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 const CAN_REGENERATE = ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 const BEFORE_PLAN_APPROVED = ['CREATED', 'PLANNING', 'WAITING_PLAN_REVIEW'];
 
+/** Konten mingguan project kursus; kursus tanpa project belum dapat membuat konten (endpoint generate belum ada). */
 export default function CourseContentPage() {
+  const { course } = useCourse();
+  if (!course.id) {
+    return (
+      <Card title="Konten mingguan">
+        <p>Konten mingguan disusun dari course plan yang sudah disetujui.</p>
+        <PendingFeatureNote>Generate konten mingguan belum tersedia.</PendingFeatureNote>
+      </Card>
+    );
+  }
+  return <ProjectContent />;
+}
+
+function ProjectContent() {
   const { course, version, refresh } = useCourse();
   const [params, setParams] = useSearchParams();
   const content = useApi(() => getContent(course.id), [course.id, version]);

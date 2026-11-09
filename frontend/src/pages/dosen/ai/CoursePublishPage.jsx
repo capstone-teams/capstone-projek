@@ -13,7 +13,7 @@ export default function CoursePublishPage() {
     <div className="stack">
       {/* Struktur mingguan dapat disiapkan di kursus target begitu rencana disetujui, sebelum konten dikirim. */}
       <MoodleSectionsCard />
-      {BEFORE_APPROVAL.includes(course.status) ? (
+      {!course.id ? null : BEFORE_APPROVAL.includes(course.status) ? (
         <Card>
           <EmptyState title="Konten belum disetujui.">
             Eksekusi ke Moodle hanya dapat dilakukan setelah seluruh konten direview dan disetujui.

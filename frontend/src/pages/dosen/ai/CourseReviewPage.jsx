@@ -12,7 +12,21 @@ import PendingFeatureNote from '../../../components/ai/PendingFeatureNote';
 const SEVERITY_TONES = { high: 'danger', medium: 'warning', low: 'neutral' };
 const REVIEWABLE = ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 
+/** Review konten project kursus; kursus tanpa project belum punya konten untuk direview. */
 export default function CourseReviewPage() {
+  const { course } = useCourse();
+  if (!course.id) {
+    return (
+      <Card title="Review konten">
+        <p>Konten yang sudah dibuat agent direview di sini sebelum dikirim ke Moodle.</p>
+        <PendingFeatureNote>Review konten belum tersedia.</PendingFeatureNote>
+      </Card>
+    );
+  }
+  return <ProjectReview />;
+}
+
+function ProjectReview() {
   const { course, version, refresh } = useCourse();
   const review = useApi(() => getReview(course.id), [course.id, version]);
   const validate = useAction(() => validateContent(course.id));

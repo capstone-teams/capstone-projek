@@ -7,6 +7,7 @@ import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import EventLog from '../../../components/ai/EventLog';
 import ActivityConfigForm from '../../../components/ai/course/ActivityConfigForm';
+import WorkflowCourseOverview from '../../../components/ai/course/WorkflowCourseOverview';
 import { RUN_TYPE_LABELS, isBusy } from '../../../utils/workflow';
 import { formatDateTime } from '../../../utils/format';
 
@@ -23,7 +24,13 @@ const NEXT_STEP = {
   COMPLETED: { text: 'Course selesai dibuat dan terverifikasi di Moodle.', to: 'publish', cta: 'Lihat hasil' },
 };
 
+/** Ringkasan Generator AI: project kursus (/courses), atau ringkasan berbasis workflow bila kursus tanpa project. */
 export default function CourseOverviewPage() {
+  const { course } = useCourse();
+  return course.id ? <ProjectOverview /> : <WorkflowCourseOverview />;
+}
+
+function ProjectOverview() {
   const { course, workflow, workflowId, events, version, refresh } = useCourse();
   // GET /courses/{id}/agent-runs belum ada di backend; riwayat run hanya dimuat bila tersedia.
   const runs = useApi(() => (COURSE_ACTIONS_AVAILABLE ? getAgentRuns(course.id) : null), [course.id, version]);

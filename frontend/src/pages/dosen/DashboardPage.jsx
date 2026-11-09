@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
 import { getActionEvents, getRecentCourses, getCoursesByClassification } from '../../services/moodle/moodleApi';
-import { getMoodleCourses } from '../../services/moodleIntegrationService';
 import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Card, EmptyState, ErrorAlert, Spinner } from '../../components/ui';
 import ActivityIcon from '../../components/moodle/ActivityIcon';
@@ -68,18 +67,9 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen';
   const recent = useApi(() => getRecentCourses(user?.id, 4).catch(() => []), [user?.id]);
-  const coursesQuery = useApi(async () => {
-    // 1. Coba ambil kursus via Backend API Gateway (Single Gateway)
-    const gateway = await getMoodleCourses().catch(() => null);
-    if (gateway?.courses?.length) return gateway.courses;
-
-    // 2. Fallback direct WS hanya jika tersedia (mis. mode mock di pengujian)
-    try {
-      return await getCoursesByClassification('inprogress');
-    } catch {
-      return gateway?.courses ?? [];
-    }
-  });
+  // Kursus berjalan: lewat Backend Gateway bila tidak ada sesi Moodle di browser (lihat getCoursesByClassification).
+  // Galatnya ditampilkan agar gangguan layanan tidak terbaca sebagai "belum terdaftar di kursus mana pun".
+  const coursesQuery = useApi(() => getCoursesByClassification('inprogress'));
   const teacherIds = new Set(user?.teacherCourseIds ?? []);
 
   const coursesList = coursesQuery.data ?? [];
@@ -106,9 +96,12 @@ export default function DashboardPage() {
             }
           >
             <ErrorAlert error={recent.error || coursesQuery.error} />
+            {coursesQuery.error && !courses.length && (
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => coursesQuery.reload()}>Coba lagi</button>
+            )}
             {(recent.loading || coursesQuery.loading) && !courses.length ? (
               <Spinner />
-            ) : courses.length ? (
+            ) : coursesQuery.error && !courses.length ? null : courses.length ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 {courses.map((c) => (
                   <CourseCard key={c.id} course={c} isTeacher={isTeacherCourse(c.id)} />
@@ -134,7 +127,9 @@ export default function DashboardPage() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-muted">{user.isAdmin ? 'Anda admin situs.' : 'Belum ada.'}</p>
+                  <p className="text-sm text-muted">
+                    {coursesQuery.error ? 'Daftar kursus belum dapat dimuat.' : user.isAdmin ? 'Anda admin situs.' : 'Belum ada.'}
+                  </p>
                 )}
               </Card>
             </>

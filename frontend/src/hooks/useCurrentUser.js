@@ -7,13 +7,15 @@ export function useCurrentUser() {
   const { user, site } = useAuth();
   return useMemo(() => {
     const teacherIds = new Set(user?.teacherCourseIds ?? []);
+    const isDosen = user?.role === ROLE.DOSEN;
     return {
       user,
       site,
       role: user?.role ?? null,
-      isDosen: user?.role === ROLE.DOSEN,
+      isDosen,
       isMahasiswa: user?.role === ROLE.MAHASISWA,
-      isTeacherOf: (courseId) => teacherIds.has(Number(courseId)),
+      // Tanpa data kursus ajar dari Moodle (Backend Gateway), dosen dianggap pengajar kursus yang dapat ia buka.
+      isTeacherOf: (courseId) => (user?.teacherCourseIds ? teacherIds.has(Number(courseId)) : isDosen),
     };
   }, [user, site]);
 }

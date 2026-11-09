@@ -44,10 +44,13 @@ export default function MoodleCourseLayout() {
   </PageContainer>;
 
   const { course, sections } = data;
+  // Pengajar kursus: dari daftar kursus ajar sesi Moodle bila ada. Lewat Backend Gateway (tanpa sesi Moodle di
+  // browser) data pendaftaran itu tidak tersedia, sehingga dosen (role backend) diperlakukan sebagai pengajar
+  // kursus yang dapat ia buka, termasuk kursus Moodle dari /integrations/moodle/courses.
   const isTeacher =
     user?.isAdmin ||
     user?.teacherCourseIds?.includes(courseId) ||
-    (isDosen && (String(course?.instructor_id) === String(user?.id) || typeof courseId === 'string'));
+    (isDosen && (String(course?.instructor_id) === String(user?.id) || typeof courseId === 'string' || !user?.teacherCourseIds));
   const canEdit = user?.isAdmin || data.canEdit;
   const base = '/course/' + courseId;
   const editMode = canEdit && pathname === base;
