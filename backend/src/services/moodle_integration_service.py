@@ -363,6 +363,24 @@ class MoodleIntegrationService:
             ),
         )
 
+    async def set_section_visibility(
+        self,
+        moodle_course_id: int,
+        moodle_section_ids: Sequence[int],
+        visible: bool,
+    ) -> None:
+        """Tampilkan atau sembunyikan section course bagi mahasiswa."""
+        if not moodle_section_ids:
+            return
+        await self._client.call(
+            UPDATE_COURSE_FORMAT_FUNCTION,
+            {
+                "action": "section_show" if visible else "section_hide",
+                "courseid": moodle_course_id,
+                "ids": list(moodle_section_ids),
+            },
+        )
+
     # --- User dan enrolment (BE-04.5) ----------------------------------------
 
     async def get_user_by_username(self, username: str) -> MoodleUser | None:
