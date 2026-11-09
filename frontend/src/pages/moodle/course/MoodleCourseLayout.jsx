@@ -18,7 +18,7 @@ export default function MoodleCourseLayout() {
   const { pathname } = useLocation();
   // Lanjutan breadcrumb dari halaman di dalam kursus (aktivitas, New <aktivitas>, edit submission).
   const [trail, setTrail] = useState([]);
-  const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen';
+  const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen' || user?.role === 'INSTRUCTOR';
 
   const { data, error, loading, reload } = useApi(
     () => Promise.all([
@@ -46,9 +46,10 @@ export default function MoodleCourseLayout() {
   const { course, sections } = data;
   const isTeacher =
     user?.isAdmin ||
+    isDosen ||
     user?.teacherCourseIds?.includes(courseId) ||
     (isDosen && (String(course?.instructor_id) === String(user?.id) || typeof courseId === 'string'));
-  const canEdit = user?.isAdmin || data.canEdit;
+  const canEdit = user?.isAdmin || isDosen || data.canEdit;
   const base = '/course/' + courseId;
   const editMode = canEdit && pathname === base;
   const tabs = [{ to: base, label: 'Kursus', end: true }, { to: base + '/participants', label: 'Peserta' }, { to: base + '/grades', label: 'Nilai' }];

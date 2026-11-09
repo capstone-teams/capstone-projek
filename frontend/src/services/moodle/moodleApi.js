@@ -8,11 +8,19 @@
 import { api } from '../apiClient';
 import { MoodleError, callWs, uploadDraftFiles } from './moodleClient';
 
-// Helper untuk mengambil daftar kursus dari Backend Gateway (/api/v1/courses atau /api/v1/integrations/moodle/courses)
+// Helper untuk mengambil daftar kursus dari Backend Gateway (/api/v1/integrations/moodle/courses atau fallback /api/v1/courses)
 async function fetchGatewayCourses() {
-  const res = (await api.get('/courses').catch(() => null))
-    ?? (await api.get('/integrations/moodle/courses').catch(() => null));
-  return res?.items ?? res?.courses ?? [];
+  const moodleRes = await api.get('/integrations/moodle/courses').catch(() => null);
+  if (moodleRes?.courses?.length) {
+    return moodleRes.courses.map((c) => ({
+      ...c,
+      id: c.moodle_course_id ?? c.id,
+      summary: c.summary ?? '',
+      category: c.category ?? null,
+    }));
+  }
+  const legacyRes = await api.get('/courses').catch(() => null);
+  return legacyRes?.items ?? legacyRes?.courses ?? [];
 }
 
 // Situs & user
@@ -64,6 +72,17 @@ export async function getCourse(courseId) {
     const res = await callWs('core_course_get_courses_by_field', { field: 'id', value: courseId });
     return res.courses[0] ?? null;
   } catch (err) {
+    const isNumeric = Number.isInteger(Number(courseId)) && Number(courseId) > 0;
+    if (isNumeric) {
+      const moodleCourse = await api.get(`/integrations/moodle/courses/${courseId}`).catch(() => null);
+      if (moodleCourse) {
+        return {
+          ...moodleCourse,
+          id: moodleCourse.moodle_course_id ?? moodleCourse.id,
+          summary: moodleCourse.summary || moodleCourse.description || '',
+        };
+      }
+    }
     const byId = await api.get(`/courses/${courseId}`).catch(() => null);
     if (byId) {
       return {
@@ -72,7 +91,7 @@ export async function getCourse(courseId) {
       };
     }
     const courses = await fetchGatewayCourses();
-    const found = courses.find((c) => String(c.id) === String(courseId) || String(c.moodle_course_id) === String(courseId));
+    const found = courses.find((c) => String(c.id) === String(courseId) || String(c.moodle_course_id) === String(courseId) || String(c.shortname).toLowerCase() === String(courseId).toLowerCase());
     if (found) {
       return {
         ...found,
@@ -100,6 +119,30 @@ export async function getCourseContents(courseId) {
   try {
     return await callWs('core_course_get_contents', { courseid: courseId });
   } catch {
+    const isNumeric = Number.isInteger(Number(courseId)) && Number(courseId) > 0;
+    if (isNumeric) {
+      const moodleContents = await api.get(`/integrations/moodle/courses/${courseId}/contents`).catch(() => null);
+      if (moodleContents?.sections?.length) {
+        return moodleContents.sections.map((s) => ({
+          id: s.moodle_section_id,
+          section: s.section_number,
+          name: s.name,
+          summary: s.summary ?? '',
+          summaryformat: 1,
+          visible: s.visible ? 1 : 0,
+          uservisible: true,
+          modules: (s.modules ?? []).map((m) => ({
+            id: m.moodle_module_id,
+            name: m.name,
+            modname: m.modname,
+            visible: m.visible ? 1 : 0,
+            uservisible: true,
+            description: m.description,
+            content: m.content,
+          })),
+        }));
+      }
+    }
     // Single Gateway: tanpa token Moodle di browser, isi kursus diambil dari Backend Gateway. Konten mingguan
     // (GET /courses/{id}/content) memberi aktivitas, rencana (GET /courses/{id}/plan) memberi Sub-CPMK dan
     // bahan kajian; keduanya digabung per pertemuan.
