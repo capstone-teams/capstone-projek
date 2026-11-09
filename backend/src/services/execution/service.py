@@ -11,9 +11,12 @@ Alur satu run:
    Moodle terjangkau, tidak ada proses lain pada workflow yang sama);
 2. satu :class:`~src.models.execution_operation.ExecutionOperation` ``SECTION``
    per minggu dibuat berstatus ``PENDING``;
-3. setiap operasi menjalankan ``save_section`` (nama ``Minggu N - judul``)
-   dengan nomor section minggu, sehingga eksekusi kedua memperbarui section yang
-   sama alih-alih menambah section baru;
+3. setiap operasi menjalankan ``save_section`` (nama ``Minggu N - judul``,
+   ringkasan berisi tujuan pembelajaran, topik, dan Sub-CPMK; minggu UTS/UAS
+   diberi penanda). Section yang sudah tercatat pada tabel mapping BE-04.3
+   diperbarui berdasarkan ID-nya; selain itu dicari berdasarkan nomor minggu,
+   sehingga eksekusi kedua memperbarui section yang sama alih-alih menambah
+   section baru;
 4. kegagalan satu operasi tidak menghentikan operasi minggu lain; status
    eksekusi ``FAILED`` bila ada operasi gagal;
 5. struktur course dibaca ulang dari Moodle dan ringkasannya disimpan pada
@@ -26,7 +29,9 @@ mentah dan credential tidak pernah disimpan pada eksekusi maupun event.
 
 from __future__ import annotations
 
+import html
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
@@ -62,7 +67,7 @@ from src.services.moodle_mapping_sql import SqlMoodleMappingRepository
 from src.services.workflow.domain import WorkflowRecord
 from src.services.workflow.service import WorkflowService
 
-__all__ = ["EVENT_MOODLE_OPERATION", "ExecutionService", "section_name"]
+__all__ = ["EVENT_MOODLE_OPERATION", "ExecutionService", "section_name", "section_summary"]
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +83,56 @@ MOODLE_FAILURES = (MoodleError, MoodleIntegrationError)
 EmitEvent = Callable[..., Awaitable[None]]
 
 
+#: Penanda minggu ujian pada nama section (``week_type`` course plan).
+EXAM_MARKERS = {"uts": "UTS", "uas": "UAS"}
+EXAM_LABELS = {
+    "uts": "Ujian Tengah Semester (UTS)",
+    "uas": "Ujian Akhir Semester (UAS)",
+}
+
+#: Batas panjang nama section Moodle (kolom ``course_sections.name``).
+SECTION_NAME_MAX_LENGTH = 255
+
+
 def section_name(week: CoursePlanWeekRecord) -> str:
-    """Nama section Moodle untuk satu minggu, mis. ``Minggu 3 - Relasi Tabel``."""
-    return f"Minggu {week.week_number} - {week.title}"
+    """Nama section Moodle untuk satu minggu, mis. ``Minggu 3 - Relasi Tabel``.
+
+    Minggu UTS/UAS diberi akhiran ``(UTS)``/``(UAS)`` bila judulnya belum
+    memuat penanda tersebut. Judul yang terlalu panjang dipotong tanpa
+    menghilangkan penanda.
+    """
+    prefix = f"Minggu {week.week_number} - "
+    title = " ".join(week.title.split())
+    marker = EXAM_MARKERS.get(week.week_type)
+    suffix = ""
+    if marker and not re.search(rf"\b{marker}\b", title, flags=re.IGNORECASE):
+        suffix = f" ({marker})"
+    room = SECTION_NAME_MAX_LENGTH - len(prefix) - len(suffix)
+    if len(title) > room:
+        title = title[: room - 1].rstrip() + "…"
+    return f"{prefix}{title}{suffix}"
+
+
+def section_summary(week: CoursePlanWeekRecord) -> str:
+    """Ringkasan HTML section: penanda ujian, tujuan, topik, dan Sub-CPMK minggu."""
+    parts: list[str] = []
+    label = EXAM_LABELS.get(week.week_type)
+    if label:
+        parts.append(f"<p><strong>{label}</strong></p>")
+    for heading, items in (
+        ("Tujuan Pembelajaran", week.objectives),
+        ("Topik", week.topics),
+    ):
+        cleaned = [item.strip() for item in items if item and item.strip()]
+        if cleaned:
+            listed = "".join(f"<li>{html.escape(item)}</li>" for item in cleaned)
+            parts.append(f"<p><strong>{heading}</strong></p><ul>{listed}</ul>")
+    codes = [code.strip() for code in week.learning_outcomes if code and code.strip()]
+    if codes:
+        parts.append(
+            f"<p><strong>Sub-CPMK:</strong> {html.escape(', '.join(codes))}</p>"
+        )
+    return "".join(parts)
 
 
 class ExecutionService:
@@ -157,6 +209,7 @@ class ExecutionService:
         execution = await self._repository.get_for_workflow(
             workflow.id or "", execution_id
         )
+
         if execution is None:
             raise ExecutionNotFoundError(execution_id)
         if execution.status is not ExecutionStatus.FAILED:
@@ -178,6 +231,7 @@ class ExecutionService:
                 EXECUTION_IN_PROGRESS,
                 log_message=f"workflow {workflow.id} sedang menjalankan proses lain",
             )
+
         await self._repository.reset_for_retry(execution.id or "")
         return await self._repository.get(execution.id or "") or execution
 
@@ -283,7 +337,9 @@ class ExecutionService:
 
     # --- Prasyarat --------------------------------------------------------
 
-    async def _require_prerequisites(self, workflow: WorkflowRecord) -> CoursePlanRecord:
+    async def _require_prerequisites(
+        self, workflow: WorkflowRecord
+    ) -> CoursePlanRecord:
         plan = await self._plans.get_latest(workflow.id or "")
         if plan is None or plan.status is not CoursePlanStatus.APPROVED:
             raise ExecutionPreconditionError(
@@ -330,10 +386,13 @@ class ExecutionService:
             "operation_type": operation.operation_type.value,
         }
         try:
+            mapped_section_id = await self._mapped_section_id(week)
             result = await self._moodle.save_section(
                 execution.moodle_course_id,
                 name=section_name(week),
                 section_number=week.week_number,
+                summary=section_summary(week),
+                section_id=mapped_section_id,
             )
             moodle_section_id = result.section.moodle_section_id
             await self._repository.finish_operation(
@@ -390,6 +449,14 @@ class ExecutionService:
 
         await self._emit(emit_event, message=message, metadata=metadata)
 
+    async def _mapped_section_id(
+        self, week: CoursePlanWeekRecord
+    ) -> int | None:
+        """ID section Moodle yang sudah tercatat untuk minggu ini (BE-04.3)."""
+        if week.id is None:
+            return None
+        return await self._mappings.get_moodle_id(SECTION_ENTITY_TYPE, week.id)
+
     async def _save_mapping(
         self, week: CoursePlanWeekRecord, moodle_section_id: int
     ) -> None:
@@ -405,17 +472,27 @@ class ExecutionService:
                 )
             )
         except DuplicateMappingError as exc:
-            logger.warning("pemetaan section minggu %s tidak disimpan: %s", week.id, exc)
+            logger.warning(
+                "pemetaan section minggu %s tidak disimpan: %s",
+                week.id,
+                exc,
+            )
 
     async def _emit(
-        self, emit_event: EmitEvent | None, *, message: str, metadata: dict
+        self,
+        emit_event: EmitEvent | None,
+        *,
+        message: str,
+        metadata: dict,
     ) -> None:
         """Terbitkan event operasi; kegagalan event tidak menggagalkan eksekusi."""
         if emit_event is None:
             return
         try:
             await emit_event(
-                event=EVENT_MOODLE_OPERATION, message=message, metadata=metadata
+                event=EVENT_MOODLE_OPERATION,
+                message=message,
+                metadata=metadata,
             )
         except Exception:
             logger.exception("gagal menerbitkan event operasi Moodle")
@@ -423,10 +500,15 @@ class ExecutionService:
     # --- Read-back --------------------------------------------------------
 
     async def _read_back(
-        self, execution: ExecutionRecord, plan: CoursePlanRecord
+        self,
+        execution: ExecutionRecord,
+        plan: CoursePlanRecord,
     ) -> dict:
         """Bandingkan struktur course Moodle dengan course plan yang dieksekusi."""
-        expected = {week.week_number: section_name(week) for week in plan.weeks}
+        expected = {
+            week.week_number: section_name(week)
+            for week in plan.weeks
+        }
         try:
             contents = await self._moodle.get_course_contents(
                 execution.moodle_course_id
@@ -440,12 +522,17 @@ class ExecutionService:
             }
 
         actual = {
-            section.section_number: section.name for section in contents.sections
+            section.section_number: section.name
+            for section in contents.sections
         }
         # Section 0 adalah "General" bawaan Moodle, bukan bagian course plan.
         ordered_numbers = sorted(number for number in actual if number > 0)
         expected_numbers = sorted(expected)
-        missing = [number for number in expected_numbers if number not in actual]
+        missing = [
+            number
+            for number in expected_numbers
+            if number not in actual
+        ]
         mismatched = [
             number
             for number in expected_numbers
@@ -464,7 +551,8 @@ class ExecutionService:
 
 
 def _planned_sections(
-    workflow: WorkflowRecord, plan: CoursePlanRecord
+    workflow: WorkflowRecord,
+    plan: CoursePlanRecord,
 ) -> list[PlannedOperation]:
     """Satu operasi ``SECTION`` per minggu, dengan kunci idempotency stabil."""
     return [

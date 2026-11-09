@@ -107,6 +107,7 @@ Moodle Integration Layer bertanggung jawab menerjemahkan application operation m
 | `mod_quiz_get_quizzes_by_courses`    | `mod/quiz:view`                                                                            |
 | `local_capstonebridge_create_page`   | `moodle/course:manageactivities`, `mod/page:addinstance`                                   |
 | `local_capstonebridge_create_assign` | `moodle/course:manageactivities`, `mod/assign:addinstance`                                 |
+| `local_capstonebridge_update_section` | `moodle/course:update` (BE-16.2)                                                          |
 
 Tanda "—" berarti Moodle tidak menampilkan capability pada halaman *Functions*. Pemeriksaan capability tetap dilakukan di dalam function tersebut.
 
@@ -147,6 +148,7 @@ Status Confirmed berlaku untuk Moodle 4.5. Seluruh status perlu diverifikasi ula
 | Section            | Create section                 | Otomatis saat activity ditambahkan ke nomor section   | Moodle membuat section yang belum ada ketika activity ditambahkan ke section tersebut | Confirmed |
 | Section            | Create section (eksplisit)     | `core_courseformat_update_course` (`section_add`)     | Belum terdaftar pada service                                                      | TBD       |
 | Section            | Rename section                 | `core_update_inplace_editable`                        | Belum terdaftar pada service                                                      | TBD       |
+| Section            | Update section name & summary  | `local_capstonebridge_update_section`                 | Berhasil pada Moodle 4.5.15+ dan 5.2.4+ melalui live test eksekusi struktur (BE-16.2) | Confirmed |
 | Section            | Change section visibility      | `core_course_edit_section`                            | Terdaftar, belum diuji                                                            | Candidate |
 | Learning material  | Create learning material (Page) | `local_capstonebridge_create_page`                   | Berhasil; idempotent melalui `idnumber`                                           | Confirmed |
 | Learning material  | Read learning material (Page)  | `mod_page_get_pages_by_courses`                       | Belum terdaftar pada service                                                      | TBD       |

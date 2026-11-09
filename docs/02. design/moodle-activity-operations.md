@@ -45,7 +45,7 @@ Ketiga service ada di `backend/src/services/`.
 
 ### 3.1 Section dan minggu
 
-Nomor minggu dipakai langsung sebagai nomor section Moodle. Bila section belum ada, Moodle membuatnya dengan nama bawaan. Penamaan section (`Minggu N - judul`) adalah tugas eksekusi struktur (BE-17). Saat disambungkan, nomor section yang dipakai BE-12 harus sama dengan nomor section yang dibuat BE-17.
+Nomor minggu dipakai langsung sebagai nomor section Moodle. Bila section belum ada, Moodle membuatnya dengan nama bawaan. Penamaan section adalah tugas eksekusi struktur (BE-16.2, dijalankan tahap eksekusi BE-17): nama `Minggu N - judul` (minggu UTS/UAS diberi akhiran `(UTS)`/`(UAS)`), ringkasan berisi tujuan pembelajaran, topik, dan kode Sub-CPMK, disimpan lewat `local_capstonebridge_update_section`. Bila minggu sebelumnya belum punya section, section kosong di antaranya ikut dibuat sehingga nomor section selalu sama dengan nomor minggu. Nomor section yang dipakai BE-12 karena itu sama dengan nomor section hasil eksekusi struktur.
 
 ### 3.2 Idempotency
 
