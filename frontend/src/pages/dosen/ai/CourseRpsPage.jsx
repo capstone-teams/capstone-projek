@@ -15,6 +15,7 @@ import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsStatus';
 import { formatDateTime } from '../../../utils/format';
 import { WORKFLOW_EVENT } from '../../../utils/workflowStatus';
+import { moodleCourseIdOf, setWorkflowMoodleTarget } from '../../../services/workflowService';
 
 // Course planning (FE-05) baru tersedia di backend pada M03; di mode mock sudah dapat dicoba.
 const COURSE_PLANNING_AVAILABLE = COURSE_API_AVAILABLE;
@@ -25,7 +26,7 @@ const RPS_REFRESH_DEBOUNCE_MS = 300;
  * RPS yang belum ANALYZED: GET /rps/{id}/analysis menjawab 422, jadi tampilkan statusnya dan aksi
  * lanjutan (analisis lewat POST /rps/{id}/reanalyze, atau konversi ulang lewat POST /rps/{id}/process).
  */
-function RpsNotAnalyzed({ rps, events = [], onChanged }) {
+function RpsNotAnalyzed({ rps, events = [], onChanged, moodleCourseId }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
@@ -82,9 +83,21 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
         <div className="mt-4 border-t pt-4">
           <h3 className="mb-2 text-sm font-medium">Unggah berkas RPS baru:</h3>
           <RpsUploadForm
-            onUploaded={async ({ rps: newRps, error: uploadErr }) => {
+            onUploaded={async ({ rps: newRps, processing, error: uploadErr }) => {
               if (!uploadErr && newRps) {
                 setShowUpload(false);
+                if (moodleCourseId) {
+                  try {
+                    sessionStorage.setItem(`agentic-lms.course-rps.${moodleCourseId}`, newRps.id);
+                    const wfId = processing?.workflow_id || newRps.workflow_id;
+                    if (wfId) {
+                      sessionStorage.setItem(`agentic-lms.course-workflow.${moodleCourseId}`, wfId);
+                      await setWorkflowMoodleTarget(wfId, moodleCourseId);
+                    }
+                  } catch {
+                    // ignore
+                  }
+                }
                 await onChanged(newRps);
               }
             }}
@@ -97,11 +110,13 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
 
 /** Hasil analisis RPS. */
 export default function CourseRpsPage() {
-  const { course, events = [], refresh } = useCourse();
+  const { course, moodleCourse, events = [], refresh, initialRpsId } = useCourse();
+  const moodleId = moodleCourseIdOf(course) || moodleCourseIdOf(moodleCourse);
+
   // ?rps=<id> dari daftar RPS membuka RPS itu; RPS yang baru diunggah dari halaman ini didahulukan.
   const [params] = useSearchParams();
   const [activeRpsId, setActiveRpsId] = useState(null);
-  const rpsId = activeRpsId || params.get('rps') || course.rps_id;
+  const rpsId = activeRpsId || params.get('rps') || course?.rps_id;
   // Status dulu (GET /rps/{id}); hasil analisis hanya diminta bila sudah ANALYZED.
   const rpsQuery = useApi(() => (rpsId ? getRps(rpsId) : null), [rpsId]);
   const rps = rpsQuery.data;
@@ -119,8 +134,8 @@ export default function CourseRpsPage() {
   usePolling(() => rpsQuery.reload({ silent: true }), POLL_MS, !!rps && isRpsInProgress(rps));
   const effectiveEvents = monitor.events.length > 0 ? monitor.events : events;
   // Workflow RPS dari GET /rps/{id}; project /courses di backend tidak memuat workflow_id.
-  const workflowId = rps?.workflow_id ?? (COURSE_API_AVAILABLE ? course.workflow_id : course.id);
-  const hasProject = !!course.id;
+  const workflowId = rps?.workflow_id ?? (COURSE_API_AVAILABLE ? course?.workflow_id : course?.id);
+  const hasProject = Boolean(course?.id);
 
   // ?bagian=hasil (dari tombol "Hasil analisis" di tab Kursus): gulir ke hasil analisis setelah tampil.
   const jumpToResult = params.get('bagian') === 'hasil' && !!analysis;
@@ -145,9 +160,23 @@ export default function CourseRpsPage() {
         <p className="text-muted text-sm">Kursus ini belum memiliki dokumen RPS yang diunggah.</p>
         <div className="mt-3">
           <RpsUploadForm
-            onUploaded={async ({ rps: newRps }) => {
-              if (newRps?.id) setActiveRpsId(newRps.id);
-              refresh?.();
+            onUploaded={async ({ rps: newRps, processing }) => {
+              if (newRps?.id) {
+                setActiveRpsId(newRps.id);
+                if (moodleId) {
+                  try {
+                    sessionStorage.setItem(`agentic-lms.course-rps.${moodleId}`, newRps.id);
+                    const wfId = processing?.workflow_id || newRps.workflow_id;
+                    if (wfId) {
+                      sessionStorage.setItem(`agentic-lms.course-workflow.${moodleId}`, wfId);
+                      await setWorkflowMoodleTarget(wfId, moodleId);
+                    }
+                  } catch {
+                    // ignore
+                  }
+                }
+              }
+              await refresh?.();
             }}
           />
         </div>
@@ -164,13 +193,32 @@ export default function CourseRpsPage() {
             <span className="wrap-anywhere">{rps.filename}</span>
             <RpsStatusBadge status={rps.status} />
             {analysis?.analyzedAt && <span>Dianalisis {formatDateTime(analysis.analyzedAt)}</span>}
-            {activeRpsId && activeRpsId !== course?.rps_id && (
+            {initialRpsId && initialRpsId !== rpsId && (
               <button
                 type="button"
                 className="btn btn--ghost btn--xs"
-                onClick={() => setActiveRpsId(null)}
+                onClick={() => {
+                  if (moodleId) {
+                    sessionStorage.removeItem(`agentic-lms.course-rps.${moodleId}`);
+                    sessionStorage.removeItem(`agentic-lms.course-workflow.${moodleId}`);
+                  }
+                  setActiveRpsId(initialRpsId);
+                  refresh?.();
+                }}
               >
-                Kembali ke RPS awal kursus
+                Lihat RPS awal kursus
+              </button>
+            )}
+            {activeRpsId && activeRpsId === initialRpsId && course?.rps_id !== initialRpsId && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--xs"
+                onClick={() => {
+                  setActiveRpsId(null);
+                  refresh?.();
+                }}
+              >
+                Kembali ke RPS aktif
               </button>
             )}
           </p>
@@ -206,10 +254,11 @@ export default function CourseRpsPage() {
         <RpsNotAnalyzed
           rps={rps}
           events={effectiveEvents}
+          moodleCourseId={moodleId}
           onChanged={async (newRps) => {
             if (newRps?.id) {
               setActiveRpsId(newRps.id);
-              refresh?.();
+              await refresh?.();
             } else {
               rpsQuery.reload({ silent: true });
             }

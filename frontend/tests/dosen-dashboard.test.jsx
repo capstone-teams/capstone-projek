@@ -60,7 +60,7 @@ describe('FE-11.1 Dashboard Dosen', () => {
     }
   }
 
-  it('menampilkan salam, quick actions, dan card ringkasan terpadu', async () => {
+  it('menampilkan salam dan card ringkasan terpadu', async () => {
     await renderDashboard();
     await waitFor(() => container.textContent.includes('Halo,'), 'Salam dosen');
 
@@ -69,24 +69,16 @@ describe('FE-11.1 Dashboard Dosen', () => {
     expect(container.textContent).toContain('Kursus yang Anda ajar');
     expect(container.textContent).toContain('RPS & Dokumen Akademik');
 
-    // Quick Actions di header
+    // Tombol unggah cepat di header kartu RPS
     const buttons = [...container.querySelectorAll('button')];
-    const uploadBtn = buttons.find((b) => b.textContent.includes('Unggah RPS'));
+    const uploadBtn = buttons.find((b) => b.textContent.includes('Unggah'));
     expect(uploadBtn).toBeTruthy();
 
-    const links = [...container.querySelectorAll('a')];
-    const targetLink = links.find((a) => a.textContent.includes('Target Kursus'));
-    expect(targetLink).toBeTruthy();
-    expect(targetLink.getAttribute('href')).toMatch(/\/course\/\d+\/ai\/target/);
-
-    const prefLink = links.find((a) => a.textContent.includes('Preferensi AI'));
-    expect(prefLink).toBeTruthy();
-    expect(prefLink.getAttribute('href')).toBe('/user/profile');
-
     // Tautan monitoring teknis di header card RPS
+    const links = [...container.querySelectorAll('a')];
     const monitorLink = links.find((a) => a.textContent.includes('Monitoring ↗'));
     expect(monitorLink).toBeTruthy();
-    expect(monitorLink.getAttribute('href')).toMatch(/\/course\/\d+\/ai\/workflows/);
+    expect(monitorLink.getAttribute('href')).toMatch(/\/course\/[^/]+\/ai\/workflows/);
   });
 
   it('menampilkan daftar RPS dosen dengan nama file dan badge status', async () => {
@@ -152,8 +144,8 @@ describe('FE-11.1 Dashboard Dosen', () => {
       'Item dokumen review',
     );
 
-    // Notice ringkas & tombol aksi kontekstual
-    expect(container.textContent).toContain('Ada dokumen yang menunggu review Anda');
+    // Badge status review & tautan aksi kontekstual yang bersih
+    expect(container.textContent).toContain('Menunggu review Anda');
     const links = [...container.querySelectorAll('a')];
     const reviewBtn = links.find((a) => a.textContent.includes('Review Sekarang →'));
     expect(reviewBtn).toBeTruthy();
@@ -198,12 +190,12 @@ describe('FE-11.1 Dashboard Dosen', () => {
     expect(pantauBtn).toBeFalsy();
   });
 
-  it('dapat membuka dan menutup modal unggah RPS dari tombol header', async () => {
+  it('dapat membuka dan menutup modal unggah RPS dari tombol pada card dokumen', async () => {
     await renderDashboard();
     await waitFor(() => container.textContent.includes('Halo,'), 'Salam dosen');
 
     const uploadBtn = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent.includes('Unggah RPS'),
+      b.textContent.includes('Unggah'),
     );
     expect(uploadBtn).toBeTruthy();
 
@@ -223,5 +215,104 @@ describe('FE-11.1 Dashboard Dosen', () => {
     });
 
     expect(container.querySelector('dialog')).toBeNull();
+  });
+
+  it('hanya menampilkan RPS aktif per kursus dan menyembunyikan RPS lama yang sudah digantikan (Opsi 1)', async () => {
+    vi.spyOn(rpsService, 'listRps').mockResolvedValue({
+      items: [
+        {
+          id: 'rps-baru-1',
+          filename: 'RPS-Basis-Data-2026-Baru.pdf',
+          status: 'ANALYZED',
+          created_at: '2026-11-08T12:00:00Z',
+          workflow_id: 'wf-baru-1',
+        },
+        {
+          id: 'rps-lama-1',
+          filename: 'RPS-Basis-Data-2022-Lama.pdf',
+          status: 'FAILED',
+          created_at: '2026-11-01T10:00:00Z',
+          workflow_id: 'wf-lama-1',
+        },
+      ],
+    });
+    vi.spyOn(workflowService, 'listWorkflows').mockResolvedValue([
+      {
+        id: 'wf-baru-1',
+        status: 'RUNNING',
+        stage: 'instructor_review',
+        moodle_course_id: 2,
+        updated_at: '2026-11-08T12:00:00Z',
+      },
+      {
+        id: 'wf-lama-1',
+        status: 'FAILED',
+        stage: 'rps_analysis',
+        moodle_course_id: 2,
+        updated_at: '2026-11-01T10:00:00Z',
+      },
+    ]);
+
+    await renderDashboard();
+    await waitFor(
+      () => container.textContent.includes('RPS-Basis-Data-2026-Baru.pdf'),
+      'RPS baru tampil',
+    );
+
+    // RPS aktif terbaru ditampilkan
+    expect(container.textContent).toContain('RPS-Basis-Data-2026-Baru.pdf');
+    // RPS lama yang sudah digantikan untuk kursus yang sama disembunyikan
+    expect(container.textContent).not.toContain('RPS-Basis-Data-2022-Lama.pdf');
+  });
+
+  it('tetap menampilkan RPS aktif yang baru dianalisis meskipun workflow summary backend tidak memuat moodle_course_id', async () => {
+    sessionStorage.clear();
+    vi.spyOn(rpsService, 'listRps').mockResolvedValue({
+      items: [
+        {
+          id: 'rps-sbd-1',
+          filename: 'RPS SBD Genap 2223.pdf',
+          status: 'ANALYZED',
+          created_at: '2026-11-08T13:55:00Z',
+          workflow_id: 'wf-sbd-1',
+        },
+        {
+          id: 'rps-fail-old-1',
+          filename: 'RPS Fisika Dasar 1 2020-2025.pdf',
+          status: 'FAILED',
+          created_at: '2026-11-04T23:50:00Z',
+        },
+        {
+          id: 'rps-fail-old-2',
+          filename: 'Contoh RPS.pdf',
+          status: 'FAILED',
+          created_at: '2026-11-02T17:23:00Z',
+        },
+      ],
+    });
+    // Sesuai kontrak backend GET /workflows (WorkflowSummary), moodle_course_id tidak dikirim di ringkasan
+    vi.spyOn(workflowService, 'listWorkflows').mockResolvedValue([
+      {
+        id: 'wf-sbd-1',
+        status: 'RUNNING',
+        stage: 'instructor_review',
+        rps_id: 'rps-sbd-1',
+        updated_at: '2026-11-08T13:55:00Z',
+      },
+    ]);
+
+    await renderDashboard();
+    await waitFor(
+      () => container.textContent.includes('RPS SBD Genap 2223.pdf'),
+      'RPS aktif SBD tampil di kartu dasbor',
+    );
+
+    // Dokumen aktif SBD harus tampil
+    expect(container.textContent).toContain('RPS SBD Genap 2223.pdf');
+    // Dokumen lama yang gagal disembunyikan (Opsi 1)
+    expect(container.textContent).not.toContain('RPS Fisika Dasar 1 2020-2025.pdf');
+    expect(container.textContent).not.toContain('Contoh RPS.pdf');
+    // Kartu TIDAK boleh menampilkan pesan kosong 'Belum ada dokumen RPS'
+    expect(container.textContent).not.toContain('Belum ada dokumen RPS.');
   });
 });

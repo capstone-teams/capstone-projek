@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
@@ -48,20 +48,10 @@ function Timeline() {
                 <li key={ev.id} className="flex flex-wrap items-center gap-3">
                   <span className="w-12 text-sm text-muted tabular-nums">{formatUnixTime(ev.timesort)}</span>
                   <ActivityIcon modname={ev.modulename} src={ev.icon?.iconurl} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <Link to={to} className="block truncate">
-                      {ev.activityname || ev.name}
-                    </Link>
-                    <span className="block truncate text-sm text-muted">
-                      {ev.name} · {ev.course.fullnamedisplay ?? ev.course.fullname}
-                    </span>
-                  </div>
-                  {ev.overdue && <span className="text-xs font-bold text-danger">Terlambat</span>}
-                  {ev.action?.actionable && (
-                    <Link to={to} className="btn btn--secondary btn--sm">
-                      {ev.action.name}
-                    </Link>
-                  )}
+                  <Link to={to} className="min-w-0 flex-1 truncate font-medium text-sm">
+                    {ev.name}
+                  </Link>
+                  <span className="text-xs text-muted">{ev.course?.shortname}</span>
                 </li>
               );
             })}
@@ -72,21 +62,65 @@ function Timeline() {
   );
 }
 
+function getCourseTargetForRps(rpsItem, workflowsList, coursesList, teachingList) {
+  if (typeof sessionStorage !== 'undefined') {
+    for (const c of coursesList) {
+      if (sessionStorage.getItem(`agentic-lms.course-rps.${c.id}`) === rpsItem.id) {
+        return c.id;
+      }
+    }
+  }
+
+  const wf = rpsItem.workflow_id
+    ? workflowsList.find((w) => w.id === rpsItem.workflow_id)
+    : workflowsList.find((w) => w.rps_id === rpsItem.id);
+
+  if (wf) {
+    if (wf.moodle_course_id) return wf.moodle_course_id;
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        const stored = JSON.parse(sessionStorage.getItem('agentic-lms.workflow-targets')) ?? {};
+        const matchedKey = Object.keys(stored).find((k) => k === wf.id || k.startsWith(`${wf.id}:`));
+        if (matchedKey && stored[matchedKey]) return stored[matchedKey];
+        for (const c of coursesList) {
+          if (sessionStorage.getItem(`agentic-lms.course-workflow.${c.id}`) === wf.id) {
+            return c.id;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Fallback: Jika dosen hanya mengampu 1 kursus (kasus utama Dosen Demo),
+  // semua berkas RPS milik dosen ini diasosiasikan ke kursus tersebut.
+  const teaching = teachingList?.length ? teachingList : coursesList;
+  if (teaching && teaching.length === 1) {
+    return teaching[0].id;
+  }
+
+  return null;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen' || user?.role === 'INSTRUCTOR';
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
+  // Kursus yang baru diakses (GET /courses/recent)
   const recent = useApi(() => getRecentCourses(user?.id, 4).catch(() => []), [user?.id]);
-  const coursesQuery = useApi(async () => {
-    // 1. Coba ambil kursus via Backend API Gateway (Single Gateway)
-    const gateway = await getMoodleCourses().catch(() => null);
-    if (gateway?.courses?.length) return gateway.courses;
 
-    // 2. Fallback direct WS hanya jika tersedia (mis. mode mock di pengujian)
+  // Kursus dosen: dari Moodle API terlebih dahulu, fallback ke gateway bila Moodle gagal
+  const coursesQuery = useApi(async () => {
     try {
-      return await getCoursesByClassification('inprogress');
+      const moodle = await getCoursesByClassification('all');
+      if (Array.isArray(moodle) && moodle.length) return moodle;
+      const moodleCourses = await getMoodleCourses();
+      if (moodleCourses?.courses?.length) return moodleCourses.courses;
+      return [];
     } catch {
+      const gateway = await getMoodleCourses().catch(() => null);
       return gateway?.courses ?? [];
     }
   });
@@ -106,39 +140,73 @@ export default function DashboardPage() {
     ? workflowsQuery.data
     : (workflowsQuery.data?.items ?? []);
 
-  // Cek apakah ada workflow yang membutuhkan tindakan review dari dosen
-  const hasPendingReview = isDosen && workflowsList.some((w) => {
-    const status = workflowStatusOf(w) || w.status;
-    return status === WORKFLOW_STATUS.WAITING_FOR_REVIEW;
-  });
+  // Opsi 1: Tampilkan dokumen RPS aktif per kursus dosen.
+  // Jika suatu kursus memiliki beberapa berkas RPS (misal berkas lama digantikan berkas baru),
+  // hanya berkas terbaru yang aktif yang ditampilkan pada kartu dasbor.
+  const activeRpsList = useMemo(() => {
+    if (!rpsList.length) return [];
+    if (rpsList.length === 1) return rpsList;
+
+    const seenCourses = new Set();
+    const result = [];
+    const unassigned = [];
+
+    // Urutkan dokumen dari yang terbaru berdasarkan created_at
+    const sorted = [...rpsList].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    for (const item of sorted) {
+      const courseId = getCourseTargetForRps(item, workflowsList, coursesList, teaching);
+
+      if (courseId) {
+        // Jika kursus ini sudah memiliki RPS aktif terbaru di daftar, lewati berkas lama yang tergantikan
+        if (seenCourses.has(String(courseId))) {
+          continue;
+        }
+        seenCourses.add(String(courseId));
+        result.push({ ...item, targetCourseId: courseId });
+      } else {
+        // Dokumen yang belum ditautkan ke kursus:
+        // Tampilkan dokumen aktif/siap (ANALYZED, PROCESSING, PROCESSED, ANALYZING, UPLOADED)
+        const isActiveOrReady = [
+          RPS_STATUS.UPLOADED,
+          RPS_STATUS.PROCESSING,
+          RPS_STATUS.PROCESSED,
+          RPS_STATUS.ANALYZING,
+          RPS_STATUS.ANALYZED,
+        ].includes(item.status);
+
+        if (isActiveOrReady) {
+          unassigned.push(item);
+        }
+      }
+    }
+
+    // Masukkan dokumen unassigned aktif terbaru (maksimal 2)
+    for (const item of unassigned.slice(0, 2)) {
+      result.push(item);
+    }
+
+    // Fallback: Jika setelah filter tidak ada dokumen sama sekali namun rpsList ada,
+    // tampilkan dokumen terbaru dari riwayat agar kartu dasbor tidak kosong
+    if (result.length === 0 && sorted.length > 0) {
+      result.push(sorted[0]);
+    }
+
+    return result;
+  }, [rpsList, workflowsList, coursesList, teaching]);
 
   return (
     <PageContainer>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="moodle-h1">Halo, {user?.firstname}! 👋</h1>
-          {isDosen && (
-            <p className="mt-1 text-sm text-muted">
-              Dasbor ringkasan aktivitas pengajaran dan otomatisasi kurikulum berbasis AI.
-            </p>
-          )}
-        </div>
+      <div className="mb-6">
+        <h1 className="moodle-h1">Halo, {user?.firstname}! 👋</h1>
         {isDosen && (
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="btn btn--primary btn--sm inline-flex items-center gap-1.5"
-              onClick={() => setUploadModalOpen(true)}
-            >
-              <span>+</span> Unggah RPS
-            </button>
-            <Link to={`/course/${defaultCourseId}/ai/target`} className="btn btn--secondary btn--sm">
-              Target Kursus
-            </Link>
-            <Link to="/user/profile" className="btn btn--ghost btn--sm">
-              Preferensi AI
-            </Link>
-          </div>
+          <p className="mt-1 text-sm text-muted">
+            Dasbor ringkasan aktivitas pengajaran dan otomatisasi kurikulum berbasis AI.
+          </p>
         )}
       </div>
 
@@ -212,9 +280,9 @@ export default function DashboardPage() {
                 }
               >
                 <ErrorAlert error={rpsQuery.error} />
-                {rpsQuery.loading && !rpsList.length ? (
+                {rpsQuery.loading && !activeRpsList.length ? (
                   <Spinner label="Memuat dokumen RPS…" />
-                ) : rpsList.length === 0 ? (
+                ) : activeRpsList.length === 0 ? (
                   <EmptyState
                     title="Belum ada dokumen RPS."
                     action={
@@ -230,90 +298,87 @@ export default function DashboardPage() {
                     Unggah dokumen RPS mata kuliah untuk mulai menyusun rencana dan konten secara otomatis.
                   </EmptyState>
                 ) : (
-                  <>
-                    {hasPendingReview && (
-                      <div className="mb-3 flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <span aria-hidden="true">⚠️</span>
-                          <span>Ada dokumen yang menunggu review Anda.</span>
-                        </div>
-                      </div>
-                    )}
-                    <ul className="flex flex-col gap-2.5">
-                      {rpsList.slice(0, 6).map((item) => {
-                        const relatedWf = item.workflow_id
-                          ? workflowsList.find((w) => w.id === item.workflow_id)
-                          : null;
-                        const wfStatus = relatedWf ? (workflowStatusOf(relatedWf) || relatedWf.status) : null;
-                        const isReview = wfStatus === WORKFLOW_STATUS.WAITING_FOR_REVIEW;
-                        const isFailed = item.status === RPS_STATUS.FAILED || wfStatus === WORKFLOW_STATUS.FAILED;
-                        const isAnalyzed = item.status === RPS_STATUS.ANALYZED && !isReview && !isFailed;
-                        const rpsCourseId = relatedWf?.moodle_course_id || defaultCourseId;
+                  <ul className="flex flex-col gap-2.5">
+                    {activeRpsList.slice(0, 6).map((item) => {
+                      const relatedWf = item.workflow_id
+                        ? workflowsList.find((w) => w.id === item.workflow_id)
+                        : workflowsList.find((w) => w.rps_id === item.id);
+                      const wfStatus = relatedWf ? (workflowStatusOf(relatedWf) || relatedWf.status) : null;
+                      const isReview = wfStatus === WORKFLOW_STATUS.WAITING_FOR_REVIEW;
+                      const isFailed = item.status === RPS_STATUS.FAILED || wfStatus === WORKFLOW_STATUS.FAILED;
+                      const isAnalyzed = item.status === RPS_STATUS.ANALYZED && !isReview && !isFailed;
+                      const rpsCourseId = item.targetCourseId || relatedWf?.moodle_course_id;
+                      const courseInfo = rpsCourseId ? coursesList.find((c) => String(c.id) === String(rpsCourseId)) : null;
+                      const targetCourseId = rpsCourseId || defaultCourseId;
 
-                        const reviewUrl = (relatedWf?.stage === 'content_generation' || relatedWf?.stage === 'content_review' || relatedWf?.stage === 'instructor_review')
-                          ? `/course/${rpsCourseId}/ai/review`
-                          : `/course/${rpsCourseId}/ai/plan`;
+                      const reviewUrl = (relatedWf?.stage === 'content_generation' || relatedWf?.stage === 'content_review' || relatedWf?.stage === 'instructor_review')
+                        ? `/course/${targetCourseId}/ai/review`
+                        : `/course/${targetCourseId}/ai/plan`;
 
-                        return (
-                          <li
-                            key={item.id}
-                            className={`rounded-lg border p-2.5 transition-colors ${
-                              isReview ? 'border-amber-400 bg-amber-50/30' : 'border-line'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="truncate font-semibold text-sm" title={item.filename}>
-                                {item.filename}
-                              </span>
-                              {relatedWf && (isReview || wfStatus === WORKFLOW_STATUS.RUNNING) ? (
-                                <WorkflowStatusBadge workflow={relatedWf} />
-                              ) : (
-                                <RpsStatusBadge status={item.status} />
+                      return (
+                        <li
+                          key={item.id}
+                          className="rounded-lg border border-line p-2.5 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="truncate font-semibold text-sm" title={item.filename}>
+                              {item.filename}
+                            </span>
+                            {relatedWf && (isReview || wfStatus === WORKFLOW_STATUS.RUNNING) ? (
+                              <WorkflowStatusBadge workflow={relatedWf} />
+                            ) : (
+                              <RpsStatusBadge status={item.status} />
+                            )}
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-xs text-muted">
+                            <span className="flex items-center gap-1.5 truncate">
+                              {courseInfo && (
+                                <span className="font-medium text-ink/80 truncate max-w-[120px]" title={courseInfo.fullname}>
+                                  {courseInfo.shortname || courseInfo.fullname} ·
+                                </span>
                               )}
-                            </div>
-                            <div className="mt-2 flex items-center justify-between text-xs text-muted">
                               <span>{item.created_at ? formatDateTime(item.created_at) : 'Baru'}</span>
-                              <div className="flex items-center gap-2">
-                                {isReview ? (
-                                  <Link
-                                    to={reviewUrl}
-                                    className="btn btn--primary btn--xs"
-                                  >
-                                    Review Sekarang →
-                                  </Link>
-                                ) : isFailed ? (
-                                  <Link
-                                    to={
-                                      item.workflow_id
-                                        ? `/course/${rpsCourseId}/ai/workflows?workflow=${item.workflow_id}`
-                                        : `/course/${rpsCourseId}/ai/rps?rps=${item.id}`
-                                    }
-                                    className="font-medium text-danger hover:underline"
-                                  >
-                                    Lihat Masalah
-                                  </Link>
-                                ) : isAnalyzed ? (
-                                  <Link
-                                    to={`/course/${rpsCourseId}/ai/rps?rps=${item.id}`}
-                                    className="font-medium text-primary hover:underline"
-                                  >
-                                    Hasil Analisis
-                                  </Link>
-                                ) : item.workflow_id ? (
-                                  <Link
-                                    to={`/course/${rpsCourseId}/ai/workflows?workflow=${item.workflow_id}`}
-                                    className="font-medium text-primary hover:underline"
-                                  >
-                                    Pantau Proses
-                                  </Link>
-                                ) : null}
-                              </div>
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {isReview ? (
+                                <Link
+                                  to={reviewUrl}
+                                  className="font-medium text-primary hover:underline"
+                                >
+                                  Review Sekarang →
+                                </Link>
+                              ) : isFailed ? (
+                                <Link
+                                  to={
+                                    item.workflow_id
+                                      ? `/course/${targetCourseId}/ai/workflows?workflow=${item.workflow_id}`
+                                      : `/course/${targetCourseId}/ai/rps?rps=${item.id}`
+                                  }
+                                  className="font-medium text-danger hover:underline"
+                                >
+                                  Lihat Masalah
+                                </Link>
+                              ) : isAnalyzed ? (
+                                <Link
+                                  to={`/course/${targetCourseId}/ai/rps?rps=${item.id}`}
+                                  className="font-medium text-primary hover:underline"
+                                >
+                                  Hasil Analisis
+                                </Link>
+                              ) : item.workflow_id ? (
+                                <Link
+                                  to={`/course/${targetCourseId}/ai/workflows?workflow=${item.workflow_id}`}
+                                  className="font-medium text-primary hover:underline"
+                                >
+                                  Pantau Proses
+                                </Link>
+                              ) : null}
                             </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </Card>
             </>
@@ -328,27 +393,31 @@ export default function DashboardPage() {
                       <Link to={`/course/${c.id}`} className="min-w-0 truncate">
                         {c.shortname}
                       </Link>
-                      <span className="text-sm text-muted">{c.progress != null ? `${Math.round(c.progress)}%` : '-'}</span>
+                      <span className="text-xs text-muted">{c.fullname}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted">Belum ada.</p>
+                <EmptyState title="Belum ada kursus." />
               )}
             </Card>
           )}
         </div>
       </div>
 
+      {/* Modal Unggah RPS Cepat dari Dasbor */}
       {isDosen && uploadModalOpen && (
         <Modal
           open={uploadModalOpen}
           title="Unggah Dokumen RPS"
           onClose={() => setUploadModalOpen(false)}
         >
+          <p className="mb-4 text-xs text-muted">
+            Unggah berkas RPS (PDF atau DOCX) untuk dianalisis oleh AI. Hasil analisis akan otomatis tercantum pada daftar dokumen.
+          </p>
           <RpsUploadForm
-            onUploaded={({ rps, error }) => {
-              if (!error && rps) {
+            onUploaded={async ({ rps }) => {
+              if (rps?.id) {
                 setUploadModalOpen(false);
                 rpsQuery.reload({ silent: true });
                 workflowsQuery.reload({ silent: true });

@@ -1,9 +1,12 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MoodleConnectionBanner from '../src/components/moodle/MoodleConnectionBanner';
 import CourseTargetCard from '../src/components/ai/course/CourseTargetCard';
 import CourseTargetSelectionPage from '../src/pages/dosen/ai/CourseTargetSelectionPage';
+import { TABS } from '../src/pages/dosen/ai/AiCourseLayout';
+import CourseOverviewPage from '../src/pages/dosen/ai/CourseOverviewPage';
 
 const moodleService = vi.hoisted(() => ({
   getMoodleStatus: vi.fn(),
@@ -400,5 +403,61 @@ describe('FE-09.2 CourseTargetSelectionPage (Workflow Integration & Modal Confir
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(node.querySelector('[aria-label="Isi kursus Moodle saat ini"]').textContent).toContain('Isi kursus belum dapat dimuat.');
     expect(Array.from(node.querySelectorAll('button')).find((b) => b.textContent.includes('Konfirmasi & Simpan')).disabled).toBe(false);
+  });
+});
+
+describe('Penyederhanaan FE-09: Integrasi Target Moodle ke Layout & Overview', () => {
+  it('subtab navigasi AiCourseLayout tidak lagi memuat tab Course Target terpisah', () => {
+    const tabKeys = TABS.map((t) => t.to);
+    const tabLabels = TABS.map((t) => t.label);
+    expect(tabKeys).not.toContain('target');
+    expect(tabLabels).not.toContain('Course Target');
+    expect(tabKeys).toEqual(['', 'rps', 'plan', 'content', 'review', 'publish', 'workflows']);
+  });
+
+  it('CourseOverviewPage menampilkan informasi target Moodle secara jelas di kartu konfigurasi', async () => {
+    courseContext.course = {
+      id: 'course_001',
+      workflow_id: 'workflow_001',
+      moodle_course_id: 2,
+      shortname: 'IF2105',
+      fullname: 'Pemrograman Web',
+      status: 'DRAFT',
+      rps_id: 'rps_001',
+    };
+
+    await renderComponent(
+      <MemoryRouter>
+        <CourseOverviewPage />
+      </MemoryRouter>
+    );
+
+    const targetBadge = node.querySelector('[aria-label="Target Moodle"]');
+    expect(targetBadge).not.toBeNull();
+    expect(targetBadge.textContent).toContain('IF2105');
+    expect(targetBadge.textContent).toContain('ID: 2');
+  });
+
+  it('CourseOverviewPage mengarahkan dosen untuk mengunggah RPS jika kursus belum memiliki rps_id', async () => {
+    courseContext.course = {
+      id: 'course_new',
+      workflow_id: null,
+      moodle_course_id: 5,
+      shortname: 'IF3101',
+      fullname: 'Rekayasa Perangkat Lunak',
+      status: 'DRAFT',
+      rps_id: null,
+    };
+
+    await renderComponent(
+      <MemoryRouter>
+        <CourseOverviewPage />
+      </MemoryRouter>
+    );
+
+    expect(node.textContent).toContain('Kursus ini belum memiliki dokumen RPS');
+    const uploadLink = node.querySelector('a[href="/rps"]');
+    expect(uploadLink).not.toBeNull();
+    expect(uploadLink.textContent).toContain('Unggah RPS');
   });
 });
