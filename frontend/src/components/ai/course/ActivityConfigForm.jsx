@@ -4,15 +4,24 @@ import { useAction } from '../../../hooks/useApi';
 import { Alert, ErrorAlert } from '../../ui';
 import ActivityConfigFields from '../ActivityConfigFields';
 import { isBusy } from '../../../utils/workflow';
+import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
+import PendingFeatureNote from '../PendingFeatureNote';
 
 const LOCKED_CONFIG = ['APPROVED', 'EXECUTING', 'EXECUTED', 'VERIFYING', 'COMPLETED'];
 
+const DEFAULT_CONFIG = {
+  learning_material: true,
+  assignment: true,
+  quiz: true,
+};
+
 export default function ActivityConfigForm({ course, onSaved }) {
-  const [value, setValue] = useState(course.activity_configuration);
+  const initialConfig = course?.activity_configuration || DEFAULT_CONFIG;
+  const [value, setValue] = useState(initialConfig);
   const [saved, setSaved] = useState(false);
   const save = useAction((cfg) => updateActivityConfiguration(course.id, cfg));
   const locked = LOCKED_CONFIG.includes(course.status) || isBusy(course.status);
-  const dirty = JSON.stringify(value) !== JSON.stringify(course.activity_configuration);
+  const dirty = JSON.stringify(value) !== JSON.stringify(course?.activity_configuration || DEFAULT_CONFIG);
 
   return (
     <div className="form">
@@ -31,13 +40,13 @@ export default function ActivityConfigForm({ course, onSaved }) {
       ) : (
         dirty && (
           <div className="form__actions">
-            <button type="button" className="btn btn--ghost" onClick={() => setValue(course.activity_configuration)}>
+            <button type="button" className="btn btn--ghost" onClick={() => setValue(course?.activity_configuration || DEFAULT_CONFIG)}>
               Batal
             </button>
             <button
               type="button"
               className="btn btn--primary"
-              disabled={save.pending}
+              disabled={!COURSE_ACTIONS_AVAILABLE || save.pending}
               onClick={() =>
                 save
                   .run(value)
@@ -53,6 +62,7 @@ export default function ActivityConfigForm({ course, onSaved }) {
           </div>
         )
       )}
+      {!locked && !COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Menyimpan konfigurasi aktivitas belum tersedia.</PendingFeatureNote>}
     </div>
   );
 }

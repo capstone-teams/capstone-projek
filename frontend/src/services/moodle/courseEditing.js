@@ -1,21 +1,19 @@
 /**
- * Edit mode kursus: fungsi yang dipakai editor kursus Moodle 4.x/5.x.
+ * Edit mode kursus: sembunyikan, pindah, duplikat, hapus, ganti nama, dan tambah aktivitas.
  *
- * - core_courseformat_update_course: aksi pada aktivitas/section (course/format/classes/stateactions.php).
- * - core_update_inplace_editable: ubah nama aktivitas/section (ikon pensil).
+ * STATUS: belum lewat backend, karena API backend belum punya endpoint untuk mengubah isi kursus
+ * (hanya GET /courses dan turunannya). Saat ini VITE_MOODLE_MOCK=true, jadi semua aksi hanya berjalan
+ * di mockMoodle.js dan hilang saat halaman dimuat ulang. Saat endpoint tersedia, cukup ganti isi
+ * fungsi di file ini; komponen dan useCourseEditing tidak perlu berubah.
  *
- * Keduanya bertanda 'ajax' => true di lib/db/services.php dan TIDAK termasuk layanan
- * moodle_mobile_app; pada Moodle nyata tambahkan ke external service yang dipakai frontend.
- *
- * (moodledev.io):
- * - Fungsi editor kursus pengganti core_course_edit_section/edit_module sejak 4.0:
+ * Rujukan dokumentasi Moodle (nama aksi dan fungsi di bawah mengikuti editor kursus Moodle 4.x/5.x):
+ * - core_courseformat_update_course menggantikan core_course_edit_section/edit_module sejak 4.0:
  *   https://moodledev.io/docs/4.4/apis/plugintypes/format/migration
- * - Cara fungsi dibuka ke 'ajax' dan layanan mobile (MOODLE_OFFICIAL_MOBILE_SERVICE):
+ * - Fungsi ini dan core_update_inplace_editable hanya 'ajax', tidak termasuk layanan mobile:
  *   https://moodledev.io/docs/5.1/apis/subsystems/external/description
  * - Service kustom untuk fungsi di luar layanan bawaan:
  *   https://moodledev.io/docs/5.0/apis/subsystems/external/advanced/custom-services
  */
-import { USE_MOODLE_MOCK } from '../config';
 import { MoodleError, callWs } from './moodleClient';
 
 /** Aksi aktivitas (course module) yang dikirim ke core_courseformat_update_course. */
@@ -65,22 +63,19 @@ export function renameSection(courseFormat, sectionId, name) {
   });
 }
 
-// ---- Membuat aktivitas dari formulir aplikasi.
-// Moodle core belum menyediakan Web Service untuk membuat assign/label beserta isinya
-// (core_courseformat_create_module hanya untuk modul FEATURE_QUICKCREATE, yaitu mod_subsection).
-// Di dokumentasi mod_assign hanya ada fungsi PHP assign_add_instance(), bukan external function:
+// ---- Membuat aktivitas dari formulir aplikasi. Hanya mock; backend belum punya endpoint-nya.
+// Rujukan dokumentasi Moodle: core tidak punya Web Service untuk membuat assign/label beserta isinya.
+// mod_assign hanya punya fungsi PHP assign_add_instance(), bukan external function:
 // https://phpdoc.moodledev.io/4.4/d3/d4f/group__mod__assign.html
-// Fungsi baru perlu ditulis sendiri (plugin Moodle), pola penulisannya:
-// https://moodledev.io/docs/5.0/apis/subsystems/external/writing-a-service
-// Sampai tim memilih jalurnya (plugin Moodle atau endpoint backend), hanya mock yang mendukung.
 
-export const CAN_CREATE_IN_APP = USE_MOODLE_MOCK;
+export const CAN_CREATE_IN_APP = false;
 
 /**
- * fields Assignment: { name, intro, allowsubmissionsfromdate, duedate, grade } (tanggal = Unix detik, 0 = tanpa tanggal)
+ * fields Assignment: { name, intro, allowsubmissionsfromdate, duedate, cutoffdate, grade }
+ *   (tanggal = Unix detik, 0 = tanpa tanggal)
  *   + jenis pengumpulan { onlinetext_enabled, onlinetext_wordlimit, file_enabled, file_maxfiles, file_maxbytes }.
  * fields Quiz: { name, intro, timeopen, timeclose }.
- * fields Text and media area: { text }.
+ * fields Text and media area: { name, text, format } (format 1 = HTML dari editor).
  */
 export async function createActivity(courseId, sectionNumber, modname, fields) {
   if (!CAN_CREATE_IN_APP) {

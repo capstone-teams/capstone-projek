@@ -11,8 +11,8 @@ export default function CourseViewPage() {
     <CourseOutline
       course={course}
       sections={visible}
-      renderSection={(s, { collapsed, onToggle }) => (
-        <CourseSection key={s.id} course={course} section={s} sections={visible} isTeacher={false} collapsed={collapsed} onToggle={onToggle} editMode={false} />
+      renderSection={(s, { onClose }) => (
+        <CourseSection key={s.id} course={course} section={s} sections={visible} isTeacher={false} onClose={onClose} editMode={false} />
       )}
     />
   );

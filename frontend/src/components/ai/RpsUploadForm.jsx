@@ -2,7 +2,6 @@ import { useId, useRef, useState } from 'react';
 import {
   RPS_ACCEPTED_TYPES,
   RPS_MAX_SIZE_LABEL,
-  isDocx,
   processRps,
   uploadRps,
   validateRpsFile,
@@ -107,7 +106,7 @@ export default function RpsUploadForm({ onUploaded }) {
         />
         <span className="dropzone__title">{file ? file.name : 'Pilih atau seret file RPS ke sini'}</span>
         <span className="muted">
-          {file ? formatFileSize(file.size) : `PDF atau DOCX, maksimal ${RPS_MAX_SIZE_LABEL}`}
+          {file ? formatFileSize(file.size) : `PDF, maksimal ${RPS_MAX_SIZE_LABEL}`}
         </span>
       </label>
 
@@ -115,9 +114,6 @@ export default function RpsUploadForm({ onUploaded }) {
         <p id={errorId} role="alert" className="text-sm font-semibold text-danger">
           {fileError}
         </p>
-      )}
-      {file && !fileError && isDocx(file) && (
-        <p className="text-sm text-muted">DOCX didukung sebagai format unggahan; pemrosesannya di backend menyusul pada M03.</p>
       )}
 
       {busy && (

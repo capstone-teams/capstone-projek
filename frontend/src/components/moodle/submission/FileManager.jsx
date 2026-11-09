@@ -5,7 +5,7 @@ import { formatLimit } from '../../../utils/assignSubmission';
 import { formatFileSize, formatUnixDateTime } from '../../../utils/format';
 
 /*
- * File manager seperti form element `filemanager` Moodle (Add..., Create folder, tampilan
+ * File manager. Rujukan source Moodle: form element `filemanager` (Add..., Create folder, tampilan
  * ikon/detail/pohon, jalur folder, dan area seret-dan-lepas). Isinya dikendalikan induk:
  * value = { entries: [{ key, filepath, filename, filesize, timemodified, file?, fileurl? }], folders: ['/a/'] }.
  */
@@ -38,7 +38,7 @@ function FolderIcon({ size = 40 }) {
   );
 }
 
-// Nama ganda diberi akhiran seperti Moodle: "laporan (1).pdf".
+// Rujukan perilaku Moodle: nama ganda diberi akhiran, mis. "laporan (1).pdf".
 function uniqueName(name, taken) {
   if (!taken.has(name)) return name;
   const dot = name.lastIndexOf('.');

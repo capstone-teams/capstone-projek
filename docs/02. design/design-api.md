@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** API Specification
-**Version:** 0.1
+**Version:** 0.5
 **Status:** Draft
 **Related Documents:**
 
@@ -314,6 +314,8 @@ karenanya belum ada pada response ini.
 GET /api/v1/rps/{rps_id}/analysis
 ```
 
+Mengembalikan hasil RPS Analysis yang tersimpan pada `rps.structured_data` sesuai Content Schema §6–§7 (DL-006, DL-009). Endpoint ini membaca data tersimpan dan tidak menjalankan document processing maupun analisis ulang.
+
 Response:
 
 ```json
@@ -502,6 +504,8 @@ ini tanpa menulis apa pun.
 ---
 
 # 8. Course API
+
+Catatan (DL-011): pada implementasi, satu proses pembuatan course direpresentasikan oleh Workflow (§15). Endpoint berbasis `/courses/{course_id}` pada §8–§14 diselaraskan menjadi `/workflows/{workflow_id}/...` saat tahap terkait diimplementasikan. Activity Configuration dikelola per dosen melalui Instructor Setup (§7).
 
 ## 8.1 Create Generation Project
 
@@ -846,6 +850,10 @@ Request:
 
 # 13. Moodle Execution API
 
+> **Status implementasi (BE-17.2).** Endpoint eksekusi berbasis course pada
+> §13.1–§13.2 digantikan endpoint berbasis workflow §16.5–§16.8 (DL-011 dan
+> DL-012). Spesifikasi di bawah dipertahankan sebagai riwayat kontrak.
+
 ## 13.1 Execute Course
 
 ```http
@@ -892,6 +900,30 @@ POST /api/v1/courses/{course_id}/execution/{execution_id}/cancel
 
 Cancellation hanya dapat dilakukan pada state yang memungkinkan.
 
+## 13.4 Moodle Integration Endpoints (Internal)
+
+Endpoint berikut digunakan untuk memeriksa koneksi dan menguji operasi Moodle Integration Layer. Endpoint tidak menerima maupun mengembalikan credential Moodle.
+
+```http
+GET  /api/v1/integrations/moodle/status
+GET  /api/v1/integrations/moodle/courses
+GET  /api/v1/integrations/moodle/courses/{moodle_course_id}
+GET  /api/v1/integrations/moodle/courses/{moodle_course_id}/contents
+POST /api/v1/integrations/moodle/courses
+POST /api/v1/integrations/moodle/courses/{moodle_course_id}/sections
+```
+
+| Endpoint                | Kegunaan                                                         | Akses                    |
+| ----------------------- | ---------------------------------------------------------------- | ------------------------ |
+| `status`                | Status koneksi, versi Moodle, dan ketersediaan functions yang dibutuhkan | Dosen               |
+| `GET courses`           | Daftar course Moodle untuk dipilih sebagai course target (Proposal §3.4.7) | Dosen             |
+| `courses/{id}`          | Membaca informasi course                                         | Dosen                    |
+| `courses/{id}/contents` | Membaca section dan module course                                | Dosen                    |
+| `POST courses`          | Membuat course untuk pengujian integrasi                         | Development environment  |
+| `POST .../sections`     | Membuat atau memperbarui section untuk pengujian integrasi       | Development environment  |
+
+Endpoint write hanya aktif pada development environment melalui konfigurasi. Eksekusi ke Moodle pada alur produk tetap melalui Moodle Execution API (§13.1).
+
 ---
 
 # 14. Verification API
@@ -932,53 +964,60 @@ Response:
 
 ---
 
-# 15. Agent Run API
+# 15. Workflow API
 
-## 15.1 Get Agent Run
+Workflow merepresentasikan satu proses pembuatan course dari RPS hingga verifikasi, sesuai class diagram proposal (Workflow, WorkflowEvent) dan DL-011.
+
+## 15.1 List Workflows
 
 ```http
-GET /api/v1/agent-runs/{run_id}
+GET /api/v1/workflows
+```
+
+Mengembalikan daftar workflow milik dosen yang login.
+
+## 15.2 Get Workflow
+
+```http
+GET /api/v1/workflows/{workflow_id}
 ```
 
 Response:
 
 ```json
 {
-  "id": "run_001",
-  "status": "running",
-  "stage": "content_generation",
-  "started_at": "datetime"
+  "id": "wf_001",
+  "rps_id": "rps_001",
+  "status": "ANALYZING_RPS",
+  "moodle_course_id": 12,
+  "created_at": "datetime",
+  "updated_at": "datetime"
 }
 ```
 
----
-
-## 15.2 Get Agent Run History
+## 15.3 Get Workflow Events
 
 ```http
-GET /api/v1/courses/{course_id}/agent-runs
+GET /api/v1/workflows/{workflow_id}/events
 ```
 
 Response:
 
 ```json
 {
-  "runs": [
+  "items": [
     {
-      "id": "run_001",
-      "type": "rps_processing",
-      "status": "completed"
-    },
-    {
-      "id": "run_002",
-      "type": "course_planning",
-      "status": "completed"
+      "id": "evt_001",
+      "event_type": "PERUBAHAN_TAHAP",
+      "stage": "PROCESSING_RPS",
+      "message": "Pemrosesan dokumen RPS dimulai",
+      "timestamp": "datetime"
     }
   ]
 }
 ```
 
----
+`event_type`: `PERUBAHAN_TAHAP`, `AKTIVITAS_AGENT`, `OPERASI_MOODLE`, `RETRY_FIX`, `ERROR_FAILURE`.
 
 # 16. Workflow Monitoring API
 
@@ -992,7 +1031,7 @@ menampilkan workflow milik dosen yang login.
 GET /api/v1/workflows
 ```
 
-Response:
+Request:
 
 ```json
 {
@@ -1093,6 +1132,189 @@ sehingga client tidak perlu membaca ulang setelah menyimpan.
 
 Workflow milik dosen lain menghasilkan 404 `RESOURCE_NOT_FOUND` yang sama
 seperti workflow tidak ada.
+
+## 16.5 Start Moodle Execution
+
+```http
+POST /api/v1/workflows/{workflow_id}/executions
+```
+
+Request:
+
+```json
+{
+  "scope": "STRUCTURE"
+}
+```
+
+M3 baru mengimplementasikan cakupan `STRUCTURE` (section mingguan berdasarkan
+course plan yang disetujui); cakupan `FULL` menyusul pada M04 (DL-012).
+Response `202` berarti eksekusi sudah dijadwalkan di background:
+
+```json
+{
+  "execution_id": "Xa9bC2dE4fG6hJ8kLm3nP",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+  "course_plan_id": "Cp7rS9tU2vW4xY6zA8bCd",
+  "scope": "STRUCTURE",
+  "status": "PENDING",
+  "moodle_course_id": 42,
+  "summary": {
+    "total": 16,
+    "success": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "error_message": null,
+  "created_at": "2026-11-08T08:00:00Z",
+  "started_at": null,
+  "completed_at": null
+}
+```
+
+Selama eksekusi berjalan, status workflow menjadi `EXECUTING_TO_MOODLE`.
+Setelah eksekusi `STRUCTURE` berhasil, workflow kembali ke
+`WAITING_FOR_REVIEW`; bila ada operasi atau read-back yang gagal, workflow
+menjadi `FAILED` (DL-012).
+
+Prasyarat yang tidak terpenuhi ditolak `409 INVALID_REQUEST` dengan kode alasan
+pada `error.details`:
+
+| Prasyarat                                              | `error.details`                          |
+| ------------------------------------------------------ | ---------------------------------------- |
+| Course plan terbaru berstatus `APPROVED`               | `PLAN_NOT_APPROVED`                      |
+| Course target Moodle tersimpan pada workflow           | `MOODLE_TARGET_NOT_SET`                  |
+| Moodle dapat dihubungi (status service BE-04.7)        | `MOODLE_UNAVAILABLE`                     |
+| Tidak ada proses lain yang berjalan pada workflow      | `EXECUTION_IN_PROGRESS`                  |
+
+Contoh:
+
+```json
+{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "Course plan terbaru belum disetujui.",
+    "details": [
+      {
+        "field": "reason",
+        "message": "PLAN_NOT_APPROVED"
+      }
+    ]
+  }
+}
+```
+
+## 16.6 List Moodle Executions
+
+```http
+GET /api/v1/workflows/{workflow_id}/executions
+```
+
+Response memuat riwayat eksekusi workflow, terbaru lebih dulu. Bentuk tiap item
+sama dengan response §16.5.
+
+```json
+{
+  "items": [
+    {
+      "execution_id": "Xa9bC2dE4fG6hJ8kLm3nP",
+      "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+      "course_plan_id": "Cp7rS9tU2vW4xY6zA8bCd",
+      "scope": "STRUCTURE",
+      "status": "SUCCESS",
+      "moodle_course_id": 42,
+      "summary": {
+        "total": 16,
+        "success": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "error_message": null,
+      "created_at": "2026-11-08T08:00:00Z",
+      "started_at": "2026-11-08T08:00:01Z",
+      "completed_at": "2026-11-08T08:00:20Z"
+    }
+  ]
+}
+```
+
+## 16.7 Get Moodle Execution Status
+
+```http
+GET /api/v1/workflows/{workflow_id}/executions/{execution_id}
+```
+
+Response memuat status, ringkasan (jumlah berhasil/gagal/dilewati), daftar
+operasi per minggu, dan hasil read-back struktur course. Operasi yang berhasil
+menampilkan `moodle_object_id`; operasi yang gagal menampilkan
+`error_message` publik yang aman ditampilkan.
+
+```json
+{
+  "execution_id": "Xa9bC2dE4fG6hJ8kLm3nP",
+  "workflow_id": "q7RtYx2bM8sLdWfZaKp3nQ",
+  "course_plan_id": "Cp7rS9tU2vW4xY6zA8bCd",
+  "scope": "STRUCTURE",
+  "status": "FAILED",
+  "moodle_course_id": 42,
+  "summary": {
+    "total": 16,
+    "success": 15,
+    "failed": 1,
+    "skipped": 0
+  },
+  "error_message": "1 operasi gagal diterapkan ke Moodle.",
+  "created_at": "2026-11-08T08:00:00Z",
+  "started_at": "2026-11-08T08:00:01Z",
+  "completed_at": "2026-11-08T08:00:20Z",
+  "readback": {
+    "checked": true,
+    "matches": false,
+    "expected_sections": 16,
+    "actual_sections": 16,
+    "ordered": true,
+    "missing_weeks": [],
+    "mismatched_weeks": [4]
+  },
+  "operations": [
+    {
+      "operation_id": "Op2sT4uV6wX8yZ1aB3cDe",
+      "operation_type": "SECTION",
+      "status": "SUCCESS",
+      "idempotency_key": "q7RtYx2bM8sLdWfZaKp3nQ:week:1:SECTION",
+      "week_number": 1,
+      "moodle_object_id": "201",
+      "error_message": null,
+      "retry_count": 0
+    },
+    {
+      "operation_id": "Op3sT4uV6wX8yZ1aB3cDf",
+      "operation_type": "SECTION",
+      "status": "FAILED",
+      "idempotency_key": "q7RtYx2bM8sLdWfZaKp3nQ:week:4:SECTION",
+      "week_number": 4,
+      "moodle_object_id": null,
+      "error_message": "Moodle menolak data yang dikirim.",
+      "retry_count": 0
+    }
+  ]
+}
+```
+
+## 16.8 Retry Failed Moodle Operations
+
+```http
+POST /api/v1/workflows/{workflow_id}/executions/{execution_id}/retry
+```
+
+Hanya eksekusi berstatus `FAILED` dengan operasi gagal yang dapat diulang.
+Retry menjalankan ulang **hanya operasi gagal** pada eksekusi yang sama;
+operasi yang berhasil tidak diulang. Response `202` berbentuk sama dengan
+§16.5 dengan status `PENDING` karena pekerjaan dijadwalkan ulang di background.
+
+Eksekusi dan workflow milik dosen lain menghasilkan 404 `RESOURCE_NOT_FOUND`
+yang sama seperti tidak ada; mahasiswa selalu 403 `AUTHORIZATION_DENIED`.
+Response tidak pernah memuat credential Moodle.
 
 ---
 
@@ -1210,44 +1432,44 @@ INTERNAL_ERROR
 
 Backend harus menjaga state transition.
 
-Contoh:
+Status workflow mengikuti `WorkflowStatus` pada proposal (DL-011):
 
 ```text
-CREATED
-   ↓
 PROCESSING_RPS
    ↓
 ANALYZING_RPS
    ↓
-PLANNING
+PLANNING_COURSE
    ↓
-WAITING_PLAN_REVIEW
+VALIDATING
+   ↓
+WAITING_FOR_REVIEW
    ↓
 GENERATING_CONTENT
    ↓
 VALIDATING
    ↓
-WAITING_CONTENT_REVIEW
+WAITING_FOR_REVIEW
    ↓
-APPROVED
-   ↓
-EXECUTING
+EXECUTING_TO_MOODLE
    ↓
 VERIFYING
    ↓
 COMPLETED
 ```
 
+Status `RETRYING` dan `FAILED` dapat terjadi pada setiap tahap.
+
 Tidak semua state dapat dipanggil secara bebas oleh client.
 
 Contoh:
 
 ```text
-WAITING_CONTENT_REVIEW
+WAITING_FOR_REVIEW
         ↓
      APPROVE
         ↓
-      APPROVED
+EXECUTING_TO_MOODLE (setelah dosen menjalankan eksekusi)
 ```
 
 Client tidak boleh langsung mengubah state menjadi `COMPLETED`.
@@ -1277,21 +1499,26 @@ Implementasi final ditentukan pada backend design.
 
 # 22. Authorization Matrix
 
-| Operation                 | Instructor | Student |
-| ------------------------- | ---------: | ------: |
-| Upload RPS                |        Yes |      No |
-| Process RPS               |        Yes |      No |
-| View RPS Analysis         |        Yes |      No |
-| Manage Instructor Profile |        Yes |      No |
-| Generate Course Plan      |        Yes |      No |
-| Review Course Plan        |        Yes |      No |
-| Generate Content          |        Yes |      No |
-| Review Content            |        Yes |      No |
-| Approve Content           |        Yes |      No |
-| Execute to Moodle         |        Yes |      No |
-| Monitor Agent             |        Yes |      No |
-| View Verification         |        Yes |      No |
-| Access Result Course      |        Yes |     Yes |
+| Operation                    | Dosen | Mahasiswa |
+| ---------------------------- | ----: | --------: |
+| Upload RPS                   |   Yes |        No |
+| Process / Reanalyze RPS      |   Yes |        No |
+| View RPS Analysis            |   Yes |        No |
+| Manage Instructor Setup      |   Yes |        No |
+| Select Moodle Course Target  |   Yes |        No |
+| Generate Course Plan         |   Yes |        No |
+| Review Course Plan           |   Yes |        No |
+| Generate Content             |   Yes |        No |
+| Review Content               |   Yes |        No |
+| Approve Content              |   Yes |        No |
+| Execute to Moodle            |   Yes |        No |
+| Monitor Workflow             |   Yes |        No |
+| View Verification Result     |   Yes |        No |
+| Submit Student Verification  |    No |       Yes |
+| View Student Verification    |   Yes |        No |
+| Access Result Course         |   Yes |       Yes |
+
+Role mengikuti enumeration `Role` pada proposal: `DOSEN` dan `MAHASISWA` (DL-011).
 
 ---
 
@@ -1392,7 +1619,7 @@ Contoh konseptual:
 | Create Quiz                 | TBD             | TBD    |
 | Student Access Verification | TBD             | TBD    |
 
-Nama function Moodle tidak ditentukan dalam dokumen ini sebelum dilakukan API capability mapping terhadap environment Moodle ITK.
+Nama function Moodle tidak ditentukan dalam dokumen ini sebelum dilakukan API capability mapping terhadap instance Moodle tim (lihat DL-003).
 
 ---
 
@@ -1463,10 +1690,10 @@ Hal yang masih perlu ditentukan:
 | ------------ | -------------------------------------- |
 | Document     | API Specification                      |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.1                                    |
+| Version      | 0.5                                    |
 | Status       | Draft                                  |
 | Owner        | Project Team                           |
-| Last Updated | 2026-09-02                             |
+| Last Updated | 2026-10-19                             |
 
 ## Version History
 

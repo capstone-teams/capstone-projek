@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
-import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
+import { useCourseBreadcrumb, useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useApi } from '../../../hooks/useApi';
 import { getAssignments, getPages } from '../../../services/moodle/moodleApi';
 import { withToken } from '../../../services/moodle/moodleClient';
@@ -13,7 +13,7 @@ function PageContent({ course, mod }) {
   const { data, error, loading } = useApi(() => getPages([course.id]), [course.id]);
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
-  const page = data.find((p) => p.coursemodule === mod.id);
+  const page = data.find((p) => String(p.coursemodule) === String(mod.id));
   if (!page) return <EmptyState title="Halaman tidak ditemukan." />;
   return (
     <Card>
@@ -26,7 +26,7 @@ function AssignContent({ course, mod, renderAssign }) {
   const { data, error, loading } = useApi(() => getAssignments([course.id]), [course.id]);
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
-  const assign = data.find((a) => a.cmid === mod.id);
+  const assign = data.find((a) => String(a.cmid) === String(mod.id));
   if (!assign) return <EmptyState title="Tugas tidak ditemukan." />;
 
   return (
@@ -74,8 +74,9 @@ function ExternalContent({ mod }) {
 export default function ActivityView({ renderAssign }) {
   const { cmid } = useParams();
   const { course, sections } = useMoodleCourse();
-  const section = sections.find((s) => s.modules.some((m) => m.id === Number(cmid)));
-  const mod = section?.modules.find((m) => m.id === Number(cmid));
+  const section = sections.find((s) => (s.modules ?? []).some((m) => String(m.id) === String(cmid)));
+  const mod = section?.modules?.find((m) => String(m.id) === String(cmid));
+  useCourseBreadcrumb(mod ? [{ label: section.name, to: `/course/${course.id}#section-${section.section}` }, { label: mod.name }] : []);
 
   if (!mod) {
     return (
@@ -85,9 +86,6 @@ export default function ActivityView({ renderAssign }) {
 
   return (
     <div>
-      <nav className="mb-3 text-sm text-muted" aria-label="Breadcrumb aktivitas">
-        <Link to={`/course/${course.id}#section-${section.section}`}>{section.name}</Link>
-      </nav>
       <div className="mb-4 flex items-center gap-3">
         <ActivityIcon modname={mod.modname} src={mod.modicon} />
         <h2 className="text-2xl">{mod.name}</h2>

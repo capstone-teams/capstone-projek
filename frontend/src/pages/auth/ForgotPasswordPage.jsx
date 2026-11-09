@@ -6,7 +6,7 @@ import { AuthField, AuthLayout, AuthSubmitButton } from '../../components/auth';
 export default function ForgotPasswordPage() {
   const [info, setInfo] = useState('');
 
-  // Backend belum menyediakan endpoint pemulihan kata sandi; formulir tidak dikirim ke Moodle.
+  // Backend belum menyediakan endpoint pemulihan kata sandi, jadi formulir tidak dikirim.
   const handleSubmit = (event) => {
     event.preventDefault();
     setInfo('Pemulihan kata sandi belum tersedia');

@@ -1,13 +1,14 @@
-"""Orkestrator workflow (BE-11.2, BE-14.3).
+"""Orkestrator workflow (BE-11.2, BE-14.3, BE-17.1).
 
 Orkestrator mengendalikan urutan tahap dan transisi status; LLM tidak dapat
-mengubah status workflow. Tiga rangkaian tahap berjalan di atas workflow yang
+mengubah status workflow. Empat rangkaian tahap berjalan di atas workflow yang
 sama:
 
 ```text
-Post /rps/{id}/process   PROCESSING_RPS → ANALYZING_RPS
-Post /workflows/{id}/plan        PLANNING_COURSE → VALIDATING
-Post /rps/{id}/reanalyze         ANALYZING_RPS
+Post /rps/{id}/process            PROCESSING_RPS → ANALYZING_RPS
+Post /workflows/{id}/plan         PLANNING_COURSE → VALIDATING
+Post /rps/{id}/reanalyze          ANALYZING_RPS
+Post /workflows/{id}/executions   EXECUTING_TO_MOODLE
 ```
 
 Setelah rangkaian tahap selesai, workflow berhenti pada
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.config.database import get_session_factory
+from src.config.settings import get_settings
 from src.models.workflow import WorkflowStatus
 from src.models.workflow_event import EventType
 from src.services.analysis.service import RPSEvent
@@ -41,7 +43,10 @@ from src.services.course_plan.planner import (
     PlanningRequest,
     get_course_planner,
 )
+from src.services.execution.errors import ExecutionDomainError
 from src.services.llm.base import LLMProviderError
+from src.services.moodle_client import MoodleClient
+from src.services.moodle_integration_service import MoodleIntegrationService
 from src.services.rps.errors import RPSDomainError
 from src.services.rps.service import RPSService
 from src.services.workflow.domain import WorkflowRecord, stage_name
@@ -55,17 +60,20 @@ from src.services.workflow.service import (
 
 __all__ = [
     "COURSE_PLANNING_STAGES",
+    "EXECUTION_STAGES",
     "RPS_ANALYSIS_STAGES",
     "RPS_PROCESSING_STAGES",
     "WorkflowStage",
     "execute_workflow",
     "run_course_planning_workflow",
+    "run_execution_workflow",
     "run_rps_analysis_workflow",
     "run_rps_processing_workflow",
 ]
 
 if TYPE_CHECKING:  # pragma: no cover - hanya untuk anotasi tipe
     from src.services.course_plan.service import CoursePlanService
+    from src.services.execution.service import ExecutionService
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +127,9 @@ class WorkflowContext:
     instruction: str | None = None
     planning_request: PlanningRequest | None = None
     planned_plan: PlannedCoursePlan | None = None
+    #: Hanya terisi pada rangkaian tahap eksekusi Moodle (BE-17.1).
+    execution_service: ExecutionService | None = None
+    execution_id: str | None = None
     #: Event kegagalan sudah ditulis oleh service yang gagal (mis. analisis),
     #: sehingga orkestrator tidak perlu menulis event kegagalan kedua.
     failure_emitted: bool = False
@@ -354,6 +365,50 @@ COURSE_PLANNING_STAGES: tuple[WorkflowStage, ...] = (
     PLAN_VALIDATION_STAGE,
 )
 
+# --- Tahap: eksekusi ke Moodle (BE-17.1) -------------------------------------
+
+#: Nama tahap eksekusi pada event (sama dengan ``stage_name`` domain).
+EXECUTION_STAGE_NAME = stage_name(WorkflowStatus.EXECUTING_TO_MOODLE) or (
+    "moodle_execution"
+)
+
+
+async def _run_execution(ctx: WorkflowContext) -> None:
+    """Jalankan eksekusi struktur course plan yang sudah dibuat route (BE-17.1).
+
+    Prasyarat dan pembuatan ``MoodleExecution`` berstatus ``PENDING`` dilakukan
+    endpoint ``POST /workflows/{id}/executions`` sebelum runner dijadwalkan,
+    sehingga tahap ini hanya menjalankan operasi yang belum berhasil dan
+    mencatat satu event ``OPERASI_MOODLE`` per operasi.
+    """
+    if ctx.execution_service is None or ctx.execution_id is None:
+        raise RuntimeError("tahap eksekusi memerlukan ExecutionService dan execution_id")
+
+    async def emit(*, event: str, message: str, metadata: dict | None = None) -> None:
+        await ctx.workflow_service.record_event(
+            ctx.workflow,
+            event_type=EventType.OPERASI_MOODLE,
+            event=event,
+            stage=EXECUTION_STAGE_NAME,
+            message=message,
+            metadata=metadata,
+        )
+
+    await ctx.execution_service.execute(
+        execution_id=ctx.execution_id,
+        owner_id=ctx.owner_id,
+        emit_event=emit,
+    )
+
+
+EXECUTION_STAGE = WorkflowStage(
+    WorkflowStatus.EXECUTING_TO_MOODLE, _run_execution
+)
+
+#: Run eksekusi: EXECUTING_TO_MOODLE. Sukses kembali ke WAITING_FOR_REVIEW (DL-012).
+EXECUTION_STAGES: tuple[WorkflowStage, ...] = (EXECUTION_STAGE,)
+
+
 # --- Eksekusi ----------------------------------------------------------------
 
 
@@ -366,6 +421,8 @@ async def execute_workflow(
     course_plan_service: CoursePlanService | None = None,
     planner: CoursePlanner | None = None,
     instruction: str | None = None,
+    execution_service: ExecutionService | None = None,
+    execution_id: str | None = None,
 ) -> None:
     """Jalankan deretan tahap pada satu workflow.
 
@@ -382,6 +439,8 @@ async def execute_workflow(
         course_plan_service=course_plan_service,
         planner=planner,
         instruction=instruction,
+        execution_service=execution_service,
+        execution_id=execution_id,
     )
     ctx.workflow = await workflow_service.begin_run(workflow, total=len(stages))
 
@@ -402,6 +461,14 @@ async def execute_workflow(
                 ctx.workflow,
                 stage=stage.name,
                 message=exc.public_reason,
+                emit_event=not ctx.failure_emitted,
+            )
+            return
+        except ExecutionDomainError as exc:
+            await workflow_service.fail_run(
+                ctx.workflow,
+                stage=stage.name,
+                message=exc.public_message,
                 emit_event=not ctx.failure_emitted,
             )
             return
@@ -526,6 +593,70 @@ async def run_course_planning_workflow(
             )
         else:
             logger.info("course planning workflow %s selesai", workflow_id)
+
+
+async def run_execution_workflow(
+    *,
+    workflow_id: str,
+    owner_id: str,
+    execution_id: str,
+    moodle: MoodleIntegrationService | None = None,
+) -> None:
+    """Jalankan tahap ``EXECUTING_TO_MOODLE`` di background (BE-17.1).
+
+    Endpoint ``POST /workflows/{id}/executions`` sudah memeriksa prasyarat,
+    mengklaim workflow, dan membuat ``MoodleExecution`` ``PENDING`` sebelum
+    fungsi ini dijadwalkan. ``moodle`` dapat diganti pengujian; nilai bawaannya
+    client Moodle dari konfigurasi, ditutup setelah run selesai.
+
+    Seluruh kegagalan ditelan dan dilaporkan lewat status workflow, eksekusi,
+    event, dan log — tidak ada client yang menunggu pekerjaan background.
+    """
+    # Import lokal memutus siklus impor paket (pola yang sama dengan course
+    # planning): execution.service mengimpor WorkflowService, bukan orkestrator.
+    from src.services.execution.service import ExecutionService
+
+    client: MoodleClient | None = None
+    try:
+        if moodle is None:
+            client = MoodleClient.from_settings(get_settings())
+            moodle = MoodleIntegrationService(client)
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            workflow_service = WorkflowService.from_session(session)
+            rps_service = RPSService.from_session(session)
+            execution_service = ExecutionService.from_session(
+                session, moodle=moodle
+            )
+            workflow = await workflow_service.get_workflow(
+                workflow_id=workflow_id, owner_id=owner_id
+            )
+            await execute_workflow(
+                workflow=workflow,
+                stages=EXECUTION_STAGES,
+                workflow_service=workflow_service,
+                rps_service=rps_service,
+                execution_service=execution_service,
+                execution_id=execution_id,
+            )
+    except ExecutionDomainError as exc:
+        logger.warning(
+            "execution workflow %s gagal: %s", workflow_id, exc.log_message
+        )
+    except WorkflowDomainError as exc:
+        logger.warning(
+            "execution workflow %s gagal: %s", workflow_id, exc.log_message
+        )
+    except Exception:
+        logger.exception(
+            "execution workflow %s gagal di luar error domain", workflow_id
+        )
+    else:
+        logger.info("execution workflow %s selesai", workflow_id)
+    finally:
+        if client is not None:
+            await client.aclose()
 
 
 async def _run_in_background(

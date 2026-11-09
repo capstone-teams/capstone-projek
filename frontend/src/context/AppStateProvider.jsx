@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { AppStateContext } from './appStateContext';
 import { useAuth } from '../hooks/useAuth';
-import { appStateReducer, createAppState, loadPreferences, savePreferences, toErrorEntry } from '../state/appState';
+import { appStateReducer, createAppState, loadPreferences, savePreferences, toErrorEntry, workflowActions } from '../state/appState';
 
 function isAbort(error) {
   return error?.name === 'AbortError';
@@ -65,6 +65,7 @@ export function AppStateProvider({ children }) {
   const dismissError = useCallback((id) => dispatch({ type: 'error/dismiss', id }), []);
   const dismissErrorSource = useCallback((source) => dispatch({ type: 'error/dismiss', source }), []);
   const clearErrors = useCallback(() => dispatch({ type: 'error/clear' }), []);
+  const workflowApi = useMemo(() => workflowActions(dispatch), []);
 
   const value = useMemo(
     () => ({
@@ -79,8 +80,9 @@ export function AppStateProvider({ children }) {
       dismissError,
       dismissErrorSource,
       clearErrors,
+      ...workflowApi,
     }),
-    [state, setPreference, notify, dismissNotification, startLoading, trackLoading, reportError, dismissError, dismissErrorSource, clearErrors],
+    [state, setPreference, notify, dismissNotification, startLoading, trackLoading, reportError, dismissError, dismissErrorSource, clearErrors, workflowApi],
   );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }

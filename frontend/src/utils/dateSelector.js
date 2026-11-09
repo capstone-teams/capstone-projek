@@ -1,4 +1,4 @@
-// Nilai date_time_selector Moodle: { enabled, date }. Tidak aktif = 0 (tanpa tanggal).
+// Nilai pemilih tanggal-waktu: { enabled, date }. Tidak aktif = 0 (tanpa tanggal).
 
 /** Nilai awal date_time_selector: hari ini + `days` pukul 00:00, seperti default mod_form. */
 export function dateValue(days, enabled) {

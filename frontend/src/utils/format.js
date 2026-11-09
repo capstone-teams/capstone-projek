@@ -1,10 +1,18 @@
 const dateTimeFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 const timeFormat = new Intl.DateTimeFormat('id-ID', { timeStyle: 'medium' });
+const timestampFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'medium' });
 
 export function formatDateTime(value) {
   if (!value) return '-';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : dateTimeFormat.format(d);
+}
+
+/** Tanggal dan jam sampai detik, mis. untuk timeline event yang bisa terjadi berdekatan. */
+export function formatTimestamp(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : timestampFormat.format(d);
 }
 
 export function formatTime(value) {
@@ -30,12 +38,12 @@ export function errorMessage(error) {
   return error.message || 'Terjadi kesalahan.';
 }
 
-// ---- Timestamp Moodle (detik sejak epoch)
+// ---- Timestamp LMS (detik sejak epoch)
 const dayFormat = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const shortFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 const clockFormat = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-export function fromUnix(ts) {
+function fromUnix(ts) {
   return ts ? new Date(ts * 1000) : null;
 }
 
@@ -61,7 +69,7 @@ export function formatRelative(ts) {
   return `${Math.floor(diff / 86400)} hari lalu`;
 }
 
-/** Ambil cmid dari URL Moodle seperti .../mod/assign/view.php?id=42 */
+/** Ambil cmid dari URL aktivitas seperti .../mod/assign/view.php?id=42 */
 export function cmidFromUrl(url) {
   const m = /[?&]id=(\d+)/.exec(url ?? '');
   return m ? Number(m[1]) : null;

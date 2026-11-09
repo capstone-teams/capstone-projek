@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/hooks/useAuth';
 import { ApiError, request } from '../src/services/apiClient';
-import { MOODLE_SESSION_KEY, TOKEN_STORAGE_KEY } from '../src/services/config';
+import { TOKEN_STORAGE_KEY } from '../src/services/config';
 import { AUTH_STATUS, ROLE_FROM_BACKEND, SESSION_NOTICE } from '../src/types/auth';
 
 const service = vi.hoisted(() => ({
@@ -22,8 +22,6 @@ vi.mock('../src/services/apiClient', async (importOriginal) => {
 });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const teacher = { user: { id: 3, username: 'dosen', fullname: 'Rina Kartika', teacherCourseIds: [2] }, site: { name: 'Moodle ITK' } };
-const student = { user: { id: 5, username: 'mahasiswa', fullname: 'Andi Saputra', teacherCourseIds: [] }, site: teacher.site };
 const instructorMe = { id: 'user_001', username: 'dosen', firstname: 'Rina', lastname: 'Kartika', email: 'dosen@lecturer.itk.ac.id', role: 'INSTRUCTOR' };
 const studentMe = { id: 'user_002', username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id', role: 'STUDENT' };
 const authFailed = () => new ApiError(401, 'AUTHENTICATION_FAILED', 'Autentikasi gagal.');
@@ -33,9 +31,8 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-const storedTokens = () => [localStorage.getItem(TOKEN_STORAGE_KEY), localStorage.getItem(MOODLE_SESSION_KEY)];
-function storeSession(moodle = 'mock-3-test', backend = 'mock-token:user_001') {
-  if (moodle) localStorage.setItem(MOODLE_SESSION_KEY, JSON.stringify({ token: moodle }));
+const storedToken = () => localStorage.getItem(TOKEN_STORAGE_KEY);
+function storeSession(backend = 'mock-token:user_001') {
   if (backend) localStorage.setItem(TOKEN_STORAGE_KEY, backend);
 }
 
@@ -66,24 +63,19 @@ afterEach(async () => {
   node.remove();
 });
 
-describe('FE-06.2 login', () => {
-  it('logs in through the backend first, then Moodle with the backend username', async () => {
+describe('FE-06.2 login (Single Gateway)', () => {
+  it('logs in purely through backend and does not call Moodle token endpoint', async () => {
     service.getCurrentUser.mockResolvedValueOnce(instructorMe);
-    service.requestToken.mockResolvedValueOnce('mock-3-new');
-    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     await act(async () => state.login('dosen@lecturer.itk.ac.id', 'dosen123'));
     expect(service.login).toHaveBeenCalledWith('dosen@lecturer.itk.ac.id', 'dosen123', expect.any(Object));
-    expect(service.requestToken).toHaveBeenCalledWith('dosen', 'dosen123');
-    expect(service.login.mock.invocationCallOrder[0]).toBeLessThan(service.requestToken.mock.invocationCallOrder[0]);
-    expect(state.user).toMatchObject({ id: 3, fullname: 'Rina Kartika', role: 'DOSEN', backendId: 'user_001', teacherCourseIds: [2] });
-    expect(storedTokens()).toEqual(['mock-token:dosen@lecturer.itk.ac.id', JSON.stringify({ token: 'mock-3-new' })]);
+    expect(service.requestToken).not.toHaveBeenCalled();
+    expect(state.user).toMatchObject({ id: 'user_001', fullname: 'Rina Kartika', role: 'DOSEN', backendId: 'user_001', teacherCourseIds: [2, 3, 4] });
+    expect(storedToken()).toBe('mock-token:dosen@lecturer.itk.ac.id');
   });
 
   it('takes the role from the backend, not from Moodle course permissions', async () => {
     service.getCurrentUser.mockResolvedValueOnce(studentMe);
-    service.requestToken.mockResolvedValueOnce('mock-3-new');
-    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     await act(async () => state.login('mahasiswa', 'mahasiswa123'));
     expect(state.user.role).toBe('MAHASISWA');
@@ -96,17 +88,16 @@ describe('FE-06.2 login', () => {
     expect(error).toMatchObject({ code: 'AUTHENTICATION_FAILED', message: 'Autentikasi gagal.' });
     expect(service.requestToken).not.toHaveBeenCalled();
     expect(state.user).toBeNull();
-    expect(storedTokens()).toEqual([null, null]);
+    expect(storedToken()).toBeNull();
   });
 
-  it('rolls back the backend token when the Moodle step fails', async () => {
+  it('sets authenticated state with backend user info', async () => {
     service.getCurrentUser.mockResolvedValueOnce(instructorMe);
-    service.requestToken.mockRejectedValueOnce(Object.assign(new Error('Invalid login'), { code: 'invalidlogin' }));
     await mount();
-    const error = await act(async () => state.login('dosen', 'dosen123').catch((e) => e));
-    expect(error).toMatchObject({ code: 'invalidlogin', source: 'moodle' });
-    expect(state.user).toBeNull();
-    expect(storedTokens()).toEqual([null, null]);
+    await act(async () => state.login('dosen', 'dosen123'));
+    expect(state.user).toMatchObject({ backendId: 'user_001', username: 'dosen', role: 'DOSEN' });
+    expect(state.isAuthenticated).toBe(true);
+    expect(storedToken()).toBe('mock-token:dosen');
   });
 
   it('a pending login cannot store credentials after logout', async () => {
@@ -119,34 +110,32 @@ describe('FE-06.2 login', () => {
     await act(async () => { pending.resolve(instructorMe); await result; });
     expect(state.user).toBeNull();
     expect(service.requestToken).not.toHaveBeenCalled();
-    expect(localStorage.getItem(MOODLE_SESSION_KEY)).toBeNull();
+    expect(storedToken()).toBeNull();
   });
 });
 
 describe('FE-06.2 session restore', () => {
-  it('restores the user from GET /auth/me and Moodle before ending initialization', async () => {
+  it('restores the user from GET /auth/me before ending initialization', async () => {
     const pending = deferred();
-    storeSession();
+    storeSession('mock-token:user_001');
     service.getCurrentUser.mockReturnValueOnce(pending.promise);
-    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     expect(state.initializing).toBe(true);
     expect(state.user).toBeNull();
     await act(async () => pending.resolve(instructorMe));
     expect(state.initializing).toBe(false);
     expect(state.user).toMatchObject({ fullname: 'Rina Kartika', role: 'DOSEN', backendId: 'user_001' });
-    expect(storedTokens()).toEqual(['mock-token:user_001', JSON.stringify({ token: 'mock-3-test' })]);
+    expect(storedToken()).toBe('mock-token:user_001');
   });
 
   it('expires the session when the backend rejects the stored token', async () => {
-    storeSession();
+    storeSession('mock-token:user_001');
     service.getCurrentUser.mockRejectedValueOnce(authFailed());
-    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     expect(state.user).toBeNull();
     expect(state.initializing).toBe(false);
     expect(state.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
-    expect(storedTokens()).toEqual([null, null]);
+    expect(storedToken()).toBeNull();
   });
 
   it('discards a rejected Moodle token', async () => {
@@ -166,58 +155,51 @@ describe('FE-06.2 session restore', () => {
     expect(state.user).toBeNull();
     expect(state.initializing).toBe(false);
     expect(state.sessionNotice).toBe(SESSION_NOTICE.UNAVAILABLE);
-    expect(storedTokens()).toEqual(['mock-token:user_001', JSON.stringify({ token: 'mock-3-test' })]);
+    expect(storedToken()).toBe('mock-token:user_001');
   });
 
-  it('clears an incomplete session without restoring it', async () => {
-    storeSession('mock-3-test', null);
+  it('clears an incomplete session without restoring it when backend token is missing', async () => {
+    storeSession(null);
     await mount();
     expect(state.initializing).toBe(false);
     expect(service.getCurrentUser).not.toHaveBeenCalled();
-    expect(service.resolveSession).not.toHaveBeenCalled();
-    expect(storedTokens()).toEqual([null, null]);
+    expect(storedToken()).toBeNull();
   });
 
   it('ignores malformed session storage', async () => {
-    localStorage.setItem(MOODLE_SESSION_KEY, '{broken');
+    localStorage.setItem(TOKEN_STORAGE_KEY, '');
     await mount();
     expect(state.initializing).toBe(false);
     expect(state.user).toBeNull();
-    expect(service.resolveSession).not.toHaveBeenCalled();
   });
 
   it('a late session restoration cannot undo logout', async () => {
     const pending = deferred();
-    storeSession();
-    service.getCurrentUser.mockResolvedValueOnce(instructorMe);
-    service.resolveSession.mockReturnValueOnce(pending.promise);
+    storeSession('mock-token:user_001');
+    service.getCurrentUser.mockReturnValueOnce(pending.promise);
     await mount();
     await act(async () => state.logout());
-    await act(async () => pending.resolve(teacher));
+    await act(async () => pending.resolve(instructorMe));
     expect(state.user).toBeNull();
     expect(state.initializing).toBe(false);
-    expect(storedTokens()).toEqual([null, null]);
+    expect(storedToken()).toBeNull();
   });
 
   it('a late restore error cannot clear a newer successful login', async () => {
     const pending = deferred();
-    storeSession('old', 'old-backend');
+    storeSession('old-backend');
     service.getCurrentUser.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(studentMe);
-    service.resolveSession.mockResolvedValue(student);
-    service.requestToken.mockResolvedValueOnce('mock-5-new');
     await mount();
     await act(async () => state.login('mahasiswa', 'mahasiswa123'));
     await act(async () => pending.reject(authFailed()));
     expect(state.user).toMatchObject({ fullname: 'Andi Saputra', role: 'MAHASISWA' });
-    expect(JSON.parse(localStorage.getItem(MOODLE_SESSION_KEY)).token).toBe('mock-5-new');
+    expect(storedToken()).toBe('mock-token:mahasiswa');
   });
 });
 
 describe('FE-06.2 logout & expiry', () => {
   async function loggedIn() {
     service.getCurrentUser.mockResolvedValueOnce(instructorMe);
-    service.requestToken.mockResolvedValueOnce('mock-3-new');
-    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     await act(async () => state.login('dosen', 'dosen123'));
   }
@@ -226,8 +208,7 @@ describe('FE-06.2 logout & expiry', () => {
     await loggedIn();
     await act(async () => state.logout());
     expect(state).toMatchObject({ user: null, isAuthenticated: false, sessionNotice: null });
-    expect(service.setMoodleToken).toHaveBeenLastCalledWith(null);
-    expect(storedTokens()).toEqual([null, null]);
+    expect(storedToken()).toBeNull();
   });
 
   it('a 401 for the stored token on a later request expires the session', async () => {
@@ -236,15 +217,14 @@ describe('FE-06.2 logout & expiry', () => {
     await act(async () => { await request('GET', '/courses').catch(() => {}); });
     expect(state.user).toBeNull();
     expect(state.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
-    expect(storedTokens()).toEqual([null, null]);
+    expect(storedToken()).toBeNull();
   });
 
   it('triggers expire, clears session, and notifies SESSION_NOTICE.EXPIRED when unauthorized (401) occurs', async () => {
-    storeSession();
+    storeSession('mock-token:user_001');
     service.getCurrentUser.mockResolvedValueOnce(instructorMe);
-    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
-    expect(state.user).toMatchObject(teacher.user);
+    expect(state.user).toMatchObject({ id: 'user_001', username: 'dosen', role: 'DOSEN' });
     expect(state.isAuthenticated).toBe(true);
     expect(state.sessionNotice).toBeNull();
 
@@ -261,7 +241,7 @@ describe('FE-06.2 logout & expiry', () => {
     expect(state.status).toBe(AUTH_STATUS.ANONYMOUS);
     expect(state.isAuthenticated).toBe(false);
     expect(state.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
-    expect(storedTokens()).toEqual([null, null]);
+    expect(storedToken()).toBeNull();
     expect(service.logout).toHaveBeenCalled();
   });
 

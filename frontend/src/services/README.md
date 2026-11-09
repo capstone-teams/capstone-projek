@@ -10,10 +10,12 @@ Halaman di src/pages memakai dua boundary service yang dikontrol secara terpisah
 | mock/mockMoodle.js | Fixture Moodle ketika VITE_MOODLE_MOCK=true, termasuk aksi Mode edit (hanya editingteacher) dan `resetMockMoodle()` untuk test |
 | apiClient.js | HTTP/mock backend, Bearer token, ApiError, handler 401 bila token ditolak, dan pemeriksaan respons |
 | authService.js | Login (`POST /auth/login`), current user (`GET /auth/me`), pemetaan role backend → UI, dan logout client |
-| rpsService.js | RPS: validasi file di klien (PDF/DOCX, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
-| profileService.js, courseService.js | Preferensi dan workflow backend |
+| rpsService.js | RPS: validasi file di klien (PDF, maks. 20 MB), unggah dengan progres, proses, daftar, dan status enum backend |
+| profileService.js | Instructor setup (`/instructors/me/setup`) dengan `instructor_profile` diratakan untuk form |
+| workflowService.js | Monitoring workflow dan course target Moodle |
+| courseService.js | API `/courses` untuk mode mock; backend belum menyediakannya |
 | coursePlanAdapter.js | Normalisasi schema rencana dan alias field pemilih minggu |
-| monitoringSocket.js | WebSocket dengan reconnect: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
+| monitoringSocket.js | WebSocket dengan reconnect, status koneksi (`SOCKET_STATUS`), dan satu koneksi bersama per path: event course dan event workflow (`subscribeWorkflowEvents`, design-api §17) |
 | mock/ | State machine backend ketika VITE_USE_MOCK=true; auth mengikuti kontrak backend (role huruf besar, pesan error identik, kata sandi `<username>123`) |
 | config.js | URL, mode mock, dan kunci penyimpanan dari environment |
 

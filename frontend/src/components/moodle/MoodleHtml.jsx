@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import DOMPurify from 'dompurify';
-import { MOODLE_URL } from '../../services/config';
 import { withToken } from '../../services/moodle/moodleClient';
 
 /**
@@ -13,7 +12,11 @@ export default function MoodleHtml({ html, className = '' }) {
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
     doc.querySelectorAll('img[src]').forEach((img) => img.setAttribute('src', withToken(img.getAttribute('src'))));
     doc.querySelectorAll('a[href]').forEach((a) => {
-      a.setAttribute('href', withToken(new URL(a.getAttribute('href'), MOODLE_URL).href));
+      try {
+        a.setAttribute('href', withToken(new URL(a.getAttribute('href'), window.location.origin).href));
+      } catch {
+        // biarkan URL asli jika parsing gagal
+      }
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noreferrer');
     });

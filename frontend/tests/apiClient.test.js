@@ -131,13 +131,28 @@ describe('apiClient (mode backend)', () => {
     expect(err.message).toBe('Tidak dapat diproses');
   });
 
+  it('galat 5xx di luar kontrak backend (mis. halaman galat Cloudflare) tidak menampilkan teks teknisnya', async () => {
+    mockFetch(502, { title: 'Bad gateway', detail: 'The origin web server returned an invalid or incomplete response to Cloudflare.' });
+    const err = await request('GET', '/integrations/moodle/status').catch((e) => e);
+    expect(err).toMatchObject({ status: 502, code: 'INTERNAL_ERROR', message: 'Layanan sedang tidak dapat diakses. Silakan coba lagi beberapa saat lagi.' });
+    expect(err.message).not.toMatch(/Cloudflare|origin/i);
+  });
+
+  it('galat 5xx dalam format kontrak backend tetap memakai pesan dari backend', async () => {
+    mockFetch(500, { error: { code: 'INTERNAL_ERROR', message: 'Penyimpanan dokumen gagal.', details: [] } });
+    const err = await request('GET', '/rps/1').catch((e) => e);
+    expect(err).toMatchObject({ status: 500, code: 'INTERNAL_ERROR', message: 'Penyimpanan dokumen gagal.' });
+  });
+
   it('menggunakan fallback pesan dan INTERNAL_ERROR bila payload error kosong', async () => {
     mockFetch(500, null);
     const err = await request('GET', '/broken').catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(500);
     expect(err.code).toBe('INTERNAL_ERROR');
-    expect(err.message).toBe('Request gagal (HTTP 500).');
+    // Pengguna tidak melihat kode HTTP; detailnya hanya di konsol.
+    expect(err.message).toBe('Layanan sedang tidak dapat diakses. Silakan coba lagi beberapa saat lagi.');
+    expect(err.message).not.toMatch(/HTTP|\d{3}/);
   });
 
   it('menyisipkan Authorization Bearer token bila token tersedia di storage', async () => {
@@ -203,6 +218,14 @@ describe('apiClient (mode backend)', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     const err = await request('GET', '/x').catch((e) => e);
     expect(err.code).toBe('NETWORK_ERROR');
+    expect(err.message).not.toMatch(/server|backend|HTTP/i);
+  });
+
+  it('gateway error (502) dari proxy tidak menampilkan kode HTTP kepada pengguna', async () => {
+    mockFetch(502, null);
+    const err = await request('GET', '/x').catch((e) => e);
+    expect(err.status).toBe(502);
+    expect(err.message).toBe('Layanan sedang tidak dapat diakses. Silakan coba lagi beberapa saat lagi.');
   });
 
   it('rejects malformed successful JSON instead of presenting it as empty data', async () => {

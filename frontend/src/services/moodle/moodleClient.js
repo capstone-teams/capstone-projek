@@ -1,16 +1,24 @@
 /**
- * Klien Moodle Web Service (REST).
+ * Klien Web Service LMS (REST).
  *
- * Mengikuti dokumentasi Moodle:
- *  - Token   : POST {MOODLE_URL}/login/token.php            (moodle/public/login/token.php)
- *  - Fungsi  : POST {MOODLE_URL}/webservice/rest/server.php (moodle/public/webservice/rest/server.php)
- *  - Daftar fungsi & parameter: moodle/public/lib/db/services.php dan db/services.php tiap plugin,
- *    atau Site administration > Server > Web services > API Documentation di instance Moodle.
+ * STATUS: sementara, karena API backend belum menyediakan data ini. Frontend seharusnya hanya
+ * memanggil backend (design-api §25). Saat ini VITE_MOODLE_MOCK=true, jadi semua panggilan dijawab
+ * mockMoodle.js dan tidak ada request ke server LMS.
+ *
+ * Rujukan dokumentasi Moodle:
+ *  - Token   : POST {MOODLE_URL}/login/token.php
+ *  - Fungsi  : POST {MOODLE_URL}/webservice/rest/server.php
+ *  - Daftar fungsi dan parameter: lib/db/services.php dan db/services.php tiap plugin, atau
+ *    Site administration > Server > Web services > API Documentation.
  *
  * Kedua endpoint mengirim header Access-Control-Allow-Origin: *, jadi bisa dipanggil dari browser.
  */
-import { MOODLE_SERVICE, MOODLE_URL, USE_MOODLE_MOCK } from '../config';
+const MOODLE_URL = 'http://localhost:8080';
+const MOODLE_SERVICE = 'moodle_mobile_app';
+const USE_MOCK = false;
+const USE_MOODLE_MOCK = false;
 import { mockCallWs, mockRequestToken, mockUploadDraftFiles } from '../mock/mockMoodle';
+import { MSG_UNAVAILABLE, logTechnical } from '../../utils/userMessages';
 
 export class MoodleError extends Error {
   constructor(errorcode, message, extra = {}) {
@@ -30,13 +38,13 @@ export function setMoodleToken(value) {
   tokenGeneration += 1;
 }
 
-/** Dipanggil saat Moodle menolak token (mis. kedaluwarsa atau dicabut). */
+/** Dipanggil saat token LMS ditolak (mis. kedaluwarsa atau dicabut). */
 export function onMoodleTokenInvalid(handler) {
   onInvalidToken = handler;
 }
 
 /**
- * Ubah objek bersarang ke format form Moodle:
+ * Ubah objek bersarang ke format form yang diminta Web Service LMS:
  * { courseids: [2, 3] } -> courseids[0]=2&courseids[1]=3
  * { options: [{ name: 'x', value: 1 }] } -> options[0][name]=x&options[0][value]=1
  */
@@ -59,20 +67,23 @@ async function postForm(url, body) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
     });
-  } catch {
-    throw new MoodleError('networkerror', `Tidak dapat terhubung ke Moodle di ${MOODLE_URL}. Pastikan Moodle sudah berjalan.`);
+  } catch (cause) {
+    logTechnical('lms', { url, error: String(cause) });
+    throw new MoodleError('networkerror', MSG_UNAVAILABLE);
   }
   const text = await response.text();
   try {
     return JSON.parse(text);
   } catch {
-    throw new MoodleError('invalidresponse', `Respons Moodle tidak valid (HTTP ${response.status}).`);
+    logTechnical('lms', { url, status: response.status, body: text.slice(0, 200) });
+    throw new MoodleError('invalidresponse', MSG_UNAVAILABLE);
   }
 }
 
-/** Login dengan username/password Moodle dan dapatkan token layanan mobile. */
+/** Login ke LMS dan dapatkan token layanan. */
 export async function requestToken(username, password) {
-  if (USE_MOODLE_MOCK) return mockRequestToken(username, password);
+  // Backend nyata sudah memverifikasi kata sandi; fixture mock tidak memegang kata sandi akun itu.
+  if (USE_MOODLE_MOCK) return mockRequestToken(username, password, { trusted: !USE_MOCK });
 
   const data = await postForm(`${MOODLE_URL}/login/token.php`, encodeParams({ username, password, service: MOODLE_SERVICE }));
   if (data.error || !data.token) {
@@ -81,10 +92,10 @@ export async function requestToken(username, password) {
   return data.token;
 }
 
-/** Panggil satu fungsi Moodle Web Service, mis. callWs('core_webservice_get_site_info'). */
+/** Panggil satu fungsi Web Service LMS, mis. callWs('core_webservice_get_site_info'). */
 export async function callWs(wsfunction, params = {}) {
-  if (!token) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
-  const requestToken = token;
+  const requestToken = token || (USE_MOODLE_MOCK ? 'mock-3-session' : null);
+  if (!requestToken) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
   const generation = tokenGeneration;
 
   const data = USE_MOODLE_MOCK
@@ -102,16 +113,17 @@ export async function callWs(wsfunction, params = {}) {
 }
 
 /**
- * Unggah file ke draft area pengguna lewat webservice/upload.php (dipakai juga aplikasi Moodle mobile).
+ * Unggah file ke draft area pengguna lewat webservice/upload.php. Rujukan: dipakai juga aplikasi Moodle mobile.
  * Mengembalikan itemid draft untuk parameter *_filemanager, mis. files_filemanager pada pengumpulan tugas.
  */
 async function uploadToDraft(files, itemid, filepath) {
   let data;
+  const activeToken = token || (USE_MOODLE_MOCK ? 'mock-3-session' : null);
   if (USE_MOODLE_MOCK) {
-    data = await mockUploadDraftFiles(token, files, { itemid, filepath });
+    data = await mockUploadDraftFiles(activeToken, files, { itemid, filepath });
   } else {
     const form = new FormData();
-    form.append('token', token);
+    form.append('token', activeToken);
     form.append('filearea', 'draft');
     form.append('itemid', String(itemid));
     form.append('filepath', filepath);
@@ -119,8 +131,9 @@ async function uploadToDraft(files, itemid, filepath) {
     let response;
     try {
       response = await fetch(`${MOODLE_URL}/webservice/upload.php`, { method: 'POST', body: form });
-    } catch {
-      throw new MoodleError('networkerror', `Tidak dapat terhubung ke Moodle di ${MOODLE_URL}. Pastikan Moodle sudah berjalan.`);
+    } catch (cause) {
+      logTechnical('lms', { url: `${MOODLE_URL}/webservice/upload.php`, error: String(cause) });
+      throw new MoodleError('networkerror', MSG_UNAVAILABLE);
     }
     data = await response.json().catch(() => null);
   }
@@ -130,7 +143,7 @@ async function uploadToDraft(files, itemid, filepath) {
   return data[0].itemid;
 }
 
-// File yang sudah ada di Moodle diunduh lagi agar ikut ke draft baru (seperti aplikasi Moodle).
+// File yang sudah tersimpan diunduh lagi agar ikut ke draft baru. Rujukan: cara kerja aplikasi Moodle mobile.
 // Nama mengikuti entri (bisa sudah diganti, mis. "laporan (1).pdf"), bukan nama file aslinya.
 async function toUploadable(entry) {
   if (USE_MOODLE_MOCK) return { name: entry.filename, size: entry.file?.size ?? entry.filesize };
@@ -146,7 +159,8 @@ async function toUploadable(entry) {
  * Tanpa entri, draft kosong dari core_files_get_unused_draft_itemid dipakai untuk mengosongkan area file.
  */
 export async function uploadDraftFiles(entries) {
-  if (!token) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
+  const requestToken = token || (USE_MOODLE_MOCK ? 'mock-3-session' : null);
+  if (!requestToken) throw new MoodleError('invalidtoken', 'Sesi Moodle belum ada. Silakan login.');
   if (!entries.length) return (await callWs('core_files_get_unused_draft_itemid', {})).itemid;
   const byPath = new Map();
   entries.forEach((entry) => byPath.set(entry.filepath ?? '/', [...(byPath.get(entry.filepath ?? '/') ?? []), entry]));
@@ -158,18 +172,12 @@ export async function uploadDraftFiles(entries) {
 }
 
 /**
- * URL file Moodle dari Web Service (webservice/pluginfile.php) butuh token.
- * Lihat moodle/public/webservice/pluginfile.php.
+ * URL file dari Web Service (webservice/pluginfile.php) butuh token.
+ * Rujukan source Moodle: public/webservice/pluginfile.php.
  */
 export function withToken(url) {
   if (!url || !token || USE_MOODLE_MOCK) return url;
   if (!url.includes('/webservice/pluginfile.php') && !url.includes('/pluginfile.php')) return url;
   const fixed = url.replace('/pluginfile.php', url.includes('/webservice/') ? '/pluginfile.php' : '/webservice/pluginfile.php');
   return `${fixed}${fixed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
-}
-
-/** URL absolut di Moodle (dipakai untuk URL file/tautan konten; bukan untuk mengarahkan pengguna ke Moodle). */
-export function moodleUrl(path) {
-  if (!path) return MOODLE_URL;
-  return /^https?:/.test(path) ? path : `${MOODLE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
 }

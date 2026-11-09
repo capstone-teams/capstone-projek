@@ -147,6 +147,82 @@ async def test_planner_retries_after_schema_mismatch():
     assert retry["reason_code"] == "SCHEMA_VALIDATION_FAILED"
 
 
+# RPS dengan dua Sub-CPMK yang keduanya dipetakan ke minggu 1; rencana yang
+# hanya mencakup satu di antaranya gagal validasi akademik meskipun schema-nya
+# benar.
+REQUEST_TWO_SUBS = PlanningRequest(
+    rps_structured={
+        "course": {"name": "Basis Data"},
+        "sub_cpmk": [{"id": "SUB-1"}, {"id": "SUB-2"}],
+        "weeks": [
+            {"week": 1, "week_type": "regular", "sub_cpmk": ["SUB-1", "SUB-2"]}
+        ],
+    },
+    activity_configuration={"learning_material": True},
+)
+
+OUTPUT_MISSING_SUB = {
+    "course": {"title": "Basis Data", "code": "IF2230", "description": None},
+    "weeks": [
+        {
+            "week_number": 1,
+            "title": "Pengenalan Basis Data",
+            "learning_outcomes": ["SUB-1"],
+            "topics": ["Pengenalan Basis Data"],
+            "teaching_methods": ["Ceramah"],
+            "planned_activities": ["learning_material"],
+        }
+    ],
+}
+
+OUTPUT_COVERING_SUBS = {
+    "course": {"title": "Basis Data", "code": "IF2230", "description": None},
+    "weeks": [
+        {
+            "week_number": 1,
+            "title": "Pengenalan Basis Data",
+            "learning_outcomes": ["SUB-1", "SUB-2"],
+            "topics": ["Pengenalan Basis Data"],
+            "teaching_methods": ["Ceramah"],
+            "planned_activities": ["learning_material"],
+        }
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_planner_retries_when_sub_cpmk_coverage_is_incomplete():
+    provider = StubProvider(
+        [json.dumps(OUTPUT_MISSING_SUB), json.dumps(OUTPUT_COVERING_SUBS)]
+    )
+    collected, emit = await _events()
+    planner = LLMCoursePlanner(service=LLMService(provider), max_fix_attempts=1)
+
+    result = await planner.generate(REQUEST_TWO_SUBS, emit_event=emit)
+
+    assert result.attempts == 2
+    retry = [event for event in collected if event["event"] == "RETRY_FIX"][0]
+    assert retry["reason_code"] == "VALIDATION_FAILED"
+    assert any("SUB-2" in detail for detail in retry["details"])
+    # Temuan benar-benar dikirim balik ke model pada percobaan kedua.
+    assert "SUB-2" in provider.prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_planner_still_returns_plan_with_issues_when_budget_is_exhausted():
+    """Rencana yang tetap tidak memenuhi aturan dikembalikan agar dosen dapat
+    melihat temuannya dan meminta regenerasi (BE-14.2), bukan gagal total."""
+
+    provider = StubProvider([json.dumps(OUTPUT_MISSING_SUB)] * 2)
+    collected, emit = await _events()
+    planner = LLMCoursePlanner(service=LLMService(provider), max_fix_attempts=1)
+
+    result = await planner.generate(REQUEST_TWO_SUBS, emit_event=emit)
+
+    assert result.attempts == 2
+    assert collected[-1]["event"] == "PLANNING_COMPLETED"
+
+
 @pytest.mark.asyncio
 async def test_planner_fails_after_retry_budget_is_exhausted():
     provider = StubProvider(["bukan json", "tetap bukan json"])
@@ -194,8 +270,8 @@ def _output(*, weeks, activities=None) -> CoursePlanOutput:
 RPS = {
     "sub_cpmk": [{"id": "SUB-1"}, {"id": "SUB-2"}],
     "weeks": [
-        {"week": 1, "week_type": "regular"},
-        {"week": 2, "week_type": "uts"},
+        {"week": 1, "week_type": "regular", "sub_cpmk": ["SUB-1"]},
+        {"week": 2, "week_type": "uts", "sub_cpmk": []},
     ],
 }
 
@@ -261,3 +337,69 @@ def test_validation_rejects_material_and_disabled_activities_on_exam_week():
     assert "EXAM_WEEK_HAS_MATERIAL" in codes
     assert "ACTIVITY_NOT_ENABLED" in codes
     assert all(issue["week"] for issue in result["issues"])
+
+
+def test_validation_ignores_week_that_fills_a_hole_in_rps_numbering():
+    """Ekstraksi yang melewatkan minggu 2 tidak boleh menjadikan minggu 2 pada
+    rencana sebagai temuan: rencana semester memang berurutan."""
+    rps = {
+        "sub_cpmk": [{"id": "SUB-1"}],
+        "weeks": [
+            {"week": 1, "week_type": "regular", "sub_cpmk": ["SUB-1"]},
+            {"week": 3, "week_type": "regular"},
+        ],
+    }
+    output = _output(
+        weeks=[
+            (1, ["SUB-1"], ["Pengenalan"]),
+            (2, [], ["Materi yang hilang dari RPS"]),
+            (3, [], ["Lanjutan"]),
+        ]
+    )
+
+    result = validate_plan(
+        output,
+        rps_structured=rps,
+        activity_configuration={"learning_material": True},
+    )
+
+    assert result == {"passed": True, "issues": []}
+
+
+def test_validation_still_rejects_week_outside_rps_range():
+    output = _output(
+        weeks=[
+            (1, ["SUB-1"], ["Pengenalan"]),
+            (2, ["SUB-2"], []),
+            (3, [], ["Minggu tambahan"]),
+        ]
+    )
+
+    result = validate_plan(
+        output,
+        rps_structured=RPS,
+        activity_configuration={"learning_material": True},
+    )
+
+    codes = [issue["code"] for issue in result["issues"]]
+    assert "WEEK_NOT_IN_RPS" in codes
+
+
+def test_validation_does_not_require_sub_cpmk_without_week_mapping():
+    """Sub-CPMK yang dideklarasikan tetapi tidak dipetakan ke minggu mana pun
+    adalah celah ekstraksi; rencana tidak dapat menutupinya tanpa mengarang."""
+    rps = {
+        "sub_cpmk": [{"id": "SUB-1"}, {"id": "SUB-2"}],
+        "weeks": [
+            {"week": 1, "week_type": "regular", "sub_cpmk": ["SUB-1"]},
+        ],
+    }
+    output = _output(weeks=[(1, ["SUB-1"], ["Pengenalan"])])
+
+    result = validate_plan(
+        output,
+        rps_structured=rps,
+        activity_configuration={"learning_material": True},
+    )
+
+    assert result == {"passed": True, "issues": []}

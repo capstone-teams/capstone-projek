@@ -23,6 +23,7 @@ backend/
 │   │   ├── instructors.py        # GET/PUT /instructors/me/setup (INSTRUCTOR only)
 │   │   ├── workflows.py          # Workflow monitoring + WS /ws/workflows/{id} (BE-11.3)
 │   │   ├── course_plans.py       # Baca/review/generate course plan (BE-14)
+│   │   ├── executions.py         # Eksekusi struktur course ke Moodle (BE-17)
 │   │   ├── health.py
 │   │   └── __init__.py           # Registri router terpusat (api_router)
 │   ├── controllers/              # HTTP Request Orchestrator / Data Mapping Layer
@@ -31,6 +32,7 @@ backend/
 │   │   ├── rps/                  # Unggah, konversi (BE-05), & analisis dokumen RPS (BE-08.2)
 │   │   ├── instructor/           # Setup dosen: profil, aktivitas, konteks agent (BE-10)
 │   │   ├── workflow/             # State machine, event, & orkestrator (BE-11)
+│   │   ├── execution/            # Eksekusi struktur course plan ke Moodle (BE-17)
 │   │   ├── course_plan/          # Course plan berversi, review, & planner (BE-14)
 │   │   ├── user/                 # Domain User/Role, UserService, UserRepository
 │   │   ├── llm/                  # Integrasi penyedia LLM
@@ -43,6 +45,7 @@ backend/
 │   │   ├── instructor.py         # DTO setup dosen (BE-10)
 │   │   ├── workflow.py           # DTO monitoring workflow & event (BE-11.3)
 │   │   ├── course_plan.py        # Kontrak output + DTO course plan (BE-14)
+│   │   ├── execution.py          # DTO eksekusi Moodle berbasis workflow (BE-17)
 │   │   └── rps_structured.py     # Kontrak RPS Structured Data (BE-05.3)
 │   ├── middlewares/              # FastAPI Middlewares (Error Handler, Auth, CORS)
 │   │   └── error_handlers.py     # Pemetaan error domain → response HTTP

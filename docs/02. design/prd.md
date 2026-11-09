@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** Product Requirements Document
-**Version:** 0.1
+**Version:** 0.3
 **Status:** Draft
 **Product Owner / Project Manager:** Noel
 **Related Document:** `project-charter.md`
@@ -130,10 +130,11 @@ Fitur berikut tidak termasuk dalam scope produk:
 6. Pengelolaan administrasi akademik dosen.
 7. Pengembangan LMS baru.
 8. Modifikasi core Moodle.
-9. Pengembangan API Moodle khusus ITK.
+9. Pengembangan custom API Moodle di luar kebutuhan minimum MVP. Batasan penggunaan local plugin Moodle ditetapkan melalui DL-003.
 10. Custom Chromium/browser sebagai produk.
 11. Otomatisasi seluruh jenis Moodle activity.
 12. Autonomous publishing tanpa kontrol yang ditentukan produk.
+13. Integrasi dengan Moodle production ITK (DL-001).
 
 ---
 
@@ -545,7 +546,7 @@ Konten tidak boleh dieksekusi ke Moodle sebelum memenuhi kondisi approval yang d
 
 **Priority:** Must
 
-Sistem harus dapat berinteraksi dengan Moodle LMS ITK melalui Moodle Web Service API.
+Sistem harus dapat berinteraksi dengan instance Moodle self-hosted yang dikelola tim melalui Moodle Web Service API (DL-001). Operasi yang tidak tersedia pada external functions bawaan Moodle dijalankan melalui mekanisme yang ditetapkan pada DL-003.
 
 ### FR-048 — Course Target
 
@@ -895,7 +896,7 @@ Model LLM harus dievaluasi sebelum ditetapkan sebagai model final berdasarkan:
 * RPS adherence;
 * content quality;
 * latency;
-* resource/hardware requirements.
+* biaya penggunaan API per run.
 
 ---
 
@@ -1094,8 +1095,8 @@ Then sistem menyimpan status failure dan menjalankan retry/fix apabila kondisi m
 
 1. Sistem merupakan Capstone Project dengan waktu pengembangan terbatas.
 2. MVP harus memprioritaskan workflow end-to-end.
-3. Moodle integration bergantung pada Web Service functions dan permissions yang tersedia pada Moodle ITK.
-4. Local LLM dibatasi oleh hardware yang tersedia.
+3. Moodle integration bergantung pada external functions yang tersedia pada versi Moodle yang digunakan (DL-002) dan mekanisme tambahan yang ditetapkan melalui DL-003.
+4. Penggunaan LLM bergantung pada OpenAI API, termasuk biaya, rate limit, dan koneksi internet (DL-007).
 5. Kualitas output AI tidak dapat diasumsikan selalu benar.
 6. Instructor review tetap diperlukan sebagai kontrol kualitas.
 7. Sistem tidak bertujuan menggantikan keputusan akademik dosen.
@@ -1106,9 +1107,9 @@ Then sistem menyimpan status failure dan menjalankan retry/fix apabila kondisi m
 # 28. Product Assumptions
 
 1. RPS menyediakan informasi yang cukup untuk membangun course plan.
-2. Moodle ITK menyediakan Web Service API yang diperlukan untuk operasi dalam scope.
+2. Instance Moodle self-hosted dapat dikonfigurasi oleh tim untuk menyediakan web service, service, token, dan capability yang diperlukan untuk operasi dalam scope.
 3. Environment pengujian menyediakan akses instructor dan student.
-4. Local LLM dapat dijalankan pada resource yang tersedia.
+4. Tim memiliki akses OpenAI API dengan kuota yang mencukupi.
 5. Instructor bersedia melakukan review terhadap hasil AI.
 6. Struktur course yang digunakan dalam MVP dapat direpresentasikan pada Moodle.
 7. Assignment dan quiz dapat digunakan apabila capability Moodle yang diperlukan tersedia.
@@ -1119,13 +1120,13 @@ Then sistem menyimpan status failure dan menjalankan retry/fix apabila kondisi m
 
 Product bergantung pada:
 
-1. Moodle LMS ITK.
+1. Instance Moodle self-hosted yang dikelola tim (DL-001).
 2. Moodle Web Service API.
 3. Moodle authentication.
 4. Moodle permissions/capabilities.
 5. Environment Moodle untuk testing.
 6. RPS untuk development dan testing.
-7. Hardware untuk local LLM.
+7. Layanan OpenAI API dan API key-nya.
 8. Availability dan guidance dari supervisor.
 9. Availability anggota tim untuk development dan testing.
 
@@ -1195,7 +1196,7 @@ Requirement dapat memiliki status:
 Hal-hal berikut masih perlu dikonfirmasi atau ditentukan pada tahap lanjutan:
 
 1. Moodle Web Service functions spesifik yang diperlukan untuk setiap operasi.
-2. Authentication mechanism yang digunakan pada environment Moodle ITK.
+2. Authentication mechanism yang digunakan pada versi Moodle terpilih (token web service atau mekanisme autentikasi REST API baru).
 3. Permission/capability Moodle yang tersedia.
 4. Model LLM final.
 5. Document processing solution final.
@@ -1206,6 +1207,7 @@ Hal-hal berikut masih perlu dikonfirmasi atau ditentukan pada tahap lanjutan:
 10. Batas maksimum ukuran RPS yang akan didukung MVP.
 11. Apakah seluruh 16 minggu diproses sekaligus atau dapat diproses bertahap.
 12. Mekanisme penyimpanan version hasil generation dan regeneration.
+13. Mekanisme pembuatan page, assignment, dan quiz pada Moodle (DL-003).
 
 ---
 
@@ -1281,13 +1283,15 @@ Nilai target dan metode pengukuran ditentukan dalam **Quality Plan**.
 | ------------ | -------------------------------------- |
 | Document     | Product Requirements Document          |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.1                                    |
+| Version      | 0.3                                    |
 | Status       | Draft                                  |
 | Owner        | Project Manager                        |
-| Last Updated | 2026-09-02                             |
+| Last Updated | 2026-10-13                             |
 
 ## Version History
 
 | Version | Date       | Description | Author       |
 | ------- | ---------- | ----------- | ------------ |
 | 0.1     | 2026-09-02 | Initial PRD | Project Team |
+| 0.2     | 2026-10-13 | Target integrasi diubah ke Moodle self-hosted (DL-001); referensi DL-002 dan DL-003 | Project Manager |
+| 0.3     | 2026-10-13 | LLM provider diubah ke OpenAI API (DL-007) | Project Manager |

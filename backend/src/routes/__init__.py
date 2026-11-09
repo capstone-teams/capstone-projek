@@ -21,9 +21,13 @@ from fastapi import APIRouter
 
 from src.routes.admin import router as admin_router
 from src.routes.auth import router as auth_router
+from src.routes.contents import router as contents_router
 from src.routes.course_plans import router as course_plans_router
+from src.routes.courses import router as courses_router
+from src.routes.executions import router as executions_router
 from src.routes.health import router as health_router
 from src.routes.instructors import router as instructors_router
+from src.routes.moodle import router as moodle_router
 from src.routes.rps import router as rps_router
 from src.routes.workflows import router as workflows_router
 
@@ -34,8 +38,12 @@ api_router = APIRouter(prefix=API_V1_PREFIX)
 api_router.include_router(auth_router)
 api_router.include_router(admin_router)
 api_router.include_router(instructors_router)
+api_router.include_router(moodle_router)
 api_router.include_router(rps_router)
 api_router.include_router(course_plans_router)
+api_router.include_router(contents_router)
+api_router.include_router(executions_router)
+api_router.include_router(courses_router)
 api_router.include_router(workflows_router)
 
 __all__ = [
@@ -43,9 +51,13 @@ __all__ = [
     "admin_router",
     "api_router",
     "auth_router",
+    "contents_router",
     "course_plans_router",
+    "courses_router",
+    "executions_router",
     "health_router",
     "instructors_router",
+    "moodle_router",
     "rps_router",
     "workflows_router",
 ]

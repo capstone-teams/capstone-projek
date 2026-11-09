@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '../../ui';
 import { countWords } from '../../../utils/assignSubmission';
 
-// Ikon toolbar gaya TinyMCE (oxide) yang dipakai editor Moodle; garis 24×24.
+// Ikon toolbar gaya TinyMCE (oxide), yaitu editor bawaan Moodle; garis 24×24.
 const ICONS = {
   undo: 'M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11',
   redo: 'm15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13',
@@ -114,7 +114,7 @@ const DIALOGS = {
 const SHORTCUTS = [['Bold', 'Ctrl+B'], ['Italic', 'Ctrl+I'], ['Underline', 'Ctrl+U'], ['Undo', 'Ctrl+Z'], ['Redo', 'Ctrl+Y'], ['Select all', 'Ctrl+A']];
 
 /**
- * Editor teks seperti TinyMCE di Moodle (Online text): menu bar, toolbar, area isi,
+ * Editor teks. Rujukan: https://docs.moodle.org/503/en/Using_Assignment (Online text): menu bar, toolbar, area isi,
  * dan status bar berisi jalur elemen serta jumlah kata. Nilai berupa HTML.
  */
 export default function MoodleEditor({ id, labelId, initialValue = '', onChange, invalid, describedBy }) {

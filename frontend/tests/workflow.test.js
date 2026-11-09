@@ -4,10 +4,11 @@ import * as auth from '../src/services/authService';
 import * as rps from '../src/services/rpsService';
 import { isRpsInProgress } from '../src/utils/rpsStatus';
 import { subscribeWorkflowEvents } from '../src/services/monitoringSocket';
+import { getWorkflowEvents } from '../src/services/workflowService';
 import * as courses from '../src/services/courseService';
-import * as profile from '../src/services/profileService';
-import { subscribeCourseEvents } from '../src/services/monitoringSocket';
+import * as instructor from '../src/services/instructorService';
 import { configureMock, resetMockDb } from '../src/services/mock/mockServer';
+import { describeEvent } from '../src/utils/workflow';
 
 const flush = () => vi.runAllTimersAsync();
 
@@ -79,7 +80,8 @@ describe('RPS', () => {
     expect(uploaded).toMatchObject({ filename: 'rps-basis-data.pdf', status: 'UPLOADED', schema_version: '2.0', deduplicated: false });
 
     const proc = await rps.processRps(uploaded.id);
-    expect(proc).toEqual({ rps_id: uploaded.id, status: 'PROCESSING', schema_version: '2.0', reused: false });
+    // RPSProcessResponse: workflow_id wajib; orkestrator memulai workflow sejak tahap pemrosesan.
+    expect(proc).toEqual({ rps_id: uploaded.id, status: 'PROCESSING', schema_version: '2.0', reused: false, workflow_id: expect.stringMatching(/^workflow_/) });
     await expectApiError(rps.processRps(uploaded.id), 409, 'INVALID_REQUEST');
     await expectApiError(rps.getRpsAnalysis(uploaded.id), 422, 'INVALID_REQUEST');
 
@@ -104,9 +106,20 @@ describe('RPS', () => {
     const unsubscribe = subscribeWorkflowEvents(item.workflow_id, (event) => events.push(event));
     await flush();
     unsubscribe();
-    expect(events.map((e) => e.event)).toEqual(['WORKFLOW_STARTED', 'WORKFLOW_STAGE_STARTED', 'WORKFLOW_STAGE_COMPLETED', 'WORKFLOW_COMPLETED']);
+    // Langganan hanya menerima event baru (BE-11.3); event tahap pemrosesan sudah lewat.
+    expect(events.map((e) => e.event)).toEqual(['WORKFLOW_STAGE_STARTED', 'WORKFLOW_STAGE_COMPLETED', 'WORKFLOW_COMPLETED']);
     expect(events[0]).toMatchObject({ workflow_id: item.workflow_id, stage: 'rps_analysis', timestamp: expect.any(String) });
     expect(events.at(-1).progress).toEqual({ completed: 2, total: 2 });
+    // Riwayat lengkap lewat HTTP: satu workflow untuk tahap pemrosesan lalu analisis.
+    const history = await getWorkflowEvents(item.workflow_id);
+    expect(history.map((e) => `${e.event}:${e.stage}`)).toEqual([
+      'WORKFLOW_STARTED:rps_processing',
+      'WORKFLOW_STAGE_STARTED:rps_processing',
+      'WORKFLOW_STAGE_COMPLETED:rps_processing',
+      'WORKFLOW_STAGE_STARTED:rps_analysis',
+      'WORKFLOW_STAGE_COMPLETED:rps_analysis',
+      'WORKFLOW_COMPLETED:rps_analysis',
+    ]);
     expect(isRpsInProgress(await rps.getRps(uploaded.id))).toBe(false);
   });
 
@@ -129,7 +142,7 @@ describe('RPS', () => {
     await rps.processRps(conversion.id);
     await flush();
     expect(await rps.getRps(conversion.id)).toMatchObject({ status: 'FAILED', has_source_document: false });
-    await expectApiError(rps.reanalyzeRps(conversion.id), 409, 'INVALID_REQUEST');
+    await expectApiError(rps.reanalyzeRps(conversion.id), 422, 'INVALID_REQUEST');
   });
 
   it('mendeduplikasi isi yang sama dan menampilkan item daftar dengan workflow_id', async () => {
@@ -172,22 +185,24 @@ describe('RPS', () => {
 
   it('validateRpsFile menolak format dan ukuran yang salah sebelum dikirim', () => {
     expect(rps.validateRpsFile(null)).toBe('Pilih file RPS terlebih dahulu.');
-    expect(rps.validateRpsFile(new File(['x'], 'rps.txt'))).toBe('Format file harus PDF atau DOCX.');
-    expect(rps.validateRpsFile(new File(['x'], 'RPS'))).toBe('Format file harus PDF atau DOCX.');
+    expect(rps.validateRpsFile(new File(['x'], 'rps.txt'))).toBe('Format file harus PDF.');
+    expect(rps.validateRpsFile(new File(['x'], 'RPS'))).toBe('Format file harus PDF.');
     expect(rps.validateRpsFile(new File([''], 'rps.pdf'))).toMatch(/^File kosong/);
     const big = new File(['x'], 'rps.PDF');
     Object.defineProperty(big, 'size', { value: 21 * 1024 * 1024 });
     expect(rps.validateRpsFile(big)).toBe('Ukuran file 21.0 MB melebihi batas 20.0 MB.');
     expect(rps.validateRpsFile(new File(['x'], 'rps.pdf'))).toBeNull();
-    expect(rps.validateRpsFile(new File(['x'], 'RPS Final.DOCX'))).toBeNull();
+    expect(rps.validateRpsFile(new File(['x'], 'RPS Final.DOCX'))).toBe('Format file harus PDF.');
   });
 });
 
-describe('profil dosen', () => {
+describe('setup dosen', () => {
   it('menyimpan perubahan', async () => {
-    const saved = await profile.updateProfile({ teaching_style: 'Project based' });
-    expect(saved.teaching_style).toBe('Project based');
-    expect((await profile.getProfile()).teaching_style).toBe('Project based');
+    const saved = await instructor.updateInstructorSetup({
+      instructor_profile: { teaching_style: 'Project based' },
+    });
+    expect(saved.instructor_profile.teaching_style).toBe('Project based');
+    expect((await instructor.getInstructorSetup()).instructor_profile.teaching_style).toBe('Project based');
   });
 });
 
@@ -199,8 +214,6 @@ describe('workflow course end-to-end', () => {
       additional_prompt: 'Contoh kasus kampus',
       activity_configuration: { learning_material: true, assignment: true, quiz: true },
     });
-    const events = [];
-    const unsubscribe = subscribeCourseEvents(id, (ev) => events.push(ev.event));
     const status = async () => (await courses.getCourse(id)).status;
     expect(await status()).toBe('CREATED');
 
@@ -270,13 +283,6 @@ describe('workflow course end-to-end', () => {
 
     const runs = (await courses.getAgentRuns(id)).runs;
     expect(runs.every((r) => r.status === 'completed')).toBe(true);
-    const monitoring = await courses.getMonitoring(id);
-    expect(monitoring.status).toBe('COMPLETED');
-
-    expect(events).toEqual(
-      expect.arrayContaining(['PLANNING_COMPLETED', 'CONTENT_GENERATION_COMPLETED', 'EXECUTION_COMPLETED', 'VERIFICATION_COMPLETED']),
-    );
-    unsubscribe();
   });
 
   it('eksekusi dapat dibatalkan dan kembali ke APPROVED', async () => {
@@ -301,5 +307,18 @@ describe('workflow course end-to-end', () => {
     await expectApiError(courses.getCourse('nope'), 404, 'RESOURCE_NOT_FOUND');
     await expectApiError(courses.regeneratePlan('course_project_002', '  '), 422, 'INVALID_REQUEST');
     await expectApiError(courses.generateContent('course_project_002', [0]), 409, 'INVALID_REQUEST');
+  });
+});
+
+describe('describeEvent', () => {
+  it('memprioritaskan ev.message langsung dari backend jika tersedia', () => {
+    const ev = { event: 'WORKFLOW_FAILED', message: 'Penyimpanan dokumen gagal: Bucket tidak ditemukan.' };
+    expect(describeEvent(ev)).toBe('Penyimpanan dokumen gagal: Bucket tidak ditemukan.');
+  });
+
+  it('menerjemahkan event WORKFLOW_* jika message tidak ada', () => {
+    expect(describeEvent({ event: 'WORKFLOW_STARTED' })).toBe('Workflow dimulai');
+    expect(describeEvent({ event: 'WORKFLOW_STAGE_STARTED', stage: 'rps_processing' })).toBe('Tahap alur kerja dimulai (Pemrosesan RPS)');
+    expect(describeEvent({ event: 'WORKFLOW_FAILED' })).toBe('Workflow gagal');
   });
 });

@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.middleware.gzip import GZipMiddleware
 
 from src.config.database import dispose_engine
 from src.config.settings import settings
@@ -41,6 +42,11 @@ def create_app() -> FastAPI:
     # CORS dipasang sebelum router/exception handler lain dieksekusi, sehingga
     # header CORS tetap ada pada response sukses maupun error (401/422).
     register_cors(application)
+    # Response JSON bisa besar (analisis RPS, konten mingguan). Kompresi di
+    # sini memangkas waktu transfer tanpa mengubah kontrak endpoint. Level 6
+    # dipilih karena pada payload JSON rasionya sama dengan level 9 tetapi
+    # ~2x lebih murah di CPU (diukur pada ~80 KB payload).
+    application.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
     register_exception_handlers(application)
     application.include_router(health_router)
     application.include_router(api_router)

@@ -1,8 +1,10 @@
+
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 import httpx
@@ -20,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 WEBSERVICE_PATH = "/webservice/rest/server.php"
 DEFAULT_TIMEOUT_SECONDS = 10.0
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_BACKOFF_SECONDS = 0.5
+MAX_BACKOFF_SECONDS = 5.0
 REDACTED = "***"
 
 # Parameters owned by the client. Callers may not set them, otherwise a caller
@@ -38,13 +43,52 @@ _AUTHENTICATION_ERROR_CODES = frozenset(
         "wsaccessusernologin",
     }
 )
-_PERMISSION_ERROR_CODES = frozenset({"accessexception", "nopermissions"})
+_PERMISSION_ERROR_CODES = frozenset(
+    {
+        "accessexception",
+        "nopermissions",
+        # User tidak terdaftar di course / belum login ke course tersebut.
+        "errorcoursecontextnotvalid",
+        "requireloginerror",
+    }
+)
 _PERMISSION_EXCEPTION_NAMES = frozenset(
     {"webservice_access_exception", "required_capability_exception"}
 )
 
 # HTTP statuses that indicate a temporary problem on the server side.
 _RETRYABLE_HTTP_STATUSES = frozenset({429, 502, 503, 504})
+
+
+# Operasi tulis yang aman diulang: hasil akhirnya sama walaupun dijalankan dua kali.
+_IDEMPOTENT_WRITE_FUNCTIONS = frozenset(
+    {
+        "core_course_update_courses",
+        "core_update_inplace_editable",
+        "enrol_manual_enrol_users",
+    }
+)
+_IDEMPOTENT_WRITE_PREFIXES = ("local_capstonebridge_update_",)
+# Create plugin aman diulang hanya bila membawa idempotency key (ID number):
+# percobaan ulang mengembalikan activity yang sama, bukan membuat baru.
+_KEYED_CREATE_PREFIX = "local_capstonebridge_create_"
+
+
+def is_safe_to_retry(wsfunction: str, params: Mapping[str, Any] | None = None) -> bool:
+    """Apakah ``wsfunction`` aman diulang otomatis setelah error transient.
+
+    Operasi baca selalu aman. Operasi tulis hanya aman bila idempotent; contoh
+    yang **tidak** aman: ``core_course_create_courses`` dan
+    ``core_courseformat_update_course`` (setiap pemanggilan menambah objek baru).
+    """
+    name = wsfunction.strip()
+    if "_get_" in name:
+        return True
+    if name in _IDEMPOTENT_WRITE_FUNCTIONS or name.startswith(_IDEMPOTENT_WRITE_PREFIXES):
+        return True
+    if name.startswith(_KEYED_CREATE_PREFIX):
+        return bool(str((params or {}).get("idnumber") or "").strip())
+    return False
 
 
 def redact_token(text: str, token: str) -> str:
@@ -98,6 +142,9 @@ class MoodleClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         verify: bool = True,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         base_url = (base_url or "").strip().rstrip("/")
         if not base_url.startswith(("http://", "https://")):
@@ -106,10 +153,17 @@ class MoodleClient:
             raise ValueError("Moodle web service token must not be empty")
         if timeout <= 0:
             raise ValueError("Moodle timeout must be greater than zero")
+        if max_retries < 0:
+            raise ValueError("Moodle max_retries must not be negative")
+        if backoff_seconds < 0:
+            raise ValueError("Moodle backoff_seconds must not be negative")
 
         self._base_url = base_url
         self._token = token.strip()
         self._endpoint = f"{base_url}{WEBSERVICE_PATH}"
+        self._max_retries = max_retries
+        self._backoff_seconds = backoff_seconds
+        self._sleep = sleep
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
             verify=verify,
@@ -119,7 +173,15 @@ class MoodleClient:
 
     @classmethod
     def from_settings(cls, settings: Any, **kwargs: Any) -> MoodleClient:
-        """Build a client from `src.config.settings.Settings`."""
+        """Build a client from `src.config.settings.Settings`.
+
+        Timeout diambil dari ``MOODLE_TIMEOUT_SECONDS`` (default 10 detik)
+        kecuali caller memberikan ``timeout`` secara eksplisit.
+        """
+        kwargs.setdefault(
+            "timeout",
+            getattr(settings, "moodle_timeout_seconds", None) or DEFAULT_TIMEOUT_SECONDS,
+        )
         return cls(
             settings.MOODLE_BASE_URL,
             settings.MOODLE_WEB_SERVICE_TOKEN,
@@ -144,11 +206,19 @@ class MoodleClient:
         self,
         wsfunction: str,
         params: Mapping[str, Any] | None = None,
+        *,
+        retry: bool | None = None,
     ) -> Any:
         """Call one Moodle Web Service function and return its parsed JSON.
 
         Raises a `MoodleError` subclass on any failure. Never returns
         credentials, and never raises raw httpx or Moodle payloads.
+
+        Error transient (timeout, koneksi, HTTP 429/502/503/504) diulang paling
+        banyak ``max_retries`` kali dengan backoff eksponensial, **hanya** bila
+        operasinya aman diulang (lihat :func:`is_safe_to_retry`). ``retry``
+        memaksa keputusan itu. Error authentication, permission, dan validation
+        tidak pernah diulang.
         """
         if not wsfunction or not wsfunction.strip():
             raise ValueError("wsfunction must not be empty")
@@ -166,20 +236,39 @@ class MoodleClient:
             **flatten_params(params),
         }
 
+        retry_allowed = is_safe_to_retry(wsfunction, params) if retry is None else retry
+        attempts = 1 + (self._max_retries if retry_allowed else 0)
         started = time.perf_counter()
-        try:
-            result = await self._request(wsfunction, form)
-        except MoodleError as exc:
-            logger.warning(
-                "Moodle call failed: wsfunction=%s type=%s code=%s "
-                "http_status=%s duration_ms=%d",
-                wsfunction,
-                exc.error_type,
-                exc.code,
-                exc.http_status,
-                _elapsed_ms(started),
-            )
-            raise
+        for attempt in range(1, attempts + 1):
+            try:
+                result = await self._request(wsfunction, form)
+                break
+            except MoodleError as exc:
+                if exc.retryable and attempt < attempts:
+                    delay = min(self._backoff_seconds * 2 ** (attempt - 1), MAX_BACKOFF_SECONDS)
+                    logger.info(
+                        "Moodle call retrying: wsfunction=%s type=%s code=%s "
+                        "attempt=%d/%d delay_s=%.2f",
+                        wsfunction,
+                        exc.error_type,
+                        exc.code,
+                        attempt,
+                        attempts,
+                        delay,
+                    )
+                    await self._sleep(delay)
+                    continue
+                logger.warning(
+                    "Moodle call failed: wsfunction=%s type=%s code=%s "
+                    "http_status=%s attempts=%d duration_ms=%d",
+                    wsfunction,
+                    exc.error_type,
+                    exc.code,
+                    exc.http_status,
+                    attempt,
+                    _elapsed_ms(started),
+                )
+                raise
 
         logger.debug(
             "Moodle call succeeded: wsfunction=%s duration_ms=%d",

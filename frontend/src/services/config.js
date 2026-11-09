@@ -1,22 +1,19 @@
-// Konfigurasi runtime frontend, dibaca dari variabel VITE_* (lihat .env.example).
-
-// ---- Moodle LMS (sumber data utama: course, peserta, nilai, timeline)
-export const MOODLE_URL = (import.meta.env.VITE_MOODLE_URL || 'http://localhost:8080').replace(/\/+$/, '');
-
-// Layanan resmi Moodle yang dipakai aplikasi mobile; aktifkan di
-// Site administration > General > Mobile app > Enable web services for mobile devices.
-export const MOODLE_SERVICE = import.meta.env.VITE_MOODLE_SERVICE || 'moodle_mobile_app';
-
-// Default: data Moodle dummy di browser. Set VITE_MOODLE_MOCK=false untuk memanggil Moodle sungguhan.
-export const USE_MOODLE_MOCK = (import.meta.env.VITE_MOODLE_MOCK ?? 'true') !== 'false';
-
-// ---- Backend capstone (fitur Generator Konten AI untuk dosen)
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-
-// Default true supaya fitur AI bisa dicoba tanpa backend.
-export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? 'true') !== 'false';
+// Konfigurasi Runtime Frontend (Single Gateway ke Backend FastAPI)
+// Build produksi dilayani hosting statis (Vercel) tanpa proxy Vite; /api/v1 relatif di sana
+// menjawab 405. Dev/test tetap same-origin lewat proxy Vite (lihat vite.config.js).
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.PROD ? 'https://caps.njyn.foo/api/v1' : '/api/v1');
 
 export const TOKEN_STORAGE_KEY = 'agentic-lms.token';
-export const MOODLE_SESSION_KEY = 'agentic-lms.moodle-session';
-// Preferensi UI per user; kunci lengkap: `${PREFERENCES_STORAGE_KEY}.<userId>`.
 export const PREFERENCES_STORAGE_KEY = 'agentic-lms.preferences';
+
+// Project kursus dari API /courses backend (GET /courses, /courses/{id}, /plan, /content): tab Generator AI
+// menampilkan Ringkasan, RPS, Course Target, Rencana, Konten, Review, Publikasi, dan Workflow.
+// false = tampilan workflow saja (WorkflowLayout).
+export const COURSE_API_AVAILABLE = true;
+export const RPS_DELETE_AVAILABLE = import.meta.env.VITE_RPS_DELETE === 'true';
+
+// Aksi project kursus yang belum punya endpoint di backend: membuat project (POST /courses), konfigurasi
+// aktivitas, generate/regenerasi konten, validasi dan review konten, eksekusi serta verifikasi Moodle.
+// Kontrolnya tampil tetapi nonaktif; backend mock untuk tes (VITE_USE_MOCK=true) sudah menyediakannya.
+export const COURSE_ACTIONS_AVAILABLE = import.meta.env.VITE_USE_MOCK === 'true';

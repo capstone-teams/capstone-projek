@@ -25,7 +25,7 @@ test('backend rejects the wrong password and preserves the login view', async ({
   await page.getByLabel('Username', { exact: true }).fill('dosen');
   await page.getByLabel('Kata sandi', { exact: true }).fill('keliru');
   await page.getByRole('button', { name: 'Masuk', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Autentikasi gagal.');
+  await expect(page.getByRole('alert')).toContainText('Username atau kata sandi salah.');
   await expect(page).toHaveURL(/\/login$/);
   expect(await page.evaluate(() => [localStorage.getItem('agentic-lms.token'), localStorage.getItem('agentic-lms.moodle-session')])).toEqual([null, null]);
 });

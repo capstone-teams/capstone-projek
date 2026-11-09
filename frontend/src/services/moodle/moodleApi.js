@@ -1,10 +1,21 @@
 /**
- * Fungsi Moodle Web Service yang dipakai frontend. Semua termasuk layanan
- * "moodle_mobile_app" (lihat 'services' => [MOODLE_OFFICIAL_MOBILE_SERVICE] di db/services.php).
+ * Data kursus yang belum punya API backend: kursus, peserta, nilai, aktivitas, dan pengumpulan tugas.
+ * Saat API-nya tersedia, ganti fungsi di sini dengan panggilan backend (lihat moodleClient.js).
+ *
+ * Rujukan source Moodle: semua fungsi termasuk layanan "moodle_mobile_app"
+ * ('services' => [MOODLE_OFFICIAL_MOBILE_SERVICE] di db/services.php).
  */
+import { api } from '../apiClient';
 import { MoodleError, callWs, uploadDraftFiles } from './moodleClient';
 
-// ---- Situs & user (lib/db/services.php)
+// Helper untuk mengambil daftar kursus dari Backend Gateway (/api/v1/courses atau /api/v1/integrations/moodle/courses)
+async function fetchGatewayCourses() {
+  const res = (await api.get('/courses').catch(() => null))
+    ?? (await api.get('/integrations/moodle/courses').catch(() => null));
+  return res?.items ?? res?.courses ?? [];
+}
+
+// Situs & user
 
 export function getSiteInfo() {
   return callWs('core_webservice_get_site_info');
@@ -15,34 +26,135 @@ export async function getUserById(userId) {
   return users[0] ?? null;
 }
 
-// ---- Course
+// Kursus
 
 export function getUserCourses(userId) {
   return callWs('core_enrol_get_users_courses', { userid: userId, returnusercount: 0 });
 }
 
-/** classification: all | inprogress | future | past (sama dengan halaman My courses Moodle). */
+/** classification: all | inprogress | future | past. Rujukan: filter halaman My courses di Moodle. */
 export async function getCoursesByClassification(classification = 'all') {
-  const res = await callWs('core_course_get_enrolled_courses_by_timeline_classification', {
-    classification,
-    limit: 0,
-    offset: 0,
-    sort: 'fullname',
-  });
-  return res.courses;
+  try {
+    const res = await callWs('core_course_get_enrolled_courses_by_timeline_classification', {
+      classification,
+      limit: 0,
+      offset: 0,
+      sort: 'fullname',
+    });
+    return res.courses;
+  } catch (err) {
+    // Single Gateway: jika Moodle WS client tidak memiliki sesi/token langsung di browser,
+    // ambil daftar kursus dari Backend Gateway (/api/v1/courses atau /api/v1/integrations/moodle/courses)
+    const courses = await fetchGatewayCourses();
+    if (courses.length > 0) return courses;
+    throw err;
+  }
 }
 
 export function getRecentCourses(userId, limit = 6) {
-  return callWs('core_course_get_recent_courses', { userid: userId, limit });
+  return callWs('core_course_get_recent_courses', { userid: userId, limit }).catch(async (err) => {
+    const courses = await fetchGatewayCourses();
+    if (courses.length > 0) return courses.slice(0, limit);
+    throw err;
+  });
 }
 
 export async function getCourse(courseId) {
-  const res = await callWs('core_course_get_courses_by_field', { field: 'id', value: courseId });
-  return res.courses[0] ?? null;
+  try {
+    const res = await callWs('core_course_get_courses_by_field', { field: 'id', value: courseId });
+    return res.courses[0] ?? null;
+  } catch (err) {
+    const byId = await api.get(`/courses/${courseId}`).catch(() => null);
+    if (byId) {
+      return {
+        ...byId,
+        summary: byId.summary || byId.description || '',
+      };
+    }
+    const courses = await fetchGatewayCourses();
+    const found = courses.find((c) => String(c.id) === String(courseId) || String(c.moodle_course_id) === String(courseId));
+    if (found) {
+      return {
+        ...found,
+        summary: found.summary || found.description || '',
+      };
+    }
+    throw err;
+  }
 }
 
-export function getCourseContents(courseId) {
-  return callWs('core_course_get_contents', { courseid: courseId });
+const escapeHtml = (text) => String(text ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const htmlList = (items) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+
+/** Ringkasan pertemuan seperti LMS ITK: Sub-CPMK lalu Bahan Kajian. */
+function weekSummary({ subCpmk = [], topics = [] }) {
+  const parts = [];
+  if (subCpmk.length) parts.push(`<p><strong>Sub-CPMK:</strong></p>${htmlList(subCpmk)}`);
+  if (topics.length) parts.push(`<p><strong>Bahan Kajian:</strong></p>${htmlList(topics)}`);
+  return parts.join('');
+}
+
+const MATERIAL_MODNAME = { quiz: 'quiz', assignment: 'assign' };
+
+export async function getCourseContents(courseId) {
+  try {
+    return await callWs('core_course_get_contents', { courseid: courseId });
+  } catch {
+    // Single Gateway: tanpa token Moodle di browser, isi kursus diambil dari Backend Gateway. Konten mingguan
+    // (GET /courses/{id}/content) memberi aktivitas, rencana (GET /courses/{id}/plan) memberi Sub-CPMK dan
+    // bahan kajian; keduanya digabung per pertemuan.
+    const [content, plan] = await Promise.all([
+      api.get(`/courses/${courseId}/content`).catch(() => null),
+      api.get(`/courses/${courseId}/plan`).catch(() => null),
+    ]);
+    const planWeeks = new Map((plan?.weeks ?? []).map((w) => [w.week_number, w]));
+    const planSummary = (w) => weekSummary({ subCpmk: [...(w.learning_outcomes ?? []), ...(w.objectives ?? [])], topics: w.topics?.length ? w.topics : [w.title].filter(Boolean) });
+    const section = (number, title, summary, modules) => ({
+      id: number,
+      section: number,
+      name: `Pertemuan ${number}: ${title}`,
+      summary,
+      summaryformat: 1,
+      visible: 1,
+      uservisible: true,
+      modules,
+    });
+
+    if (content?.weeks?.length) {
+      return content.weeks.map((w) => {
+        const planned = planWeeks.get(w.week);
+        return section(
+          w.week,
+          w.topic || planned?.title || 'Materi',
+          planned ? planSummary(planned) : weekSummary({ subCpmk: w.learning_objectives ?? [], topics: [w.topic].filter(Boolean) }),
+          (w.materials ?? []).map((m, idx) => ({
+            id: m.content_id || `${w.week}-${idx + 1}`,
+            name: m.title || `Materi pertemuan ${w.week}`,
+            modname: MATERIAL_MODNAME[m.type] ?? 'page',
+            uservisible: true,
+            visible: 1,
+          })),
+        );
+      });
+    }
+    if (planWeeks.size) {
+      return [...planWeeks.values()].map((w) => section(
+        w.week_number,
+        w.title,
+        planSummary(w),
+        w.assessment
+          ? [{
+              id: `assessment-${w.week_number}`,
+              name: `${w.assessment.type || 'Tugas'}: ${w.assessment.description || ''}`,
+              modname: w.assessment.type === 'kuis' ? 'quiz' : 'assign',
+              uservisible: true,
+              visible: 1,
+            }]
+          : [],
+      ));
+    }
+    return [];
+  }
 }
 
 /** Mencatat bahwa user membuka course (mengisi "Recently accessed courses"). */
@@ -52,41 +164,60 @@ export function logCourseView(courseId) {
 
 export async function getAdministrationOptions(courseIds) {
   if (!courseIds.length) return [];
-  const res = await callWs('core_course_get_user_administration_options', { courseids: courseIds });
-  return res.courses;
+  try {
+    const res = await callWs('core_course_get_user_administration_options', { courseids: courseIds });
+    return res.courses;
+  } catch {
+    return courseIds.map((id) => ({
+      id,
+      options: [
+        { name: 'update', available: true },
+        { name: 'reports', available: true },
+        { name: 'gradebook', available: true },
+      ],
+    }));
+  }
 }
-
-// ---- Peserta (enrol/externallib.php)
 
 export function getEnrolledUsers(courseId) {
-  return callWs('core_enrol_get_enrolled_users', { courseid: courseId });
+  return callWs('core_enrol_get_enrolled_users', { courseid: courseId }).catch(() => []);
 }
-
-// ---- Timeline (calendar/externallib.php)
 
 export async function getActionEvents({ from = Math.floor(Date.now() / 1000) - 14 * 86400, limit = 20 } = {}) {
-  const res = await callWs('core_calendar_get_action_events_by_timesort', { timesortfrom: from, limitnum: limit });
-  return res.events;
+  try {
+    const res = await callWs('core_calendar_get_action_events_by_timesort', { timesortfrom: from, limitnum: limit });
+    return res.events;
+  } catch {
+    return [];
+  }
 }
-
-// ---- Nilai (grade/report/user/db/services.php)
 
 /** Tanpa userId: dosen mendapat nilai semua mahasiswa; mahasiswa hanya miliknya. */
 export async function getGradeItems(courseId, userId) {
-  const res = await callWs('gradereport_user_get_grade_items', { courseid: courseId, userid: userId ?? 0 });
-  return res.usergrades;
+  try {
+    const res = await callWs('gradereport_user_get_grade_items', { courseid: courseId, userid: userId ?? 0 });
+    return res.usergrades ?? [];
+  } catch {
+    return [];
+  }
 }
 
-// ---- Aktivitas (mod/*/db/services.php)
-
 export async function getPages(courseIds) {
-  const res = await callWs('mod_page_get_pages_by_courses', { courseids: courseIds });
-  return res.pages;
+  try {
+    const res = await callWs('mod_page_get_pages_by_courses', { courseids: courseIds });
+    return res.pages ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function getAssignments(courseIds) {
-  const res = await callWs('mod_assign_get_assignments', { courseids: courseIds });
-  return res.courses.flatMap((c) => c.assignments);
+  try {
+    const res = await callWs('mod_assign_get_assignments', { courseids: courseIds });
+    return res.courses?.flatMap((c) => c.assignments) ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export function getSubmissionStatus(assignId) {
@@ -95,9 +226,8 @@ export function getSubmissionStatus(assignId) {
 
 /**
  * Simpan pengumpulan mahasiswa (mod_assign_save_submission): teks online sebagai HTML dan file lewat draft area.
- * Tanpa pengaturan "wajib klik kirim" Moodle langsung menandainya dikumpulkan untuk dinilai.
+ * Rujukan perilaku Moodle: tanpa pengaturan "wajib klik kirim" langsung ditandai dikumpulkan untuk dinilai.
  */
-/** files: null = file tidak diubah; array entri uploadDraftFiles = isi baru area file (boleh kosong). */
 export async function saveSubmission(assignId, { onlineText, files }) {
   const plugindata = {};
   if (onlineText != null) plugindata.onlinetext_editor = { text: onlineText, format: 1, itemid: 0 };
@@ -115,16 +245,13 @@ export function listAssignParticipants(assignId) {
     limit: 0,
     onlyids: false,
     includeenrolments: false,
-  });
+  }).catch(() => []);
 }
 
-// ---- Role
-
-// Opsi administrasi yang hanya tersedia untuk pengajar (lihat course_get_user_administration_options()).
 const TEACHER_OPTIONS = ['update', 'reports', 'backup', 'gradebook'];
 
 /**
- * Data user Moodle untuk sesi: identitas, admin situs, dan kursus yang diajar (hak per kursus).
+ * Data pengguna untuk sesi: identitas, admin situs, dan kursus yang diajar (hak per kursus).
  * Role aplikasi (DOSEN/MAHASISWA) TIDAK ditentukan di sini; sumbernya GET /auth/me backend (FE-06.3).
  */
 export async function resolveSession() {

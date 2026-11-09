@@ -89,7 +89,11 @@ class RPS(BaseModel):
     # berikutnya (pemetaan field pada BE-08) tidak perlu menjalankan Docling
     # ulang; YAML dibentuk dari kolom ini saat dibutuhkan (DL-006).
     source_document: Mapped[dict | None] = mapped_column(
-        JSONB,
+        # none_as_null: nilai kosong disimpan sebagai SQL NULL, bukan JSON
+        # ``null``. Dengan begitu ``source_document IS NOT NULL`` dapat dipakai
+        # sebagai indikator murah pada query daftar/detail (JSON null juga
+        # "NOT NULL" di SQL).
+        JSONB(none_as_null=True),
         nullable=True,
     )
 
@@ -122,7 +126,7 @@ class RPS(BaseModel):
     # ``src.schemas.rps_structured.RPSStructuredData`` — schema yang sama dengan
     # kontrak endpoint analisis, sehingga database dan client tidak menyimpang.
     structured_data: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSONB(none_as_null=True),
         nullable=True,
     )
 

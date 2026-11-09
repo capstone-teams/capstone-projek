@@ -2,6 +2,8 @@ import { useCourse } from '../../../hooks/useCourse';
 import { getVerification, startVerification } from '../../../services/courseService';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { Badge, Card, ErrorAlert, Spinner } from '../../ui';
+import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
+import PendingFeatureNote from '../PendingFeatureNote';
 
 export default function MoodleVerificationCard() {
   const { course, version, refresh } = useCourse();
@@ -22,9 +24,10 @@ export default function MoodleVerificationCard() {
       {canStart && (
         <div className="next-step">
           <p>Periksa apakah course, section, dan aktivitas benar-benar ada dan dapat diakses mahasiswa.</p>
-          <button type="button" className="btn" disabled={start.pending} onClick={() => start.run().then(refresh).catch(() => {})}>
+          <button type="button" className="btn" disabled={!COURSE_ACTIONS_AVAILABLE || start.pending} onClick={() => start.run().then(refresh).catch(() => {})}>
             {v ? 'Verifikasi ulang' : 'Mulai verifikasi'}
           </button>
+          {!COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Verifikasi di Moodle belum tersedia.</PendingFeatureNote>}
         </div>
       )}
 

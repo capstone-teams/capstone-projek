@@ -6,17 +6,20 @@
 | --------------------- | ------------------------------------------------------ |
 | Document              | Moodle Integration Design                              |
 | Project               | Agentic AI untuk Mengisi Konten Moodle                 |
+| Version               | 0.2                                                    |
 | Status                | Proposed                                               |
 | Owner                 | Capstone Team                                          |
 | Related Documents     | Project Charter, PRD, System Design, API Specification |
-| External System       | Moodle LMS ITK                                         |
+| External System       | Moodle open-source, self-hosted oleh tim (DL-001)      |
 | Integration Mechanism | Moodle Web Service API                                 |
+| Moodle Version        | 5.3 LTS — Proposed (DL-002)                            |
+| Last Updated          | 2026-10-13                                             |
 
 ---
 
 ## 2. Purpose
 
-Dokumen ini mendefinisikan bagaimana sistem Capstone berintegrasi dengan Moodle LMS ITK untuk menjalankan course plan dan konten yang telah disetujui oleh instructor.
+Dokumen ini mendefinisikan bagaimana sistem Capstone berintegrasi dengan instance Moodle open-source yang dipasang dan dikelola tim (self-hosted) untuk menjalankan course plan dan konten yang telah disetujui oleh instructor.
 
 Dokumen ini berfokus pada boundary antara sistem Capstone dan Moodle.
 
@@ -31,7 +34,7 @@ Backend / Moodle Integration Layer
   ↓
 Moodle Web Service API
   ↓
-Moodle LMS ITK
+Moodle LMS (self-hosted)
 ```
 
 Agent tidak berkomunikasi langsung dengan Moodle dan tidak menerima credential Moodle.
@@ -46,7 +49,9 @@ Moodle Web Service merupakan framework resmi Moodle untuk menyediakan fungsi yan
 
 Moodle diperlakukan sebagai external system.
 
-Sistem Capstone tidak memodifikasi core Moodle dan tidak membuat "Moodle API ITK" baru.
+Sistem Capstone tidak memodifikasi core Moodle. Penambahan external function melalui local plugin hanya dilakukan apabila diputuskan melalui DL-003 dan dibatasi pada operasi yang dibutuhkan MVP.
+
+Integrasi dengan Moodle production ITK berada di luar scope MVP (DL-001).
 
 Terminologi yang digunakan:
 
@@ -77,7 +82,7 @@ Backend
       Moodle Web Service
            │
            ▼
-        Moodle ITK
+        Moodle (self-hosted)
 ```
 
 Frontend tidak memanggil Moodle secara langsung.
@@ -120,18 +125,31 @@ Status integrasi proyek:
 
 | Item                                           | Status         |
 | ---------------------------------------------- | -------------- |
-| Moodle LMS ITK sebagai target                  | Confirmed      |
-| Moodle Web Service sebagai mekanisme integrasi | Confirmed      |
-| Custom ITK Moodle API                          | Not applicable |
-| Application Backend API                        | Proposed       |
-| Moodle Integration Layer                       | Proposed       |
-| Exact Moodle functions                         | TBD            |
-| Authentication mechanism                       | TBD            |
-| Moodle service/token configuration             | TBD            |
-| Required permissions/capabilities              | TBD            |
-| Moodle version ITK                             | TBD            |
+| Moodle open-source self-hosted sebagai target (DL-001) | Confirmed |
+| Moodle Web Service sebagai mekanisme integrasi | Confirmed |
+| Moodle version | 5.3 LTS — Proposed (DL-002) |
+| Application Backend API | Proposed |
+| Moodle Integration Layer | Proposed |
+| Exact Moodle functions | TBD — diverifikasi pada instance tim |
+| Mekanisme pembuatan activity (page, assignment, quiz) | Open (DL-003) |
+| Authentication mechanism | TBD |
+| Moodle service/token configuration | TBD — dikonfigurasi oleh tim |
+| Required permissions/capabilities | TBD — dikonfigurasi oleh tim |
 
 Dokumentasi resmi Moodle menunjukkan bahwa external functions memiliki parameter, return value, dan permission/capability yang harus diperhatikan ketika digunakan.
+
+Karena instance Moodle dikelola sendiri, konfigurasi web service, service, token, role, dan capability dilakukan langsung oleh Moodle Integration Engineer. Status `TBD` pada tabel di atas berarti belum diverifikasi, bukan menunggu pihak eksternal.
+
+Referensi resmi yang digunakan tim:
+
+| Referensi | Kegunaan |
+| --------- | -------- |
+| `https://github.com/moodle/moodle` | Source code, branch sesuai versi terpilih |
+| `https://moodledev.io/docs/5.3` | Developer documentation (external functions, plugin, routing) |
+| `https://docs.moodle.org/503/en/Installing_Moodle` | Instalasi dan konfigurasi server |
+| `https://www.examulator.com/er/4.0/` | Referensi konseptual struktur database (tidak digunakan sebagai sumber kebenaran skema) |
+
+**Temuan awal (2026-10-13):** belum ditemukan external function bawaan Moodle untuk membuat course module baru (page, assign, quiz) maupun soal quiz, termasuk pada release notes Moodle 5.3. Temuan ini harus diverifikasi pada instance tim dan diputuskan melalui DL-003.
 
 ---
 
@@ -157,7 +175,7 @@ MVP integration dibatasi pada operasi yang diperlukan untuk flow utama produk.
 ### Out of Scope
 
 1. Modifikasi Moodle core.
-2. Membuat custom Moodle API.
+2. Membuat custom Moodle API di luar local plugin minimal yang ditetapkan melalui DL-003.
 3. Pengelolaan seluruh fitur Moodle.
 4. Pengelolaan akademik mahasiswa secara penuh.
 5. Attendance/absensi.
@@ -348,7 +366,7 @@ Internal Course ID
 Moodle Course ID
 ```
 
-`core_course_create_courses` tercantum pada dokumentasi Moodle sebagai fungsi untuk membuat course baru. Namun keberadaan fungsi pada dokumentasi tidak berarti token/service ITK otomatis memiliki akses untuk menggunakannya. Permission dan service configuration tetap harus diverifikasi.
+`core_course_create_courses` tercantum pada dokumentasi Moodle sebagai fungsi untuk membuat course baru. Namun keberadaan fungsi pada dokumentasi tidak berarti token/service yang dikonfigurasi otomatis memiliki akses untuk menggunakannya. Permission dan service configuration tetap harus diverifikasi.
 
 ---
 
@@ -381,7 +399,7 @@ get_sections()
 
 Implementasi actual Moodle function masih `TBD`.
 
-Dokumentasi Moodle yang diperiksa menyediakan `core_course_edit_section` untuk melakukan tindakan pada existing section, tetapi kebutuhan create-section harus diverifikasi terhadap versi dan konfigurasi Moodle ITK.
+Dokumentasi Moodle yang diperiksa menyediakan `core_course_edit_section` untuk melakukan tindakan pada existing section, tetapi kebutuhan create-section harus diverifikasi terhadap versi Moodle yang digunakan (DL-002).
 
 ---
 
@@ -410,7 +428,7 @@ Possible Moodle representations:
 * Book
 * Other supported resource
 
-Jenis final harus dipilih berdasarkan kebutuhan MVP dan capability Moodle ITK.
+Jenis final harus dipilih berdasarkan kebutuhan MVP dan mekanisme pembuatan activity yang ditetapkan pada DL-003.
 
 Dokumentasi Moodle mencantumkan fungsi pembacaan untuk Page dan Resource, tetapi fungsi create/update yang diperlukan untuk automation harus diverifikasi pada environment target.
 
@@ -452,7 +470,7 @@ maka assignment harus:
 4. dikirim melalui integration layer;
 5. diverifikasi setelah execution.
 
-Moodle mendokumentasikan sejumlah `mod_assign` functions, termasuk fungsi untuk membaca assignment dan submission-related information. Namun fungsi create/update yang diperlukan untuk automated creation harus dikonfirmasi pada Moodle ITK sebelum implementation dikunci.
+Moodle mendokumentasikan sejumlah `mod_assign` functions, termasuk fungsi untuk membaca assignment dan submission-related information. Namun fungsi create/update yang diperlukan untuk automated creation harus dikonfirmasi pada instance Moodle tim sebelum implementation dikunci. Jika tidak tersedia melalui external functions bawaan, pembuatan assignment mengikuti DL-003.
 
 ---
 
@@ -481,11 +499,11 @@ Quiz
  └── Basic grading configuration
 ```
 
-Moodle menyediakan sejumlah `mod_quiz` web service functions, terutama untuk access information, quiz retrieval, attempts, dan review. Namun kemampuan create quiz dan question melalui Web Service harus diverifikasi pada instance ITK sebelum dijadikan implementation dependency.
+Moodle menyediakan sejumlah `mod_quiz` web service functions, terutama untuk access information, quiz retrieval, attempts, dan review. Namun kemampuan create quiz dan question melalui Web Service harus diverifikasi pada instance Moodle tim sebelum dijadikan implementation dependency.
 
 Karena itu:
 
-**Quiz creation = Dependency / TBD untuk MVP sampai capability Moodle ITK dikonfirmasi.**
+**Quiz creation = Dependency / TBD untuk MVP sampai DL-003 diputuskan.**
 
 ---
 
@@ -858,7 +876,7 @@ Moodle external functions dapat memiliki capability requirements yang perlu dipe
 
 # 23. Moodle Configuration Dependency
 
-Sebelum integration dianggap ready, tim harus memperoleh informasi dari administrator Moodle ITK:
+Sebelum integration dianggap ready, Moodle Integration Engineer harus menetapkan dan mendokumentasikan konfigurasi berikut pada instance Moodle tim:
 
 1. Moodle version.
 2. Web services enabled.
@@ -909,11 +927,13 @@ Test environment digunakan untuk:
 * verification testing;
 * retry testing.
 
+Instance Moodle self-hosted tim berfungsi sebagai environment pengujian. Data uji (course, akun instructor, dan akun student) harus dapat dibuat ulang melalui script atau prosedur yang terdokumentasi agar seluruh anggota tim menguji pada kondisi yang sama.
+
 ---
 
 # 25. Mock / Adapter Strategy
 
-Jika Moodle ITK belum dapat digunakan, development tidak boleh berhenti.
+Jika operasi Moodle tertentu belum tersedia atau instance Moodle sedang tidak dapat digunakan, development tidak boleh berhenti.
 
 Gunakan abstraction:
 
@@ -938,7 +958,7 @@ IMoodleService
  │                 │
 MoodleService   MockMoodleService
  │                 │
-Moodle ITK       Local Test
+Moodle Instance  Local Test
 ```
 
 Mock harus mengikuti contract yang sama dengan implementation sebenarnya.
@@ -1209,35 +1229,35 @@ Prioritas:
 
 | Decision                          | Status    |
 | --------------------------------- | --------- |
-| Moodle version ITK                | TBD       |
+| Moodle version                    | Proposed — DL-002 |
 | Web Service protocol              | TBD       |
 | Authentication mechanism          | TBD       |
 | Token/service configuration       | TBD       |
 | Required Moodle capabilities      | TBD       |
 | Course creation capability        | TBD       |
 | Section creation capability       | TBD       |
-| Learning material creation method | TBD       |
-| Assignment creation method        | TBD       |
-| Quiz creation method              | TBD       |
-| Question creation method          | TBD       |
+| Learning material creation method | Open — DL-003 |
+| Assignment creation method        | Open — DL-003 |
+| Quiz creation method              | Open — DL-003 |
+| Question creation method          | Open — DL-003 |
 | File upload strategy              | Candidate |
 | Student verification mechanism    | TBD       |
-| Moodle test environment           | TBD       |
+| Moodle test environment           | Self-hosted instance — DL-001 |
 
 ---
 
 # 33. Required Action Before Implementation
 
-Tim integration harus melakukan API discovery terhadap Moodle ITK.
+Tim integration harus melakukan API discovery terhadap instance Moodle tim.
 
 Checklist:
 
 ```text
-[ ] Moodle version obtained
+[ ] Moodle version pinned (DL-002)
 [ ] Web services enabled
 [ ] Protocol confirmed
 [ ] Authentication confirmed
-[ ] Test integration account obtained
+[ ] Integration user, service, and token created
 [ ] API documentation accessed
 [ ] Available functions exported/recorded
 [ ] Required capabilities mapped
@@ -1249,9 +1269,10 @@ Checklist:
 [ ] File upload tested
 [ ] Student access tested
 [ ] Verification tested
+[ ] Activity creation mechanism decided (DL-003)
 ```
 
-Moodle menyediakan API documentation pada live Moodle site melalui area administrasi Web Services, sehingga daftar fungsi dari instance ITK sebaiknya dijadikan source of truth untuk implementasi final, bukan hanya daftar fungsi generik pada dokumentasi.
+Moodle menyediakan API documentation pada live Moodle site melalui area administrasi Web Services, sehingga daftar fungsi dari instance tim sebaiknya dijadikan source of truth untuk implementasi final, bukan hanya daftar fungsi generik pada dokumentasi.
 
 ---
 
@@ -1317,7 +1338,7 @@ Final integration architecture:
                 │
                 ▼
 ┌───────────────────────────────┐
-│         Moodle LMS ITK        │
+│    Moodle LMS (self-hosted)   │
 └───────────────────────────────┘
 ```
 
@@ -1336,9 +1357,9 @@ Moodle capability unavailable
           ↓
 Do not bypass security
 Do not let LLM access Moodle directly
-Do not invent an API
+Do not add a custom API outside the scope approved in DL-003
           ↓
-Use supported alternative / mock / defer feature
+Use supported alternative / approved local plugin (DL-003) / mock / defer feature
 ```
 
 This keeps the core agent architecture independent from uncertain Moodle capabilities.
@@ -1355,6 +1376,7 @@ This keeps the core agent architecture independent from uncertain Moodle capabil
 * `agent-design.md`
 * `content-schema.md`
 * `testing-quality.md`
+* `decision-log.md`
 
 ---
 
@@ -1364,7 +1386,7 @@ This keeps the core agent architecture independent from uncertain Moodle capabil
 
 The architecture and integration boundary are established.
 
-The following remain dependent on direct Moodle ITK verification:
+The following remain dependent on direct verification against the team's self-hosted Moodle instance:
 
 * exact Moodle functions;
 * authentication;
@@ -1374,4 +1396,13 @@ The following remain dependent on direct Moodle ITK verification:
 * quiz/question creation;
 * student verification mechanism.
 
-These items must not be converted from `TBD` to `Confirmed` until verified against the Moodle ITK environment.
+These items must not be converted from `TBD` to `Confirmed` until verified against the team's Moodle instance.
+
+---
+
+# 39. Version History
+
+| Version | Date       | Description                                                                                     | Author          |
+| ------- | ---------- | ----------------------------------------------------------------------------------------------- | --------------- |
+| 0.1     | 2026-09-02 | Initial Moodle Integration Design                                                               | Project Team    |
+| 0.2     | 2026-10-13 | Target diubah ke Moodle self-hosted (DL-001), versi Moodle (DL-002), mekanisme activity (DL-003) | Project Manager |

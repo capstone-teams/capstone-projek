@@ -4,6 +4,7 @@
 
 export const STATUS_LABELS = {
   CREATED: 'Dibuat',
+  DRAFT: 'Draft',
   PROCESSING_RPS: 'Memproses RPS',
   ANALYZING_RPS: 'Menganalisis RPS',
   PLANNING: 'Menyusun rencana',
@@ -37,7 +38,7 @@ export function isBusy(status) {
 }
 
 export const WORKFLOW_STEPS = [
-  { key: 'plan', label: 'Rencana', statuses: ['CREATED', 'PLANNING', 'WAITING_PLAN_REVIEW'] },
+  { key: 'plan', label: 'Rencana', statuses: ['CREATED', 'DRAFT', 'PLANNING', 'WAITING_PLAN_REVIEW'] },
   { key: 'content', label: 'Konten', statuses: ['PLAN_APPROVED', 'GENERATING_CONTENT', 'VALIDATING'] },
   { key: 'review', label: 'Review', statuses: ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'] },
   { key: 'execution', label: 'Eksekusi Moodle', statuses: ['APPROVED', 'EXECUTING'] },
@@ -80,11 +81,21 @@ export const EVENT_LABELS = {
   VERIFICATION_STARTED: 'Verifikasi dimulai',
   VERIFICATION_CHECK: 'Pemeriksaan verifikasi',
   VERIFICATION_COMPLETED: 'Verifikasi selesai',
+  WORKFLOW_STARTED: 'Workflow dimulai',
+  WORKFLOW_STAGE_STARTED: 'Tahap alur kerja dimulai',
+  WORKFLOW_STAGE_PROGRESS: 'Kemajuan tahap alur kerja',
+  WORKFLOW_STAGE_COMPLETED: 'Tahap alur kerja selesai',
+  WORKFLOW_RETRY: 'Percobaan ulang alur kerja',
+  WORKFLOW_COMPLETED: 'Workflow selesai',
+  WORKFLOW_FAILED: 'Workflow gagal',
 };
 
 export function describeEvent(ev) {
+  // Event workflow (design-api §17) membawa pesan siap tampil dari backend.
+  if (ev.event?.startsWith('WORKFLOW_') && ev.message) return ev.message;
   const label = EVENT_LABELS[ev.event] ?? ev.event;
   if (ev.event === 'STATUS_CHANGED') return `${label}: ${STATUS_LABELS[ev.status] ?? ev.status}`;
+  if (ev.stage) return `${label} (${RUN_TYPE_LABELS[ev.stage] ?? ev.stage})`;
   if (ev.week) return `${label} — minggu ${ev.week}`;
   if (ev.result) return `${label} (${ev.result})`;
   if (ev.reason) return `${label}: ${ev.reason}`;

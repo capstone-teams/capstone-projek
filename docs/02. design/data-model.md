@@ -9,7 +9,9 @@
 | Status            | Proposed                                                       |
 | Database          | PostgreSQL — Proposed                                          |
 | Owner             | Capstone Team                                                  |
-| Related Documents | Project Charter, PRD, System Design, Moodle Integration Design |
+| Related Documents | Project Charter, PRD, System Design, Moodle Integration Design, Content Schema |
+| Version           | 0.5                                                            |
+| Last Updated      | 2026-11-09                                                     |
 
 ---
 
@@ -205,7 +207,7 @@ Conceptual fields:
 | name          | String    | Display name                                  |
 | email         | String    | User email                                    |
 | password_hash | String    | Password hash if local authentication is used |
-| role          | Enum      | Instructor / Student / Admin                  |
+| role          | Enum      | DOSEN / MAHASISWA (DL-011)                    |
 | status        | Enum      | Active / Inactive                             |
 | created_at    | Timestamp | Creation time                                 |
 | updated_at    | Timestamp | Last update                                   |
@@ -215,12 +217,11 @@ Conceptual fields:
 Minimum roles:
 
 ```text
-INSTRUCTOR
-STUDENT
-ADMIN
+DOSEN
+MAHASISWA
 ```
 
-The Student role exists primarily to support course access and verification.
+The MAHASISWA role exists primarily to support course access and verification.
 
 Full student management is outside project scope.
 
@@ -236,11 +237,9 @@ Conceptual fields:
 | ---------------------- | --------- | --------------------------- |
 | id                     | UUID      | Primary key                 |
 | user_id                | UUID      | FK → User                   |
-| teaching_style         | JSONB     | Teaching style/preferences  |
-| language               | String    | Preferred language          |
-| content_preferences    | JSONB     | Content preferences         |
-| activity_preferences   | JSONB     | Assignment/quiz preferences |
-| additional_preferences | JSONB     | Other supported preferences |
+| teaching_style         | Text      | Gaya mengajar               |
+| expertise              | Text      | Keahlian                    |
+| delivery_preference    | Text      | Preferensi penyampaian      |
 | created_at             | Timestamp | Creation time               |
 | updated_at             | Timestamp | Last update                 |
 
@@ -256,25 +255,23 @@ Represents an uploaded RPS document.
 
 Conceptual fields:
 
-| Field                   | Type      | Description                                |
-| ----------------------- | --------- | ------------------------------------------ |
-| id                      | String(22) | Primary key (ShortUUID)                   |
-| owner_id                | String(22) | FK → User                                 |
-| file_name               | String    | Original filename                          |
-| file_type               | String    | PDF / DOCX                                 |
-| file_path               | String    | Stored document location (relative to storage root) |
-| file_hash               | String    | Integrity/deduplication hash (SHA-256)     |
-| schema_version          | String    | RPS Structured Data Schema version (Content Schema §44) |
-| status                  | Enum      | Uploaded / Processing / Processed / Failed |
-| source_document         | JSONB     | Full conversion output (DoclingDocument as JSON) |
-| processing_duration_ms  | Integer   | Conversion duration, for performance evaluation |
-| processing_error_code   | String    | Error code of the last failure (API Specification §18) |
-| processing_error        | Text      | Public failure reason, safe to display     |
-| structured_data         | JSONB     | Extracted structured data                  |
-| created_at              | Timestamp | Upload time                                |
-| updated_at              | Timestamp | Last update                                |
+| Field           | Type      | Description                                |
+| --------------- | --------- | ------------------------------------------ |
+| id              | UUID      | Primary key                                |
+| owner_id        | UUID      | FK → User                                  |
+| file_name       | String    | Original filename                          |
+| file_type       | String    | PDF / DOCX                                 |
+| file_path       | String    | Stored document location                   |
+| file_hash       | String    | Integrity/deduplication hash               |
+| status          | Enum      | Uploaded / Processing / Processed / Failed |
+| source_markdown | Text      | Normalized Markdown representation         |
+| structured_data | JSONB     | Extracted structured data                  |
+| created_at      | Timestamp | Upload time                                |
+| updated_at      | Timestamp | Last update                                |
 
 The original file should be retained when practical so the generated result remains traceable to its source.
+
+Document processing dijalankan satu kali per `file_hash`. Backend memanggil ulang `structured_data` untuk kebutuhan berikutnya dan hanya memproses ulang dokumen apabila file atau `schema_version` berubah (DL-006).
 
 Catatan:
 
@@ -476,78 +473,73 @@ The system must not generate Assignment or Quiz merely because those activity ty
 
 ---
 
-# 15. Agent Run
+# 15. Workflow
 
-Represents one execution of the agent workflow.
-
-Example:
-
-```text
-Generate Course Plan
-Generate Week 1 Content
-Generate Entire Course
-Regenerate Week 4
-Execute Moodle Course
-```
+Represents one end-to-end process of building a course from an RPS, following the Workflow class in the proposal (DL-011). Previously named Agent Run.
 
 Conceptual fields:
 
-| Field            | Type      | Description                                                              |
-| ---------------- | --------- | ------------------------------------------------------------------------ |
-| id               | UUID      | Primary key                                                              |
-| course_id        | UUID      | FK → Course                                                              |
-| run_type         | Enum      | Analysis / Planning / Generation / Validation / Execution / Verification |
-| status           | Enum      | Created / Running / Waiting / Retrying / Failed / Completed              |
-| current_stage    | String    | Current workflow stage                                                   |
-| model_name       | String    | LLM model used                                                           |
-| model_runtime    | String    | Runtime, e.g. Ollama                                                     |
-| input_context    | JSONB     | Structured input metadata                                                |
-| output_reference | JSONB     | Output reference                                                         |
-| retry_count      | Integer   | Retry count                                                              |
-| started_at       | Timestamp | Start time                                                               |
-| completed_at     | Timestamp | Completion time                                                          |
-| created_at       | Timestamp | Creation time                                                            |
+| Field            | Type      | Description                                                     |
+| ---------------- | --------- | --------------------------------------------------------------- |
+| id               | UUID      | Primary key                                                     |
+| dosen_id         | UUID      | FK → User (role DOSEN)                                          |
+| rps_id           | UUID      | FK → RPS                                                        |
+| status           | Enum      | WorkflowStatus                                                  |
+| moodle_course_id | Integer   | Course target Moodle (nullable)                                 |
+| model_name       | String    | LLM model used                                                  |
+| model_runtime    | String    | Provider, e.g. OpenAI                                           |
+| started_at       | Timestamp | Start time                                                      |
+| completed_at     | Timestamp | Completion time                                                 |
+| created_at       | Timestamp | Creation time                                                   |
+| updated_at       | Timestamp | Last update                                                     |
 
-Sensitive data must not be stored in `input_context`.
+`WorkflowStatus`:
+
+```text
+PROCESSING_RPS
+ANALYZING_RPS
+PLANNING_COURSE
+GENERATING_CONTENT
+VALIDATING
+WAITING_FOR_REVIEW
+EXECUTING_TO_MOODLE
+VERIFYING
+COMPLETED
+FAILED
+RETRYING
+```
+
+Sensitive data must not be stored on the workflow record.
 
 ---
 
-# 16. Agent Event
+# 16. Workflow Event
 
-Represents an operational event during an agent run.
-
-Example events:
-
-```text
-RPS_PROCESSING_STARTED
-RPS_PROCESSING_COMPLETED
-RPS_ANALYSIS_STARTED
-COURSE_PLAN_GENERATED
-VALIDATION_STARTED
-VALIDATION_FAILED
-WAITING_INSTRUCTOR_REVIEW
-MOODLE_EXECUTION_STARTED
-MOODLE_EXECUTION_COMPLETED
-VERIFICATION_FAILED
-RETRY_STARTED
-```
+Represents an operational event during a workflow, following the WorkflowEvent class in the proposal (DL-011). Previously named Agent Event.
 
 Conceptual fields:
 
-| Field        | Type      | Description            |
-| ------------ | --------- | ---------------------- |
-| id           | UUID      | Primary key            |
-| agent_run_id | UUID      | FK → AgentRun          |
-| event_type   | String    | Event identifier       |
-| stage        | String    | Workflow stage         |
-| status       | String    | Event status           |
-| message      | Text      | Human-readable message |
-| metadata     | JSONB     | Non-sensitive metadata |
-| created_at   | Timestamp | Event time             |
+| Field       | Type      | Description                    |
+| ----------- | --------- | ------------------------------ |
+| id          | UUID      | Primary key                    |
+| workflow_id | UUID      | FK → Workflow                  |
+| event_type  | Enum      | EventType                      |
+| stage       | Enum      | WorkflowStatus at event time   |
+| message     | Text      | Human-readable message         |
+| metadata    | JSONB     | Non-sensitive metadata         |
+| created_at  | Timestamp | Event time                     |
 
-Agent Event is intended for monitoring and audit.
+`EventType`:
 
-It must not store hidden chain-of-thought.
+```text
+PERUBAHAN_TAHAP
+AKTIVITAS_AGENT
+OPERASI_MOODLE
+RETRY_FIX
+ERROR_FAILURE
+```
+
+Workflow Event is intended for monitoring and audit. It must not store hidden chain-of-thought, credentials, API keys, or prompt content.
 
 ---
 
@@ -617,26 +609,52 @@ Instructor Review
 
 # 19. Moodle Execution
 
-Represents an operation performed against Moodle.
+Satu run eksekusi course plan ke Moodle (BE-16.1, BE-17.1). Setiap run memiliki
+beberapa **Execution Operation**, satu per objek Moodle yang diterapkan.
+Implementasi: `backend/src/models/moodle_execution.py` dan
+`backend/src/models/execution_operation.py`, diakses lewat
+`ExecutionRepository` (`backend/src/services/execution/repository.py`).
 
-Conceptual fields:
+## 19.1 MoodleExecution (`moodle_executions`)
 
-| Field             | Type      | Description                                               |
-| ----------------- | --------- | --------------------------------------------------------- |
-| id                | UUID      | Primary key                                               |
-| course_id         | UUID      | FK → Course                                               |
-| agent_run_id      | UUID      | FK → AgentRun                                             |
-| operation         | String    | Moodle operation                                          |
-| target_type       | String    | Course / Section / Content / Activity                     |
-| target_id         | UUID      | Internal target                                           |
-| moodle_object_id  | String    | External Moodle ID                                        |
-| status            | Enum      | Pending / Running / Success / Failed / Blocked / Retrying |
-| request_reference | String    | Internal operation reference                              |
-| error_code        | String    | Normalized error                                          |
-| error_message     | Text      | Safe error message                                        |
-| retry_count       | Integer   | Retry count                                               |
-| started_at        | Timestamp | Execution start                                           |
-| completed_at      | Timestamp | Execution end                                             |
+| Field            | Type      | Description                                             |
+| ---------------- | --------- | ------------------------------------------------------- |
+| id               | String    | Primary key                                             |
+| workflow_id      | String    | FK → Workflow                                           |
+| course_plan_id   | String    | FK → Course Plan (versi yang dieksekusi)                |
+| moodle_course_id | Integer   | ID course target di Moodle                              |
+| scope            | Enum      | `STRUCTURE` (M03, section saja) / `FULL` (M04, beserta konten dan aktivitas) |
+| status           | Enum      | `PENDING` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED` |
+| error_message    | Text      | Pesan error aman (tanpa token)                          |
+| readback         | JSONB     | Ringkasan hasil baca ulang dari Moodle setelah eksekusi |
+| started_at       | Timestamp | Waktu mulai                                             |
+| completed_at     | Timestamp | Waktu selesai                                           |
+
+`SKIPPED` berarti run tidak memiliki operasi yang perlu diterapkan ke Moodle
+(misalnya eksekusi ulang cakupan `FULL` ketika seluruh konten tidak berubah).
+Nilai lama `BLOCKED` dan `RETRYING` masih ada di enum database untuk
+kompatibilitas, tetapi tidak dipakai aplikasi.
+
+## 19.2 ExecutionOperation (`execution_operations`)
+
+| Field               | Type    | Description                                                  |
+| ------------------- | ------- | ------------------------------------------------------------ |
+| id                  | String  | Primary key                                                  |
+| execution_id        | String  | FK → MoodleExecution                                         |
+| course_plan_week_id | String  | FK → Course Plan Week (rencana mingguan)                     |
+| content_id          | String  | FK → Content, opsional (cakupan `FULL`)                      |
+| operation_type      | Enum    | `SECTION` / `LEARNING_MATERIAL` / `LEARNING_RESOURCE` / `ASSIGNMENT` / `QUIZ` |
+| idempotency_key     | String  | Kunci stabil operasi, unik per eksekusi                      |
+| moodle_object_id    | String  | ID objek Moodle hasil operasi (section id, cmid)             |
+| status              | Enum    | `PENDING` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED`     |
+| error_message       | Text    | Pesan error aman                                             |
+| retry_count         | Integer | Jumlah retry (≥ 0)                                           |
+
+Sumber idempotency lintas run adalah tabel `moodle_entity_mappings` (BE-04.3):
+operasi yang berhasil menyimpan pemetaan objek internal → ID Moodle (mis.
+`course_plan_week` → section id), sehingga run berikutnya memperbarui objek yang
+sama alih-alih membuat duplikat. `moodle_object_id` pada operasi sama dengan
+`moodle_id` pada pemetaan tersebut.
 
 Raw authentication information must never be stored.
 
@@ -731,6 +749,7 @@ Recommended relationships:
 | AgentRun → ValidationResult    | 1 : N       |
 | User → Review                  | 1 : N       |
 | Course → MoodleExecution       | 1 : N       |
+| MoodleExecution → ExecutionOperation | 1 : N |
 | MoodleExecution → Verification | 1 : N       |
 
 ---
@@ -828,13 +847,14 @@ PASS
 
 # 25. Activity Configuration
 
-Activity configuration dapat disimpan pada level course atau generation run.
+Activity Configuration disimpan per dosen bersama Additional Prompt, sesuai entitas `activity_configuration` pada ERD proposal (DL-011).
 
 Contoh:
 
 ```json
 {
   "learning_material": true,
+  "learning_resource": true,
   "assignment": true,
   "quiz": false
 }
@@ -1295,3 +1315,16 @@ Perubahan schema harus dievaluasi terhadap PRD dan System Design sebelum impleme
 * `agent-design.md`
 * `content-schema.md`
 * `testing-quality.md`
+* `decision-log.md`
+
+---
+
+# 42. Version History
+
+| Version | Date       | Description                                                           | Author          |
+| ------- | ---------- | --------------------------------------------------------------------- | --------------- |
+| 0.1     | 2026-09-02 | Initial Data Model                                                    | Project Team    |
+| 0.2     | 2026-10-13 | Penyesuaian entitas RPS untuk RPS Structured Data (DL-006)            | Project Manager |
+| 0.3     | 2026-10-13 | Contoh provider LLM disesuaikan dengan DL-007                         | Project Manager |
+| 0.4     | 2026-10-19 | Role DOSEN/MAHASISWA, Instructor Profile, Workflow, Workflow Event, Activity Configuration per dosen (DL-011) | Project Manager |
+| 0.5     | 2026-11-09 | Moodle Execution per run, Execution Operation, status SKIPPED, dan tautan ke tabel mapping BE-04.3 (BE-16.1) | Moodle Integration Engineer |

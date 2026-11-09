@@ -5,16 +5,17 @@ import InstructorSetupForm from '../src/components/ai/InstructorSetupForm';
 import TeachingProfileForm from '../src/components/ai/TeachingProfileForm';
 import {
   DEFAULT_ACTIVITY_CONFIGURATION,
-  MAX_PROMPT_LENGTH,
 } from '../src/components/ai/instructorSetupConstants';
 import TeachingPreferencesCard from '../src/components/ai/TeachingPreferencesCard';
 
-const mockProfileService = vi.hoisted(() => ({
+const mockInstructorService = vi.hoisted(() => ({
+  getInstructorSetup: vi.fn(),
+  updateInstructorSetup: vi.fn(),
   getProfile: vi.fn(),
   updateProfile: vi.fn(),
 }));
 
-vi.mock('../src/services/profileService', () => mockProfileService);
+vi.mock('../src/services/instructorService', () => mockInstructorService);
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -78,18 +79,12 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(deliveryPreference).not.toBeNull();
     expect(deliveryPreference.value).toBe('');
 
-    // 3. Section 2: Additional Prompt & Character counter
-    expect(container.textContent).toContain('2. Prompt Tambahan (AI Agent)');
-    const additionalPrompt = container.querySelector('textarea[name="additional_prompt"]');
-    expect(additionalPrompt).not.toBeNull();
-    expect(additionalPrompt.value).toBe('');
+    // 3. Prompt tambahan tidak lagi diatur di profil (diisi saat generate).
+    expect(container.querySelector('textarea[name="additional_prompt"]')).toBeNull();
+    expect(container.textContent).not.toContain('Prompt Tambahan');
 
-    const charCounter = container.querySelector('[data-testid="prompt-char-counter"]');
-    expect(charCounter).not.toBeNull();
-    expect(charCounter.textContent).toContain(`0 / ${MAX_PROMPT_LENGTH} karakter`);
-
-    // 4. Section 3: Activity Configuration
-    expect(container.textContent).toContain('3. Konfigurasi Aktivitas Pembelajaran');
+    // 4. Section 2: Activity Configuration
+    expect(container.textContent).toContain('2. Konfigurasi Aktivitas Pembelajaran');
     const learningMaterial = container.querySelector('input[name="learning_material"]');
     const learningResource = container.querySelector('input[name="learning_resource"]');
     const assignment = container.querySelector('input[name="assignment"]');
@@ -131,11 +126,13 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(container.querySelector('form')).toBeNull();
   });
 
-  it('populates fields from custom initial props', async () => {
+  it('populates fields from custom initial props with nested DTO', async () => {
     const initial = {
-      teaching_style: 'Studi kasus interaktif',
-      expertise: 'Kecerdasan Buatan',
-      delivery_preference: 'Penjelasan konsep secara bertahap',
+      instructor_profile: {
+        teaching_style: 'Studi kasus interaktif',
+        expertise: 'Kecerdasan Buatan',
+        delivery_preference: 'Penjelasan konsep secara bertahap',
+      },
       additional_prompt: 'Perbanyak analogi dunia nyata.',
       activity_configuration: {
         learning_material: true,
@@ -150,10 +147,6 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(container.querySelector('textarea[name="teaching_style"]').value).toBe('Studi kasus interaktif');
     expect(container.querySelector('input[name="expertise"]').value).toBe('Kecerdasan Buatan');
     expect(container.querySelector('textarea[name="delivery_preference"]').value).toBe('Penjelasan konsep secara bertahap');
-    expect(container.querySelector('textarea[name="additional_prompt"]').value).toBe('Perbanyak analogi dunia nyata.');
-
-    const charCounter = container.querySelector('[data-testid="prompt-char-counter"]');
-    expect(charCounter.textContent).toBe(`${initial.additional_prompt.length} / ${MAX_PROMPT_LENGTH} karakter`);
 
     expect(container.querySelector('input[name="learning_material"]').checked).toBe(true);
     expect(container.querySelector('input[name="learning_resource"]').checked).toBe(true);
@@ -161,61 +154,26 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(container.querySelector('input[name="quiz"]').checked).toBe(true);
   });
 
-  it('updates character counter in real time when typing in additional prompt', async () => {
-    await renderComponent(<InstructorSetupForm />);
+  it('populates fields from legacy flat initial props fallback', async () => {
+    const initial = {
+      teaching_style: 'Kuliah klasikal',
+      expertise: 'Algoritma',
+      delivery_preference: 'Slide presentasi terstruktur',
+      additional_prompt: 'Fokus pemahaman dasar.',
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: true,
+        quiz: false,
+      },
+    };
 
-    const promptTextarea = container.querySelector('textarea[name="additional_prompt"]');
-    const charCounter = container.querySelector('[data-testid="prompt-char-counter"]');
+    await renderComponent(<InstructorSetupForm initial={initial} />);
 
-    expect(charCounter.textContent).toBe(`0 / ${MAX_PROMPT_LENGTH} karakter`);
-
-    await act(async () => {
-      changeText(promptTextarea, 'Halo AI, tolong sertakan latihan koding.');
-    });
-
-    expect(charCounter.textContent).toBe(`40 / ${MAX_PROMPT_LENGTH} karakter`);
-    expect(charCounter.className).not.toContain('text-danger');
-
-    const longText = 'A'.repeat(1001);
-    await act(async () => {
-      changeText(promptTextarea, longText);
-    });
-
-    expect(charCounter.textContent).toBe(`1001 / ${MAX_PROMPT_LENGTH} karakter`);
-    expect(charCounter.className).toContain('text-danger');
-  });
-
-  it('correctly handles Unicode surrogate pairs and emojis in character counter and validation', async () => {
-    await renderComponent(<InstructorSetupForm />);
-
-    const promptTextarea = container.querySelector('textarea[name="additional_prompt"]');
-    const charCounter = container.querySelector('[data-testid="prompt-char-counter"]');
-
-    // Emoji '🎓' is 2 UTF-16 code units but 1 Unicode code point
-    await act(async () => {
-      changeText(promptTextarea, '🎓'.repeat(10));
-    });
-
-    expect(charCounter.textContent).toBe(`10 / ${MAX_PROMPT_LENGTH} karakter`);
-    expect(charCounter.className).not.toContain('text-danger');
-
-    // 1001 Unicode code points
-    await act(async () => {
-      changeText(promptTextarea, '🎓'.repeat(1001));
-    });
-
-    expect(charCounter.textContent).toBe(`1001 / ${MAX_PROMPT_LENGTH} karakter`);
-    expect(charCounter.className).toContain('text-danger');
-
-    const onSubmit = vi.fn();
-    await renderComponent(<InstructorSetupForm onSubmit={onSubmit} initial={{ additional_prompt: '🎓'.repeat(1001) }} />);
-
-    await act(async () => {
-      container.querySelector('form').requestSubmit();
-    });
-
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(container.querySelector('#additional_prompt_error')).not.toBeNull();
+    expect(container.querySelector('textarea[name="teaching_style"]').value).toBe('Kuliah klasikal');
+    expect(container.querySelector('input[name="expertise"]').value).toBe('Algoritma');
+    expect(container.querySelector('textarea[name="delivery_preference"]').value).toBe('Slide presentasi terstruktur');
+    expect(container.querySelector('input[name="assignment"]').checked).toBe(true);
   });
 
   it('rejects submission when all activities are inactive and displays inline error with aria attributes', async () => {
@@ -267,50 +225,6 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects submission when additional prompt exceeds limit and preserves error until within limit', async () => {
-    const onSubmit = vi.fn();
-    await renderComponent(<InstructorSetupForm onSubmit={onSubmit} />);
-
-    const promptTextarea = container.querySelector('textarea[name="additional_prompt"]');
-
-    // Enter prompt longer than 1000 characters
-    await act(async () => {
-      changeText(promptTextarea, 'X'.repeat(1005));
-    });
-
-    await act(async () => {
-      container.querySelector('form').requestSubmit();
-    });
-
-    expect(onSubmit).not.toHaveBeenCalled();
-
-    const promptError = container.querySelector('#additional_prompt_error');
-    expect(promptError).not.toBeNull();
-    expect(promptError.textContent).toContain(`Prompt tambahan tidak boleh melebihi ${MAX_PROMPT_LENGTH} karakter`);
-    expect(promptTextarea.getAttribute('aria-invalid')).toBe('true');
-    expect(promptTextarea.className).toContain('border-danger');
-
-    // Edit but still over limit: error remains!
-    await act(async () => {
-      changeText(promptTextarea, 'X'.repeat(1002));
-    });
-    expect(container.querySelector('#additional_prompt_error')).not.toBeNull();
-
-    // Truncate to within limit: error clears!
-    await act(async () => {
-      changeText(promptTextarea, 'X'.repeat(999));
-    });
-
-    expect(container.querySelector('#additional_prompt_error')).toBeNull();
-    expect(promptTextarea.getAttribute('aria-invalid')).toBeNull();
-
-    await act(async () => {
-      container.querySelector('form').requestSubmit();
-    });
-
-    expect(onSubmit).toHaveBeenCalledTimes(1);
-  });
-
   it('displays error alert when onSubmit rejects and dismisses it on close', async () => {
     const onSubmit = vi.fn().mockRejectedValue(new Error('Gagal menyimpan profil ke server'));
     await renderComponent(<InstructorSetupForm onSubmit={onSubmit} />);
@@ -345,7 +259,6 @@ describe('FE-07.1 InstructorSetupForm', () => {
       changeText(container.querySelector('textarea[name="teaching_style"]'), 'Interaktif, problem-based learning');
       changeText(container.querySelector('input[name="expertise"]'), 'Software Engineering & Cloud Computing');
       changeText(container.querySelector('textarea[name="delivery_preference"]'), 'Banyak studi kasus dunia kerja');
-      changeText(container.querySelector('textarea[name="additional_prompt"]'), 'Sertakan contoh dengan Docker dan microservices.');
       toggleCheckbox(container.querySelector('input[name="learning_resource"]'), true);
       toggleCheckbox(container.querySelector('input[name="quiz"]'), true);
     });
@@ -356,19 +269,22 @@ describe('FE-07.1 InstructorSetupForm', () => {
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith({
-      teaching_style: 'Interaktif, problem-based learning',
-      expertise: 'Software Engineering & Cloud Computing',
-      delivery_preference: 'Banyak studi kasus dunia kerja',
-      additional_prompt: 'Sertakan contoh dengan Docker dan microservices.',
+      instructor_profile: {
+        teaching_style: 'Interaktif, problem-based learning',
+        expertise: 'Software Engineering & Cloud Computing',
+        delivery_preference: 'Banyak studi kasus dunia kerja',
+        language_preference: 'Bahasa Indonesia',
+      },
       activity_configuration: {
         learning_material: true,
         learning_resource: true,
         assignment: false,
         quiz: true,
       },
-      language_preference: 'Bahasa Indonesia',
     });
 
+    // PUT parsial: tanpa additional_prompt, prompt yang tersimpan di server tidak berubah.
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('additional_prompt');
     expect(onSaved).toHaveBeenCalledWith({ success: true });
     expect(container.textContent).toContain('Profil tersimpan.');
   });
@@ -394,7 +310,6 @@ describe('FE-07.1 InstructorSetupForm', () => {
     await act(async () => {
       changeText(container.querySelector('textarea[name="teaching_style"]'), 'Diubah');
       changeText(container.querySelector('input[name="expertise"]'), 'Keahlian Baru');
-      changeText(container.querySelector('textarea[name="additional_prompt"]'), 'Prompt Baru yang Lebih Panjang');
       toggleCheckbox(container.querySelector('input[name="assignment"]'), true);
     });
 
@@ -412,10 +327,8 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(container.querySelector('textarea[name="teaching_style"]').value).toBe('Awal');
     expect(container.querySelector('input[name="expertise"]').value).toBe('Keahlian Awal');
     expect(container.querySelector('textarea[name="delivery_preference"]').value).toBe('Preferensi Awal');
-    expect(container.querySelector('textarea[name="additional_prompt"]').value).toBe('Prompt Awal');
     expect(container.querySelector('input[name="learning_material"]').checked).toBe(true);
     expect(container.querySelector('input[name="assignment"]').checked).toBe(false);
-    expect(container.querySelector('[data-testid="prompt-char-counter"]').textContent).toBe(`11 / ${MAX_PROMPT_LENGTH} karakter`);
   });
 
   it('disables submit button and controls when saving is in progress and shows loading spinner inside submit button', async () => {
@@ -429,7 +342,7 @@ describe('FE-07.1 InstructorSetupForm', () => {
 
     const submitBtn = container.querySelector('button[type="submit"]');
     const cancelBtn = container.querySelector('button[type="button"]');
-    const promptInput = container.querySelector('textarea[name="additional_prompt"]');
+    const teachingInput = container.querySelector('textarea[name="teaching_style"]');
 
     expect(submitBtn.disabled).toBe(false);
     expect(submitBtn.textContent).toContain('Simpan profil');
@@ -442,7 +355,7 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(submitBtn.textContent).toContain('Menyimpan…');
     expect(submitBtn.querySelector('.animate-spin')).not.toBeNull();
     expect(cancelBtn.disabled).toBe(true);
-    expect(promptInput.disabled).toBe(true);
+    expect(teachingInput.readOnly || teachingInput.disabled).toBe(true);
 
     await act(async () => {
       resolveSubmit({ ok: true });
@@ -454,10 +367,13 @@ describe('FE-07.1 InstructorSetupForm', () => {
   });
 
   it('integrates with TeachingPreferencesCard seamlessly', async () => {
-    mockProfileService.getProfile.mockResolvedValue({
-      teaching_style: 'Diskusi aktif',
-      expertise: 'Basis Data',
-      delivery_preference: 'Banyak latihan query',
+    mockInstructorService.getInstructorSetup.mockResolvedValue({
+      instructor_profile: {
+        teaching_style: 'Diskusi aktif',
+        expertise: 'Basis Data',
+        delivery_preference: 'Banyak latihan query',
+        language_preference: 'Bahasa Indonesia',
+      },
       additional_prompt: 'Fokus pada PostgreSQL',
       activity_configuration: {
         learning_material: true,
@@ -471,12 +387,11 @@ describe('FE-07.1 InstructorSetupForm', () => {
     await renderComponent(<TeachingPreferencesCard />);
 
     // Wait for data load
-    expect(container.textContent).toContain('Preferensi mengajar (Generator AI)');
+    expect(container.textContent).toContain('Preferensi mengajar');
     expect(container.textContent).toContain('Dipakai agent saat menyusun rencana dan konten untuk semua kursus Anda.');
     expect(container.querySelector('textarea[name="teaching_style"]').value).toBe('Diskusi aktif');
     expect(container.querySelector('input[name="expertise"]').value).toBe('Basis Data');
     expect(container.querySelector('textarea[name="delivery_preference"]').value).toBe('Banyak latihan query');
-    expect(container.querySelector('textarea[name="additional_prompt"]').value).toBe('Fokus pada PostgreSQL');
     expect(container.querySelector('input[name="learning_material"]').checked).toBe(true);
     expect(container.querySelector('input[name="learning_resource"]').checked).toBe(true);
   });
@@ -505,10 +420,89 @@ describe('FE-07.1 InstructorSetupForm', () => {
     }
   });
 
+  it('maps backend 422 INVALID_REQUEST error details to inline field errors and top alert', async () => {
+    const error422 = new Error('Data request tidak valid.');
+    error422.status = 422;
+    error422.code = 'INVALID_REQUEST';
+    error422.details = [
+      { field: 'activity_configuration', message: 'Minimal satu jenis aktivitas pembelajaran harus aktif.' },
+      { field: 'additional_prompt', message: 'maksimal 2000 karakter' },
+      { field: 'instructor_profile.teaching_style', message: 'Gaya mengajar harus berupa teks.' },
+    ];
+
+    const onSubmit = vi.fn().mockRejectedValue(error422);
+    await renderComponent(<InstructorSetupForm onSubmit={onSubmit} />);
+
+    await act(async () => {
+      container.querySelector('form').requestSubmit();
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    // Top alert shows error message
+    const alertEl = container.querySelector('[role="alert"]');
+    expect(alertEl).not.toBeNull();
+    expect(alertEl.textContent).toContain('Data request tidak valid.');
+
+    // Inline errors on individual fields
+    const activityErr = container.querySelector('#activity_configuration_error');
+    expect(activityErr).not.toBeNull();
+    expect(activityErr.textContent).toContain('Minimal satu jenis aktivitas pembelajaran harus aktif.');
+
+    const teachingStyleErr = container.querySelector('#teaching_style_error');
+    expect(teachingStyleErr).not.toBeNull();
+    expect(teachingStyleErr.textContent).toContain('Gaya mengajar harus berupa teks.');
+
+    const teachingStyleInput = container.querySelector('textarea[name="teaching_style"]');
+    expect(teachingStyleInput.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('saves via updateInstructorSetup default hook when no onSubmit prop is provided', async () => {
+    const onSaved = vi.fn();
+    mockInstructorService.updateInstructorSetup.mockResolvedValueOnce({
+      instructor_profile: {
+        teaching_style: 'Inkuiri',
+        expertise: 'Jaringan',
+        delivery_preference: 'Praktikum lab',
+        language_preference: 'Bahasa Indonesia',
+      },
+      additional_prompt: 'Gunakan Wireshark.',
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: false,
+        quiz: false,
+      },
+      updated_at: '2026-10-27T10:00:00Z',
+    });
+
+    await renderComponent(<InstructorSetupForm onSaved={onSaved} />);
+
+    await act(async () => {
+      changeText(container.querySelector('textarea[name="teaching_style"]'), 'Inkuiri');
+    });
+
+    await act(async () => {
+      container.querySelector('form').requestSubmit();
+    });
+
+    expect(mockInstructorService.updateInstructorSetup).toHaveBeenCalledTimes(1);
+    expect(mockInstructorService.updateInstructorSetup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructor_profile: expect.objectContaining({
+          teaching_style: 'Inkuiri',
+        }),
+      })
+    );
+    expect(mockInstructorService.updateInstructorSetup.mock.calls[0][0]).not.toHaveProperty('additional_prompt');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Profil tersimpan.');
+  });
+
   it('provides backward compatibility via TeachingProfileForm wrapper', async () => {
     await renderComponent(<TeachingProfileForm />);
     expect(container.textContent).toContain('1. Profil Pengajar');
-    expect(container.textContent).toContain('2. Prompt Tambahan (AI Agent)');
-    expect(container.textContent).toContain('3. Konfigurasi Aktivitas Pembelajaran');
+    expect(container.textContent).not.toContain('Prompt Tambahan');
+    expect(container.textContent).toContain('2. Konfigurasi Aktivitas Pembelajaran');
   });
 });

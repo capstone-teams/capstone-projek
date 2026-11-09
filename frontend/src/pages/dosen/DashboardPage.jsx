@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
 import { getActionEvents, getRecentCourses, getCoursesByClassification } from '../../services/moodle/moodleApi';
+import { getMoodleCourses } from '../../services/moodleIntegrationService';
 import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Card, EmptyState, ErrorAlert, Spinner } from '../../components/ui';
 import ActivityIcon from '../../components/moodle/ActivityIcon';
@@ -9,13 +10,12 @@ import CourseCard from '../../components/moodle/CourseCard';
 import { cmidFromUrl, formatUnixDay, formatUnixTime } from '../../utils/format';
 import { ROLE } from '../../types/auth';
 
-
 function Timeline() {
-  const { data: events, error, loading } = useApi(() => getActionEvents({ limit: 20 }));
+  const { data: events, error, loading } = useApi(() => getActionEvents({ limit: 20 }).catch(() => []));
 
   if (loading && !events) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
-  if (!events.length) {
+  if (!events || !events.length) {
     return <EmptyState title="Tidak ada aktivitas yang memerlukan tindakan.">Tenggat tugas dan kuis akan tampil di sini.</EmptyState>;
   }
 
@@ -66,12 +66,26 @@ function Timeline() {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const recent = useApi(() => getRecentCourses(user.id, 4), [user.id]);
-  const all = useApi(() => getCoursesByClassification('inprogress'));
-  const teacherIds = new Set(user.teacherCourseIds);
+  const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen';
+  const recent = useApi(() => getRecentCourses(user?.id, 4).catch(() => []), [user?.id]);
+  const coursesQuery = useApi(async () => {
+    // 1. Coba ambil kursus via Backend API Gateway (Single Gateway)
+    const gateway = await getMoodleCourses().catch(() => null);
+    if (gateway?.courses?.length) return gateway.courses;
 
-  const courses = recent.data?.length ? recent.data : (all.data ?? []).slice(0, 4);
-  const teaching = (all.data ?? []).filter((c) => teacherIds.has(c.id));
+    // 2. Fallback direct WS hanya jika tersedia (mis. mode mock di pengujian)
+    try {
+      return await getCoursesByClassification('inprogress');
+    } catch {
+      return gateway?.courses ?? [];
+    }
+  });
+  const teacherIds = new Set(user?.teacherCourseIds ?? []);
+
+  const coursesList = coursesQuery.data ?? [];
+  const courses = recent.data?.length ? recent.data : coursesList.slice(0, 4);
+  const isTeacherCourse = (courseId) => isDosen || teacherIds.has(courseId);
+  const teaching = isDosen ? coursesList : coursesList.filter((c) => teacherIds.has(c.id));
 
   return (
     <PageContainer>
@@ -91,13 +105,13 @@ export default function DashboardPage() {
               </Link>
             }
           >
-            <ErrorAlert error={recent.error || all.error} />
-            {(recent.loading || all.loading) && !courses.length ? (
+            <ErrorAlert error={recent.error || coursesQuery.error} />
+            {(recent.loading || coursesQuery.loading) && !courses.length ? (
               <Spinner />
             ) : courses.length ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 {courses.map((c) => (
-                  <CourseCard key={c.id} course={c} isTeacher={teacherIds.has(c.id)} />
+                  <CourseCard key={c.id} course={c} isTeacher={isTeacherCourse(c.id)} />
                 ))}
               </div>
             ) : (
@@ -126,9 +140,11 @@ export default function DashboardPage() {
             </>
           ) : (
             <Card title="Ringkasan belajar">
-              {all.data ? (
+              {coursesQuery.loading && !coursesQuery.data ? (
+                <Spinner />
+              ) : coursesList.length ? (
                 <ul className="list">
-                  {all.data.map((c) => (
+                  {coursesList.map((c) => (
                     <li key={c.id} className="list__split">
                       <Link to={`/course/${c.id}`} className="min-w-0 truncate">
                         {c.shortname}
@@ -138,7 +154,7 @@ export default function DashboardPage() {
                   ))}
                 </ul>
               ) : (
-                <Spinner />
+                <p className="text-sm text-muted">Belum ada.</p>
               )}
             </Card>
           )}

@@ -1,67 +1,76 @@
 import { useCallback, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
-import { findCourseByMoodleId, getMonitoring } from '../../../services/courseService';
+import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom';
+import { findCourseByMoodleId } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
-import { useCourseEvents } from '../../../hooks/useCourseEvents';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
-import { ErrorAlert, Spinner, StatusBadge } from '../../../components/ui';
+import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
+import { getRps } from '../../../services/rpsService';
+import { COURSE_API_AVAILABLE } from '../../../services/config';
+import { ErrorAlert, ErrorBoundary, Spinner, StatusBadge } from '../../../components/ui';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 import AiProjectStart from '../../../components/ai/course/AiProjectStart';
 import { ForbiddenPage } from '../../StatusPage';
+import WorkflowLayout from './WorkflowLayout';
 
 const TABS = [
   { to: '', label: 'Ringkasan', end: true },
   { to: 'rps', label: 'RPS' },
+  { to: 'target', label: 'Course Target' },
   { to: 'plan', label: 'Rencana' },
   { to: 'content', label: 'Konten' },
   { to: 'review', label: 'Review' },
   { to: 'publish', label: 'Publikasi' },
+  // Pemantauan workflow (FE-10) di akhir agar urutan tab project kursus tetap seperti FE-09.
+  { to: 'workflows', label: 'Workflow' },
 ];
 
 /**
- * Tab "Generator AI" di halaman kursus Moodle. Satu kursus memiliki satu project generator;
+ * Tab "Generator AI" di halaman kursus. Satu kursus memiliki satu project generator;
  * bila belum ada, tampilkan form untuk memulainya.
  * Sesuai design-api.md §17: ambil initial state via HTTP dulu, baru pakai event stream.
  */
-export default function AiCourseLayout() {
+function CourseProjectLayout() {
   const { course: moodleCourse, isTeacher } = useMoodleCourse();
-  const [events, setEvents] = useState([]);
+  // Status workflow dapat dibuka walau kursus ini belum punya project, mis. dari tautan di daftar RPS.
+  const onStatusPage = useLocation().pathname.endsWith('/workflows');
   // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.
   const [version, setVersion] = useState(0);
 
   const { data: course, error, loading, reload } = useApi(async () => {
-    const project = await findCourseByMoodleId(moodleCourse.id);
-    if (!project) return null;
-    const monitoring = await getMonitoring(project.id);
-    setEvents(monitoring.recent_events ?? []);
-    return project;
-  }, [moodleCourse.id]);
+    if (!moodleCourse?.id) return null;
+    return findCourseByMoodleId(moodleCourse.id);
+  }, [moodleCourse?.id]);
 
-  const onEvent = useCallback(
-    (ev) => {
-      setEvents((list) => [...list.slice(-199), ev]);
-      setVersion((v) => v + 1);
-      reload({ silent: true });
-    },
-    [reload],
+  // ?rps=<id>: hasil analisis RPS dari daftar RPS, walau kursus ini belum punya project.
+  const [params] = useSearchParams();
+  const rpsParam = params.get('rps');
+
+  // Workflow project: dari project bila ada, atau dari RPS-nya (GET /rps/{id}); dipantau real-time (FE-10.2).
+  const projectRps = useApi(
+    () => (course?.rps_id && !course?.workflow_id ? getRps(course.rps_id) : null),
+    [course?.rps_id, course?.workflow_id],
   );
-  useCourseEvents(course?.id, onEvent, !!course);
+  const workflowId = course?.workflow_id ?? projectRps.data?.workflow_id ?? null;
+  const monitor = useWorkflowMonitor(workflowId);
+  const { reload: reloadWorkflow, workflow, events } = monitor;
 
   const refresh = useCallback(() => {
     setVersion((v) => v + 1);
+    reloadWorkflow();
     return reload({ silent: true });
-  }, [reload]);
+  }, [reload, reloadWorkflow]);
 
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
   if (error && !course) return <ErrorAlert error={error} />;
+  if (!course && (onStatusPage || rpsParam)) return <Outlet context={{ course: rpsParam ? { rps_id: rpsParam } : null, events: [], version, refresh }} />;
   if (!course) return <AiProjectStart moodleCourse={moodleCourse} onCreated={() => reload()} />;
 
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted">
-          Generator konten AI · RPS {course.code} — {course.name}
+          Generator konten AI · RPS {course.code ?? course.shortname} — {course.name ?? course.fullname}
         </p>
         <StatusBadge status={course.status} />
       </div>
@@ -75,7 +84,13 @@ export default function AiCourseLayout() {
         ))}
       </nav>
 
-      <Outlet context={{ course, events, version, refresh }} />
+      <ErrorBoundary>
+        <Outlet context={{ course, workflow, workflowId, events, connection: monitor.connection, version, refresh }} />
+      </ErrorBoundary>
     </>
   );
+}
+
+export default function AiCourseLayout() {
+  return COURSE_API_AVAILABLE ? <CourseProjectLayout /> : <WorkflowLayout />;
 }

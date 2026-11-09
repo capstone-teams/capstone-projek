@@ -1,6 +1,6 @@
 // Data dummy untuk mode mock. Bentuk mengikuti contoh response di design-api.md.
 
-// Akun sama dengan mock Moodle (mockMoodle.js); field mengikuti GET /auth/me backend.
+// Akun sama dengan mock LMS (mockMoodle.js); field mengikuti GET /auth/me backend.
 // dosen.demo & 11231023 adalah akun uji backend (BE-06.3).
 export const MOCK_USERS = [
   { id: 'user_001', username: 'dosen', firstname: 'Rina', lastname: 'Kartika', email: 'dosen@lecturer.itk.ac.id', role: 'INSTRUCTOR' },
@@ -12,7 +12,7 @@ export const MOCK_USERS = [
   { id: 'user_007', username: '11231023', firstname: 'Mahasiswa', lastname: 'Demo', email: '11231023@student.itk.ac.id', role: 'STUDENT' },
 ];
 
-// Password mock sama dengan mock Moodle: "<username>123".
+// Password mock sama dengan mock LMS: "<username>123".
 export const mockPassword = (username) => `${username}123`;
 
 export const SAMPLE_TOPICS = [
@@ -34,7 +34,7 @@ export const SAMPLE_TOPICS = [
   'Ujian Akhir Semester',
 ];
 
-export const EXAM_WEEKS = [8, 16];
+const EXAM_WEEKS = [8, 16];
 
 export function buildRpsAnalysis(rpsId) {
   return {
@@ -237,3 +237,27 @@ export function buildWeekContent(week, topic, config, revision = 0) {
     },
   };
 }
+
+export const MOCK_MOODLE_COURSES = [
+  {
+    id: 2,
+    fullname: 'Pemrograman Web',
+    shortname: 'IF2105',
+    category: 'Teknik Informatika',
+    summary: 'Pengembangan aplikasi web modern: HTML, CSS, JavaScript, HTTP, REST API, dan framework berbasis komponen.',
+  },
+  {
+    id: 3,
+    fullname: 'Basis Data',
+    shortname: 'IF2203',
+    category: 'Teknik Informatika',
+    summary: 'Konsep basis data relasional, pemodelan ER, normalisasi, dan SQL.',
+  },
+  {
+    id: 4,
+    fullname: 'Pemrograman Web (Kelas B)',
+    shortname: 'IF2105-B',
+    category: 'Teknik Informatika',
+    summary: 'Kelas paralel Pemrograman Web. Materi mingguan disiapkan dengan generator AI.',
+  },
+];
