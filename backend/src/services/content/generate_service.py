@@ -9,7 +9,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
@@ -19,7 +18,6 @@ from src.schemas.content import (
     REGISTRY,
     WeekContext,
     WeeklyContentContext,
-    to_row,
 )
 from src.services.content.pipeline import (
     MAX_ERROR_CHARS,
@@ -49,9 +47,9 @@ FEEDBACK_CLOSING = "Perbaiki hanya bagian yang salah agar sesuai schema."
 # ==========================================
 @dataclass(frozen=True)
 class GenerationSpec:
-    key: str  # kunci REGISTRY di src.schemas.content
-    prompt_name: str  # nama prompt di prompts/<nama>/<versi>
-    label: str  # dipakai untuk pesan error
+    key: str
+    prompt_name: str
+    label: str
 
 
 GENERATION_SPECS: dict[str, GenerationSpec] = {
@@ -66,14 +64,10 @@ WEEK_TYPE_CONTENT_TYPES: dict[str, tuple[str, ...]] = {
     "regular": ("LEARNING_MATERIAL",),
     "quiz": ("QUIZ",),
     "kuis": ("QUIZ",),
-    "assignment": ("ASSIGNMENT",),
-    "tugas": ("ASSIGNMENT",),
 }
 
-
-# Jenis konten yang TIDAK dibuat otomatis, tapi boleh diminta lewat content_types.
 WEEK_TYPE_OPTIONAL_CONTENT_TYPES: dict[str, tuple[str, ...]] = {
-    "regular": ("RESOURCE", "ASSIGNMENT", "QUIZ"),
+    "regular": ("RESOURCE",),
 }
 
 
@@ -87,8 +81,10 @@ def _content_types_for(
     menghasilkan materi.
     """
     types = WEEK_TYPE_CONTENT_TYPES.get(ctx.week_data.week_type.lower(), ())
+
     if include_assignment and "LEARNING_MATERIAL" in types and "ASSIGNMENT" not in types:
         types += ("ASSIGNMENT",)
+
     return types
 
 
@@ -96,9 +92,11 @@ def _available_content_types_for(ctx: WeekContext) -> tuple[str, ...]:
     """Default + opsional (yang hanya dibuat bila diminta eksplisit)."""
     week_type = ctx.week_data.week_type.lower()
     types = _content_types_for(ctx)
+
     extra = tuple(
         t for t in WEEK_TYPE_OPTIONAL_CONTENT_TYPES.get(week_type, ()) if t not in types
     )
+
     return types + extra
 
 
@@ -150,6 +148,7 @@ def _has_content_basis(ctx: WeekContext, key: str) -> bool:
     """Ada bahan untuk membuat konten? Kuis boleh memakai minggu-minggu sebelumnya."""
     if not _is_empty_week(ctx.week_data):
         return True
+
     return key == "QUIZ" and bool(ctx.covered_weeks)
 
 
@@ -158,8 +157,10 @@ def _as_items(value) -> list:
     if isinstance(value, dict):
         items = value.get("items", [])
         return list(items) if isinstance(items, (list, tuple)) else []
+
     if isinstance(value, (list, tuple)):
         return list(value)
+
     return []
 
 
@@ -185,7 +186,7 @@ def _build_week_contexts(
                 week_number=week.week_number,
                 week_data=WeeklyContentContext(
                     week_number=week.week_number,
-                    week_type=meta.get("week_type", "regular"),
+                    week_type=week.week_type,
                     title=week.title,
                     learning_outcomes=week.learning_outcomes,
                     topics=_as_items(week.topics),
@@ -207,6 +208,7 @@ def _build_week_contexts(
         ):
             ctx.covered_weeks = list(buffer)
             buffer = []
+
         elif week_type == "regular":
             buffer.append(ctx.week_data)
 
@@ -255,7 +257,11 @@ async def _generate_week_content(
     if not _has_content_basis(ctx, spec.key):
         details = [
             "Topics dan Sub-CPMK minggu ini kosong"
-            + (", dan tidak ada minggu sebelumnya yang bisa dicakup." if spec.key == "QUIZ" else "."),
+            + (
+                ", dan tidak ada minggu sebelumnya yang bisa dicakup."
+                if spec.key == "QUIZ"
+                else "."
+            ),
             "Jika ini minggu kuis, tandai week_type = quiz atau pilih jenis konten kuis secara manual.",
             "Jika bukan, lengkapi topics dan learning_outcomes minggu ini.",
         ]
@@ -504,78 +510,12 @@ def _learning_resources_text(title: str, data: dict | None) -> str:
     body = {
         k: v for k, v in (data or {}).items() if k not in ("traceability", "sub_cpmk_codes")
     }
-    return json.dumps([{"title": title, **body}], ensure_ascii=False, indent=2)
 
-
-def _status_value(obj) -> str:
-    """Nilai status sebagai string, berlaku untuk ContentStatus maupun ActivityStatus."""
-    status = obj.status
-    return getattr(status, "value", status)
-
-
-async def _save_result(db: AsyncSession, r: WeekResult) -> None:
-    """Simpan satu hasil generasi ke tabel contents atau activities sesuai jenisnya."""
-    key = r.content_type
-    row = to_row(key, r.material, r.ctx)
-    week_id = r.ctx.course_plan_week_id
-
-    if REGISTRY[key].table == "contents":
-        existing = await ContentGenerationRepository.get_by_week_id(db, week_id, key)
-
-        if existing is not None and _status_value(existing) == "APPROVED":
-            raise ContentGenerationError(
-                "Konten sudah APPROVED, tidak bisa ditimpa.",
-                reason_code="ALREADY_APPROVED",
-            )
-
-        fields = {
-            "title": row["title"],
-            "content_type": row["content_type"],
-            "content_data": row["content_data"],
-            "content_markdown": row["content_markdown"],
-        }
-
-        if existing is None:
-            await ContentGenerationRepository.create(
-                db,
-                course_plan_week_id=week_id,
-                **fields,
-            )
-        else:
-            await ContentGenerationRepository.update_content(
-                db,
-                existing,
-                **fields,
-            )
-        return
-
-    existing = await ContentGenerationRepository.get_activity_by_week_id(
-        db,
-        week_id,
-        key,
+    return json.dumps(
+        [{"title": title, **body}],
+        ensure_ascii=False,
+        indent=2,
     )
-
-    if existing is not None and _status_value(existing) == "APPROVED":
-        raise ContentGenerationError(
-            "Konten sudah APPROVED, tidak bisa ditimpa.",
-            reason_code="ALREADY_APPROVED",
-        )
-
-    if existing is None:
-        await ContentGenerationRepository.create_activity(
-            db,
-            course_plan_week_id=week_id,
-            type=row["type"],
-            title=row["title"],
-            activity_data=row["activity_data"],
-        )
-    else:
-        await ContentGenerationRepository.update_activity(
-            db,
-            existing,
-            title=row["title"],
-            activity_data=row["activity_data"],
-        )
 
 
 async def generate_contents(
@@ -593,7 +533,6 @@ async def generate_contents(
     revision_notes: str = "",
     include_assignment: bool = False,
     include_resources: bool = True,
-    save: bool = True,
 ) -> list[WeekResult]:
 
     if concurrency < 1:
@@ -601,6 +540,7 @@ async def generate_contents(
 
     if content_types is not None:
         unknown = set(content_types) - set(GENERATION_SPECS)
+
         if unknown:
             raise ValueError(f"Jenis konten tidak dikenal: {sorted(unknown)}")
 
@@ -610,9 +550,7 @@ async def generate_contents(
     )
 
     if data is None:
-        raise ContentGenerationError(
-            "Course plan tidak ditemukan."
-        )
+        raise ContentGenerationError("Course plan tidak ditemukan.")
 
     plan, weeks = data
 
@@ -657,10 +595,15 @@ async def generate_contents(
         keys = list(
             _content_types_for(ctx, include_assignment)
             if content_types is None
-            else [k for k in _available_content_types_for(ctx) if k in content_types]
+            else [
+                k
+                for k in _available_content_types_for(ctx)
+                if k in content_types
+            ]
         )
 
-        # Materi memanggil prompt resource: resource dibuat dulu, hasilnya jadi bahan materi.
+        # Materi memanggil prompt resource: resource dibuat dulu,
+        # hasilnya menjadi bahan materi.
         if (
             content_types is None
             and include_resources
@@ -676,27 +619,6 @@ async def generate_contents(
         raise ValueError(
             "Tidak ada minggu pembelajaran yang tersedia."
         )
-
-    # Resource yang sudah tersimpan dipakai bila resource tidak dibuat ulang di proses ini
-    # (mis. retry materi saja) atau pembuatannya gagal. Dibaca di sini, sebelum proses
-    # paralel, karena satu AsyncSession tidak boleh dipakai bersamaan.
-    saved_resources: dict[str, str] = {}
-
-    for ctx, keys in groups:
-        if "LEARNING_MATERIAL" not in keys:
-            continue
-
-        saved = await ContentGenerationRepository.get_by_week_id(
-            db,
-            ctx.course_plan_week_id,
-            "RESOURCE",
-        )
-
-        if saved is not None:
-            saved_resources[ctx.course_plan_week_id] = _learning_resources_text(
-                saved.title,
-                saved.content_data,
-            )
 
     semaphore = asyncio.Semaphore(concurrency)
 
@@ -740,11 +662,12 @@ async def generate_contents(
 
     async def run_group(ctx: WeekContext, keys: list[str]) -> list[WeekResult]:
         out: list[WeekResult] = []
-        resources_text = saved_resources.get(ctx.course_plan_week_id, "")
+        resources_text = NO_RESOURCES_TEXT
         rest = list(keys)
 
         if "RESOURCE" in rest and "LEARNING_MATERIAL" in rest:
             rest.remove("RESOURCE")
+
             resource_result = await run(ctx, "RESOURCE")
             out.append(resource_result)
 
@@ -756,48 +679,25 @@ async def generate_contents(
                         exclude={"title", "sub_cpmk_codes"},
                     ),
                 )
-            # gagal: materi tetap dibuat, memakai resource tersimpan (bila ada)
 
         out += await asyncio.gather(
             *(
-                run(ctx, k, resources_text if k == "LEARNING_MATERIAL" else "")
-                for k in rest
+                run(
+                    ctx,
+                    key,
+                    resources_text if key == "LEARNING_MATERIAL" else "",
+                )
+                for key in rest
             )
         )
+
         return out
 
     grouped = await asyncio.gather(
         *(run_group(ctx, keys) for ctx, keys in groups)
     )
+
     results = [r for group in grouped for r in group]
-
-    if save:
-        for r in results:
-            if r.material is None:
-                continue
-
-            try:
-                await _save_result(db, r)
-                await db.commit()
-
-            except ContentGenerationError as exc:
-                r.material = None
-                r.error = exc
-
-            except SQLAlchemyError:
-                await db.rollback()
-
-                logger.exception(
-                    "Gagal menyimpan minggu %s (%s)",
-                    r.ctx.week,
-                    r.content_type,
-                )
-
-                r.material = None
-                r.error = ContentGenerationError(
-                    "Gagal menyimpan konten ke database.",
-                    reason_code="DB_SAVE_FAILED",
-                )
 
     return results
 
@@ -870,6 +770,7 @@ async def generate_week_content(
 
     if content_type is None:
         content_type = _content_types_for(ctx)[0]
+
     elif content_type not in allowed:
         raise ContentGenerationError(
             f"Week {week_number} bertipe '{ctx.week_data.week_type}' "

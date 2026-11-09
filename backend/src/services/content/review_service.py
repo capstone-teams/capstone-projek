@@ -161,7 +161,6 @@ class ContentReviewService:
             revision_notes=revision_notes,
             emit_event=emit_event,
             record_trace=record_trace,
-            save=False,
         )
 
         result = results[0]
@@ -316,7 +315,6 @@ class ActivityReviewService:
             revision_notes=revision_notes,
             emit_event=emit_event,
             record_trace=record_trace,
-            save=False,
         )
 
         result = results[0]

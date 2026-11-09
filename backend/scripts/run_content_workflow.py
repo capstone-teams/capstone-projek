@@ -3,14 +3,13 @@ import sys
 import traceback
 from pathlib import Path
 
-# Agar bisa dijalankan dari folder mana pun: naik sampai ketemu folder yang berisi `src/`.
+# Agar bisa dijalankan dari folder mana pun: naik sampai ketemu folder yang berisi src/.
 _ROOT = next(p for p in Path(__file__).resolve().parents if (p / "src").is_dir())
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src.config.database import get_session_factory, dispose_engine
 from src.services.content.generate_service import generate_contents, list_weeks
-from src.services.content.repository import ContentGenerationRepository
 from src.services.content.review_service import (
     ActivityReviewService,
     ContentReviewService,
@@ -79,21 +78,10 @@ async def print_trace(**fields):
 
 def print_menu():
     print("\n=== CONTENT WORKFLOW ===")
-    print("1. Generate content")
+    print("1. Generate content (JSON / Pydantic output)")
     print("2. Review content   (Learning Material / Resource)")
     print("3. Review activity  (Assignment / Quiz)")
     print("0. Exit")
-
-
-async def find_saved_row(db, result):
-    """Baris hasil simpan: tabel contents untuk materi/resource, activities untuk kuis/tugas."""
-    key = result.content_type
-    week_id = result.ctx.course_plan_week_id
-
-    if key in ("LEARNING_MATERIAL", "RESOURCE"):
-        return await ContentGenerationRepository.get_by_week_id(db, week_id, key)
-
-    return await ContentGenerationRepository.get_activity_by_week_id(db, week_id, key)
 
 
 CONTENT_TYPE_CHOICES = {
@@ -105,7 +93,7 @@ CONTENT_TYPE_CHOICES = {
 
 
 async def print_weeks(db, course_plan_id) -> bool:
-    """Tampilkan tipe tiap minggu supaya jelas minggu mana yang dianggap materi / kuis."""
+    """Tampilkan tipe tiap minggu dari course plan."""
     try:
         weeks = await list_weeks(db, course_plan_id)
     except Exception as exc:
@@ -118,8 +106,13 @@ async def print_weeks(db, course_plan_id) -> bool:
     for w in weeks:
         d = w.week_data
         outcomes = "ada" if d.learning_outcomes else "kosong"
+
         print(
-            f"{w.week_number:<8}{d.week_type:<12}{len(d.topics):<8}{outcomes:<10}{d.title or '-'}"
+            f"{w.week_number:<8}"
+            f"{d.week_type:<12}"
+            f"{len(d.topics):<8}"
+            f"{outcomes:<10}"
+            f"{d.title or '-'}"
         )
 
     print()
@@ -153,7 +146,11 @@ async def run_generation(db):
         week_numbers = None
 
     print("Jenis konten: Enter = otomatis sesuai tipe minggu")
-    print("  1 = materi, 2 = resource, 3 = kuis, 4 = tugas (boleh lebih dari satu, contoh 1,4)")
+    print(
+        "  1 = materi, 2 = resource, 3 = kuis, "
+        "4 = tugas (boleh lebih dari satu, contoh 1,4)"
+    )
+
     type_input = input("Pilih jenis konten: ").strip()
 
     if type_input:
@@ -177,10 +174,12 @@ async def run_generation(db):
             "Tambahkan assignment di minggu reguler?", default=False
         )
         include_resources = ask_yes_no(
-            "Buat learning resource dulu sebagai bahan materi?", default=True
+            "Buat learning resource dulu sebagai bahan materi?",
+            default=True,
         )
     else:
-        include_assignment, include_resources = False, True
+        include_assignment = False
+        include_resources = True
 
     try:
         results = await generate_contents(
@@ -194,60 +193,58 @@ async def run_generation(db):
             emit_event=print_event,
             record_trace=print_trace,
         )
+
     except ValueError as exc:
         print(f"\nGENERATION FAILED: {exc}")
         return
+
     except Exception as exc:
-        await db.rollback()
         print(f"\nGENERATION FAILED: {exc}")
         traceback.print_exc()
         return
 
-    saved = []
+    successful = 0
+    failed = 0
+
+    print("\n=== GENERATION RESULTS ===")
 
     for result in results:
         print(f"\n{'=' * 60}")
-        print(f"WEEK {result.ctx.week} - {result.content_type}")
+        print(
+            f"WEEK {result.ctx.week_number} - "
+            f"{result.content_type}"
+        )
         print("=" * 60)
 
-        if result.error:
+        if result.error is not None:
+            failed += 1
+
             print(f"GENERATION FAILED: {result.error}")
 
-            if result.error.reason_code:
+            if getattr(result.error, "reason_code", None):
                 print(f"Reason     : {result.error.reason_code}")
 
-            for detail in result.error.details:
+            for detail in getattr(result.error, "details", []):
                 print(f"      - {detail}")
 
             continue
 
+        if result.material is None:
+            failed += 1
+            print("Tidak ada output Pydantic.")
+            continue
+
+        successful += 1
+
+        # Hanya menampilkan hasil Pydantic.
+        # Tidak melakukan insert/update database.
         print(result.material.model_dump_json(indent=2))
-
-        row = await find_saved_row(db, result)
-
-        if row is not None:
-            saved.append((result.ctx.week, result.content_type, row.id))
-            print(f"ID         : {row.id}")
-            print(f"Status     : {_v(row.status)}")
-        else:
-            print("ID         : Tidak ditemukan di database.")
-
-    successful = sum(1 for r in results if r.material is not None and r.error is None)
-    failed = sum(1 for r in results if r.error is not None)
 
     print("\n=== GENERATION SUMMARY ===")
     print(f"Total items : {len(results)}")
     print(f"Successful  : {successful}")
     print(f"Failed      : {failed}")
-
-    print("\n=== SAVED IDS ===")
-    for week, content_type, row_id in saved:
-        table = (
-            "contents"
-            if content_type in ("LEARNING_MATERIAL", "RESOURCE")
-            else "activities"
-        )
-        print(f"Minggu {week:<3} {content_type:<18} {row_id}  ({table})")
+    print("Database    : Tidak ada hasil generation yang disimpan.")
 
 
 async def run_review(db):
