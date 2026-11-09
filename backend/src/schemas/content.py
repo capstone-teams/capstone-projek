@@ -50,18 +50,23 @@ class WeekContext(BaseModel):
     course_plan_week_id: str
     week_number: int = Field(ge=1)
     week_data: WeeklyContentContext
+    # Minggu-minggu sebelumnya yang dicakup minggu ini (mis. kuis). Diisi oleh service.
+    covered_weeks: list[WeeklyContentContext] = Field(default_factory=list)
 
     @property
     def week(self) -> int:
         return self.week_number
 
     def to_prompt_dict(self) -> dict:
-        return {
+        data = {
             "course_plan_id": self.course_plan_id,
             "course_plan_week_id": self.course_plan_week_id,
             "week_number": self.week_number,
             "week_data": self.week_data.model_dump(mode="json"),
         }
+        if self.covered_weeks:
+            data["covered_weeks"] = [w.model_dump(mode="json") for w in self.covered_weeks]
+        return data
 
 
 # ==========================================
@@ -123,9 +128,15 @@ class MaterialSection(_Strict):
     body_markdown: str = Field(min_length=1)
 
 
+class MaterialReference(_Strict):
+    title: str = Field(min_length=1)
+    url: str | None  # null bila sumber tidak punya URL
+
+
 class LearningMaterialBody(_Strict):
     learning_objectives: list[str] = Field(min_length=1)
     sections: list[MaterialSection] = Field(min_length=1)
+    references: list[MaterialReference]  # boleh kosong; berasal dari RPS / learning resource
 
 
 class LearningMaterialOutput(LearningMaterialBody, _OutputMixin):
@@ -143,6 +154,11 @@ def render_material_markdown(body: LearningMaterialBody) -> str:
         objectives = "\n".join(f"- {o}" for o in body.learning_objectives)
         parts.append(f"## Tujuan Pembelajaran\n\n{objectives}")
     parts += [f"## {s.heading}\n\n{s.body_markdown}" for s in body.sections]
+    if body.references:
+        refs = "\n".join(
+            f"- [{r.title}]({r.url})" if r.url else f"- {r.title}" for r in body.references
+        )
+        parts.append(f"## Referensi\n\n{refs}")
     return "\n\n".join(parts)
 
 
@@ -150,7 +166,7 @@ def render_material_markdown(body: LearningMaterialBody) -> str:
 # 2. LEARNING RESOURCE  -> contents
 # ==========================================
 class ResourceBody(_Strict):
-    url: str = Field(min_length=1)
+    url: str | None  # null bila URL tidak dapat dipastikan
     description: str = Field(min_length=1)
     resource_kind: ResourceKind
     relevance_reason: str = Field(min_length=1)
@@ -358,90 +374,93 @@ def to_response_format(key: str) -> dict:
 # CONTOH DATA VALID
 # ==========================================
 # Format OUTPUT LLM (title + sub_cpmk_codes, tanpa week_number / weekly_plan_ref)
-# OUTPUT_EXAMPLES: dict[str, dict] = {
-#     "LEARNING_MATERIAL": {
-#         "title": "Normalisasi Basis Data",
-#         "sub_cpmk_codes": ["Sub-CPMK-3.1"],
-#         "learning_objectives": [
-#             "Menjelaskan tujuan normalisasi",
-#             "Menerapkan 1NF sampai 3NF pada tabel sederhana",
-#         ],
-#         "sections": [
-#             {"heading": "Pengantar", "body_markdown": "Normalisasi mengurangi **redundansi** data."},
-#             {
-#                 "heading": "Bentuk Normal Pertama (1NF)",
-#                 "body_markdown": "Setiap kolom hanya berisi nilai atomik.\n\n- Tidak ada grup berulang",
-#             },
-#         ],
-#     },
-#     "RESOURCE": {
-#         "title": "Database Normalization Explained",
-#         "sub_cpmk_codes": ["Sub-CPMK-3.1"],
-#         "url": "https://example.com/normalization",
-#         "description": "Penjelasan bertahap 1NF-3NF dengan contoh.",
-#         "resource_kind": "ARTICLE",
-#         "relevance_reason": "Melengkapi materi minggu 3 dengan contoh tambahan.",
-#     },
-#     "ASSIGNMENT": {
-#         "title": "Normalisasi Studi Kasus Perpustakaan",
-#         "sub_cpmk_codes": ["Sub-CPMK-3.1"],
-#         "instructions_markdown": "Normalkan tabel peminjaman buku hingga **3NF**.",
-#         "expected_outputs": ["Dokumen PDF berisi tahapan normalisasi", "Diagram ERD akhir"],
-#         "rubric": [
-#             {"criterion": "Ketepatan 1NF-3NF", "description": "Tahapan benar dan lengkap", "weight_percent": 60},
-#             {"criterion": "Kualitas ERD", "description": "Relasi dan kardinalitas tepat", "weight_percent": 40},
-#         ],
-#     },
-#     "QUIZ": {
-#         "title": "Kuis Normalisasi",
-#         "sub_cpmk_codes": ["Sub-CPMK-3.1"],
-#         "description": "Kuis singkat pemahaman 1NF-3NF.",
-#         "config": {
-#             "time_limit_minutes": 15,
-#             "max_attempts": 2,
-#             "shuffle_questions": True,
-#             "passing_score_percent": 70,
-#         },
-#         "questions": [
-#             {
-#                 "question_text": "Tabel disebut memenuhi 1NF jika...",
-#                 "options": [
-#                     {"key": "A", "text": "Semua kolom bernilai atomik"},
-#                     {"key": "B", "text": "Tidak ada primary key"},
-#                     {"key": "C", "text": "Semua kolom nullable"},
-#                     {"key": "D", "text": "Tidak ada foreign key"},
-#                 ],
-#                 "correct_option_key": "A",
-#                 "explanation": "1NF mensyaratkan nilai atomik dan tidak ada grup berulang.",
-#             }
-#         ],
-#     },
-# }
-#
-# EXAMPLE_CTX = WeekContext(
-#     course_plan_id="cp_001",
-#     course_plan_week_id="cpw_0003",
-#     week_number=3,
-#     week_data=WeeklyContentContext(week_number=3, title="Normalisasi"),
-# )
-#
-#
-# def stored_examples() -> dict[str, dict]:
-#     """Contoh baris DB (acuan mock Backend API / Frontend)."""
-#     out = {}
-#     for key, raw in OUTPUT_EXAMPLES.items():
-#         output = REGISTRY[key].output_model.model_validate(raw)
-#         out[key] = to_row(key, output, EXAMPLE_CTX)
-#     return out
-#
-#
-# if __name__ == "__main__":
-#     import json
-#
-#     for key, spec in REGISTRY.items():
-#         output = spec.output_model.model_validate(OUTPUT_EXAMPLES[key])
-#         row = to_row(key, output, EXAMPLE_CTX)
-#         payload = row.get("content_data") or row.get("activity_data")
-#         from_row(key, row["title"], payload)  # round-trip
-#         json.dumps(to_response_format(key))
-#         print("OK", key, "->", spec.table)
+OUTPUT_EXAMPLES: dict[str, dict] = {
+    "LEARNING_MATERIAL": {
+        "title": "Normalisasi Basis Data",
+        "sub_cpmk_codes": ["Sub-CPMK-3.1"],
+        "learning_objectives": [
+            "Menjelaskan tujuan normalisasi",
+            "Menerapkan 1NF sampai 3NF pada tabel sederhana",
+        ],
+        "sections": [
+            {"heading": "Pengantar", "body_markdown": "Normalisasi mengurangi **redundansi** data."},
+            {
+                "heading": "Bentuk Normal Pertama (1NF)",
+                "body_markdown": "Setiap kolom hanya berisi nilai atomik.\n\n- Tidak ada grup berulang",
+            },
+        ],
+        "references": [
+            {"title": "Database Normalization Explained", "url": "https://example.com/normalization"},
+        ],
+    },
+    "RESOURCE": {
+        "title": "Database Normalization Explained",
+        "sub_cpmk_codes": ["Sub-CPMK-3.1"],
+        "url": "https://example.com/normalization",
+        "description": "Penjelasan bertahap 1NF-3NF dengan contoh.",
+        "resource_kind": "ARTICLE",
+        "relevance_reason": "Melengkapi materi minggu 3 dengan contoh tambahan.",
+    },
+    "ASSIGNMENT": {
+        "title": "Normalisasi Studi Kasus Perpustakaan",
+        "sub_cpmk_codes": ["Sub-CPMK-3.1"],
+        "instructions_markdown": "Normalkan tabel peminjaman buku hingga **3NF**.",
+        "expected_outputs": ["Dokumen PDF berisi tahapan normalisasi", "Diagram ERD akhir"],
+        "rubric": [
+            {"criterion": "Ketepatan 1NF-3NF", "description": "Tahapan benar dan lengkap", "weight_percent": 60},
+            {"criterion": "Kualitas ERD", "description": "Relasi dan kardinalitas tepat", "weight_percent": 40},
+        ],
+    },
+    "QUIZ": {
+        "title": "Kuis Normalisasi",
+        "sub_cpmk_codes": ["Sub-CPMK-3.1"],
+        "description": "Kuis singkat pemahaman 1NF-3NF.",
+        "config": {
+            "time_limit_minutes": 15,
+            "max_attempts": 2,
+            "shuffle_questions": True,
+            "passing_score_percent": 70,
+        },
+        "questions": [
+            {
+                "question_text": "Tabel disebut memenuhi 1NF jika...",
+                "options": [
+                    {"key": "A", "text": "Semua kolom bernilai atomik"},
+                    {"key": "B", "text": "Tidak ada primary key"},
+                    {"key": "C", "text": "Semua kolom nullable"},
+                    {"key": "D", "text": "Tidak ada foreign key"},
+                ],
+                "correct_option_key": "A",
+                "explanation": "1NF mensyaratkan nilai atomik dan tidak ada grup berulang.",
+            }
+        ],
+    },
+}
+
+EXAMPLE_CTX = WeekContext(
+    course_plan_id="cp_001",
+    course_plan_week_id="cpw_0003",
+    week_number=3,
+    week_data=WeeklyContentContext(week_number=3, title="Normalisasi"),
+)
+
+
+def stored_examples() -> dict[str, dict]:
+    """Contoh baris DB (acuan mock Backend API / Frontend)."""
+    out = {}
+    for key, raw in OUTPUT_EXAMPLES.items():
+        output = REGISTRY[key].output_model.model_validate(raw)
+        out[key] = to_row(key, output, EXAMPLE_CTX)
+    return out
+
+
+if __name__ == "__main__":
+    import json
+
+    for key, spec in REGISTRY.items():
+        output = spec.output_model.model_validate(OUTPUT_EXAMPLES[key])
+        row = to_row(key, output, EXAMPLE_CTX)
+        payload = row.get("content_data") or row.get("activity_data")
+        from_row(key, row["title"], payload)  # round-trip
+        json.dumps(to_response_format(key))
+        print("OK", key, "->", spec.table)

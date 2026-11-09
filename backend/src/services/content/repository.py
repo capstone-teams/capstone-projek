@@ -1,11 +1,12 @@
-
+from sqlalchemy import select
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.rps_analysis import RPSAnalysis
 from src.models.course_plan_week import CoursePlanWeek
 from src.models.course_plan import CoursePlan
-from src.models.content import Content, ContentStatus
+from src.models.content import Content, ContentStatus, ContentType
+from src.models.activity import Activity, ActivityStatus, ActivityType
 from sqlalchemy.orm import joinedload, selectinload
 
 class ContentGenerationRepository:
@@ -49,14 +50,22 @@ class ContentGenerationRepository:
     #         .limit(1)
     #     )
 
+    # ==========================================
+    # CONTENT (tabel contents)
+    # ==========================================
     @staticmethod
     async def get_by_week_id(
         db: AsyncSession,
         course_plan_week_id: str,
+        content_type=None,
     ) -> Content | None:
+        query = select(Content).where(
+            Content.course_plan_week_id == course_plan_week_id
+        )
+        if content_type is not None:
+            query = query.where(Content.content_type == ContentType(content_type))
         result = await db.execute(
-            select(Content)
-            .where(Content.course_plan_week_id == course_plan_week_id)
+            query
             .order_by(Content.version.desc())
             .limit(1)
         )
@@ -134,3 +143,83 @@ class ContentGenerationRepository:
         await db.flush()
 
         return content
+
+    # ==========================================
+    # ACTIVITY (tabel activities: Assignment & Quiz)
+    # ==========================================
+    @staticmethod
+    async def get_activity_by_week_id(
+        db: AsyncSession,
+        course_plan_week_id: str,
+        activity_type,
+    ) -> Activity | None:
+        result = await db.execute(
+            select(Activity)
+            .where(
+                Activity.course_plan_week_id == course_plan_week_id,
+                Activity.type == ActivityType(activity_type),
+            )
+            .order_by(Activity.version.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_activity_by_id(
+        db: AsyncSession,
+        activity_id: str,
+    ) -> Activity | None:
+        result = await db.execute(
+            select(Activity).where(Activity.id == activity_id)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def update_activity_status(
+        db: AsyncSession,
+        activity: Activity,
+        status: ActivityStatus,
+    ) -> Activity:
+        activity.status = status
+
+        await db.flush()
+        return activity
+
+    @staticmethod
+    async def update_activity(
+        db: AsyncSession,
+        activity: Activity,
+        *,
+        title: str,
+        activity_data: dict,
+    ) -> Activity:
+        activity.title = title
+        activity.activity_data = activity_data
+        activity.version += 1
+        activity.status = ActivityStatus.DRAFT
+
+        await db.flush()
+        return activity
+
+    @staticmethod
+    async def create_activity(
+        db: AsyncSession,
+        *,
+        course_plan_week_id: str,
+        type,
+        title: str,
+        activity_data: dict,
+    ) -> Activity:
+        activity = Activity(
+            course_plan_week_id=course_plan_week_id,
+            type=ActivityType(type),
+            title=title,
+            activity_data=activity_data,
+            version=1,
+            status=ActivityStatus.DRAFT,
+        )
+
+        db.add(activity)
+        await db.flush()
+
+        return activity
