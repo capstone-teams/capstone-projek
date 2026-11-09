@@ -28,6 +28,7 @@ from src.config.settings import Settings, get_settings
 from src.services.auth.authorization import RolePolicy
 from src.services.auth.errors import InvalidTokenError
 from src.services.auth.service import AuthService
+from src.services.content.generation import ContentGenerationService
 from src.services.content.service import ContentReviewService
 from src.services.course.service import CourseReadService
 from src.services.course_plan.service import CoursePlanService
@@ -41,6 +42,7 @@ from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.service import UserService
 from src.services.workflow.orchestrator import (
+    run_content_generation_workflow,
     run_course_planning_workflow,
     run_execution_workflow,
     run_rps_analysis_workflow,
@@ -62,11 +64,17 @@ CoursePlanningRunner = Callable[..., Awaitable[None]]
 #: Bentuk callable yang menjalankan tahap eksekusi Moodle di background.
 ExecutionRunner = Callable[..., Awaitable[None]]
 
+#: Bentuk callable yang menjalankan content generation di background.
+ContentGenerationRunner = Callable[..., Awaitable[None]]
+
 __all__ = [
     "bearer_scheme",
+    "ContentGenerationRunner",
     "CoursePlanningRunner",
     "ExecutionRunner",
     "get_auth_service",
+    "get_content_generation_runner",
+    "get_content_generation_service",
     "get_content_service",
     "get_course_plan_service",
     "get_course_planning_runner",
@@ -161,6 +169,13 @@ def get_content_service(
     return ContentReviewService.from_session(session)
 
 
+def get_content_generation_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> ContentGenerationService:
+    """Service tahap generate/regenerate konten (BE-19.3)."""
+    return ContentGenerationService.from_session(session)
+
+
 def get_course_plan_service(
     session: AsyncSession = Depends(get_db_session),
 ) -> CoursePlanService:
@@ -243,6 +258,11 @@ def get_execution_service(
 def get_execution_runner() -> ExecutionRunner:
     """Runner tahap ``EXECUTING_TO_MOODLE`` di background (BE-17.1)."""
     return run_execution_workflow
+
+
+def get_content_generation_runner() -> ContentGenerationRunner:
+    """Runner tahap ``GENERATING_CONTENT`` → ``VALIDATING`` (BE-19.3)."""
+    return run_content_generation_workflow
 
 
 async def get_current_user(

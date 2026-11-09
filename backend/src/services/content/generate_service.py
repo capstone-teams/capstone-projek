@@ -97,6 +97,11 @@ def _available_content_types_for(ctx: WeekContext) -> tuple[str, ...]:
         t for t in WEEK_TYPE_OPTIONAL_CONTENT_TYPES.get(week_type, ()) if t not in types
     )
 
+    # Assignment pada minggu reguler hanya dibuat bila dosen mengaktifkannya;
+    # konfigurasi itu sampai ke sini sebagai ``content_types`` eksplisit.
+    if week_type == "regular" and "ASSIGNMENT" not in types:
+        extra += ("ASSIGNMENT",)
+
     return types + extra
 
 
