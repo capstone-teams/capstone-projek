@@ -134,6 +134,10 @@ export const WORKFLOW_EVENT = {
   STAGE_PROGRESS: 'WORKFLOW_STAGE_PROGRESS',
   STAGE_COMPLETED: 'WORKFLOW_STAGE_COMPLETED',
   RETRY: 'WORKFLOW_RETRY',
+  // Rangkaian tahap selesai dan workflow menunggu keputusan dosen (DL-012), mis. setelah course plan tersusun.
+  WAITING_FOR_REVIEW: 'WORKFLOW_WAITING_FOR_REVIEW',
+  // Course plan versi baru tersimpan (BE-14.3).
+  PLAN_GENERATED: 'WORKFLOW_PLAN_GENERATED',
   COMPLETED: 'WORKFLOW_COMPLETED',
   FAILED: 'WORKFLOW_FAILED',
 };
@@ -144,6 +148,8 @@ export const WORKFLOW_EVENT_LABELS = {
   [WORKFLOW_EVENT.STAGE_PROGRESS]: 'Tahap berjalan',
   [WORKFLOW_EVENT.STAGE_COMPLETED]: 'Tahap selesai',
   [WORKFLOW_EVENT.RETRY]: 'Mencoba ulang',
+  [WORKFLOW_EVENT.WAITING_FOR_REVIEW]: 'Menunggu review dosen',
+  [WORKFLOW_EVENT.PLAN_GENERATED]: 'Rencana tersimpan',
   [WORKFLOW_EVENT.COMPLETED]: 'Workflow selesai',
   [WORKFLOW_EVENT.FAILED]: 'Workflow gagal',
 };
@@ -155,6 +161,8 @@ export function eventTypeOf(event) {
       return EVENT_TYPE.RETRY_FIX;
     case WORKFLOW_EVENT.FAILED:
       return EVENT_TYPE.ERROR_FAILURE;
+    case WORKFLOW_EVENT.PLAN_GENERATED:
+      return EVENT_TYPE.AKTIVITAS_AGENT;
     case WORKFLOW_EVENT.STAGE_PROGRESS:
       return [WORKFLOW_STAGE.MOODLE_EXECUTION, WORKFLOW_STAGE.VERIFICATION].includes(event.stage) ? EVENT_TYPE.OPERASI_MOODLE : EVENT_TYPE.AKTIVITAS_AGENT;
     default:
@@ -213,6 +221,10 @@ export function applyWorkflowEvent(workflow, event) {
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
     case WORKFLOW_EVENT.RETRY:
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: WORKFLOW_STAGE.RETRYING };
+    case WORKFLOW_EVENT.WAITING_FOR_REVIEW:
+      return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: WORKFLOW_STAGE.INSTRUCTOR_REVIEW };
+    case WORKFLOW_EVENT.PLAN_GENERATED:
+      return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
     case WORKFLOW_EVENT.COMPLETED:
       return { ...next, status: WORKFLOW_API_STATUS.COMPLETED, stage: null };
     case WORKFLOW_EVENT.FAILED:
@@ -309,3 +321,32 @@ export function deriveStages(workflow, events = []) {
 
 /** Tahap yang sedang menunggu tindakan dosen (WAITING_FOR_REVIEW), bila ada. */
 export const needsInstructorAction = (workflow) => workflowStatusOf(workflow) === WORKFLOW_STATUS.WAITING_FOR_REVIEW;
+
+// ---- Course planning (BE-14.3, FE-12.1)
+
+/** Tahap backend yang dijalankan saat course plan disusun: PLANNING_COURSE lalu VALIDATING. */
+export const COURSE_PLAN_STAGES = [WORKFLOW_STAGE.COURSE_PLANNING, WORKFLOW_STAGE.VALIDATION];
+
+const lastEvent = (events, name) => [...events].reverse().find((event) => event.event === name);
+
+/**
+ * Tahap penyusunan course plan yang sedang berjalan: PLANNING_COURSE, VALIDATING, atau RETRYING (percobaan ulang
+ * pada salah satu tahap itu); null bila workflow tidak sedang menyusun rencana.
+ */
+export function coursePlanProgressOf(workflow, events = []) {
+  const status = workflowStatusOf(workflow);
+  if (status === WORKFLOW_STATUS.PLANNING_COURSE || status === WORKFLOW_STATUS.VALIDATING) return status;
+  if (status !== WORKFLOW_STATUS.RETRYING) return null;
+  const retry = lastEvent(events, WORKFLOW_EVENT.RETRY);
+  return !retry || COURSE_PLAN_STAGES.includes(retry.stage) ? WORKFLOW_STATUS.RETRYING : null;
+}
+
+/** Tahap yang sedang dicoba ulang (course_planning atau validation) saat status RETRYING. */
+export const retryingStageOf = (events = []) => lastEvent(events, WORKFLOW_EVENT.RETRY)?.stage ?? WORKFLOW_STAGE.COURSE_PLANNING;
+
+/** Event WORKFLOW_FAILED terakhir bila kegagalan workflow terjadi saat menyusun atau memvalidasi course plan. */
+export function coursePlanFailureOf(workflow, events = []) {
+  if (workflow?.status !== WORKFLOW_API_STATUS.FAILED) return null;
+  const failed = lastEvent(events, WORKFLOW_EVENT.FAILED);
+  return failed && COURSE_PLAN_STAGES.includes(failed.stage) ? failed : null;
+}
