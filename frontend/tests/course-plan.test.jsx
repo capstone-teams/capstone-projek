@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CoursePlanPage from '../src/pages/dosen/ai/CoursePlanPage';
 import { api, ApiError } from '../src/services/apiClient';
@@ -56,7 +56,11 @@ afterEach(async () => {
 });
 async function render() {
   root ??= createRoot(node);
-  await act(async () => root.render(<MemoryRouter><CoursePlanPage /></MemoryRouter>));
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={['/course/2/ai/plan']}>
+      <Routes><Route path="/course/:courseId/ai/plan" element={<CoursePlanPage />} /></Routes>
+    </MemoryRouter>,
+  ));
   await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 }
 // Tombol halaman, di luar <dialog> (Modal selalu ada di DOM; jsdom tidak membukanya).
@@ -139,11 +143,13 @@ describe('FE-05 halaman Rencana dengan API course plan per workflow', () => {
     expect(button('Generate rencana')).toBeUndefined();
   });
 
-  it('versi DRAFT saat workflow menunggu review: Setujui memanggil approve', async () => {
+  it('versi DRAFT saat workflow menunggu review: Setujui memanggil approve setelah dikonfirmasi', async () => {
     plans.getWorkflowPlan.mockResolvedValue(plan());
     plans.approveWorkflowPlan.mockResolvedValue(plan({ status: 'APPROVED' }));
     await render();
     await act(async () => button('Setujui rencana').click());
+    openDialog = 'Setujui rencana';
+    await submitDialog('Ya, setujui');
     expect(plans.approveWorkflowPlan).toHaveBeenCalledWith('wf-1');
   });
 
@@ -206,7 +212,7 @@ describe('FE-05 halaman Rencana dengan API course plan per workflow', () => {
     plans.listWorkflowPlanVersions.mockResolvedValue([{ version: 2, status: 'DRAFT' }, { version: 1, status: 'REJECTED' }]);
     plans.getWorkflowPlanVersion.mockResolvedValue(plan({ version: 1, status: 'REJECTED', weeks: [{ week_number: 1, title: 'Versi lama' }] }));
     await render();
-    await act(async () => button('v1').click());
+    await act(async () => button('Lihat versi 1').click());
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(plans.getWorkflowPlanVersion).toHaveBeenCalledWith('wf-1', 1);
     expect(node.textContent).toContain('Menampilkan versi 1');
@@ -216,7 +222,7 @@ describe('FE-05 halaman Rencana dengan API course plan per workflow', () => {
     expect(node.textContent).toContain('Rencana course · versi 2');
   });
 
-  it('versi APPROVED menampilkan konfirmasi dan tautan konten tanpa aksi review', async () => {
+  it('versi APPROVED menampilkan konfirmasi dan langkah berikutnya tanpa aksi review', async () => {
     context.workflow = { ...waitingReview, status: 'COMPLETED', stage: null };
     plans.getWorkflowPlan.mockResolvedValue(plan({ status: 'APPROVED' }));
     await render();
@@ -231,6 +237,86 @@ describe('FE-05 halaman Rencana dengan API course plan per workflow', () => {
     expect(node.querySelector('[role="alert"]').textContent).toContain('Layanan sedang tidak dapat diakses.');
     await act(async () => button('Coba lagi').click());
     expect(node.textContent).toContain('Model data');
+  });
+});
+
+describe('FE-12.2 aksi review dan riwayat versi course plan', () => {
+  it('approve meminta konfirmasi: Batal tidak mengirim, Ya, setujui memanggil POST /plan/approve', async () => {
+    plans.getWorkflowPlan.mockResolvedValue(plan());
+    plans.approveWorkflowPlan.mockResolvedValue(plan({ status: 'APPROVED' }));
+    await render();
+    await act(async () => button('Setujui rencana').click());
+    openDialog = 'Setujui rencana';
+    expect(dialog('Setujui rencana').textContent).toContain('tidak dapat ditolak maupun disetujui ulang');
+    await submitDialog('Batal');
+    expect(plans.approveWorkflowPlan).not.toHaveBeenCalled();
+    await act(async () => button('Setujui rencana').click());
+    await submitDialog('Ya, setujui');
+    expect(plans.approveWorkflowPlan).toHaveBeenCalledTimes(1);
+    expect(context.refresh).toHaveBeenCalled();
+  });
+
+  it('approve yang ditolak backend menampilkan pesannya di dialog agar dapat dicoba lagi', async () => {
+    plans.getWorkflowPlan.mockResolvedValue(plan());
+    plans.approveWorkflowPlan.mockRejectedValue(new ApiError(409, 'INVALID_REQUEST', 'Course plan terbaru belum lolos validasi.'));
+    await render();
+    await act(async () => button('Setujui rencana').click());
+    openDialog = 'Setujui rencana';
+    await submitDialog('Ya, setujui');
+    expect(dialog('Setujui rencana').textContent).toContain('Course plan terbaru belum lolos validasi.');
+  });
+
+  it('riwayat versi menampilkan penanda status approval, tanggal, dan catatan revisi per versi', async () => {
+    plans.getWorkflowPlan.mockResolvedValue(plan({ version: 3 }));
+    plans.listWorkflowPlanVersions.mockResolvedValue([
+      { version: 3, status: 'DRAFT', validation_passed: true, created_at: '2026-11-08T09:00:00Z' },
+      { version: 2, status: 'REJECTED', revision_notes: 'Minggu 5-8 terlalu padat.', created_at: '2026-11-08T08:00:00Z' },
+      { version: 1, status: 'REJECTED', revision_notes: 'Tambah studi kasus.', created_at: '2026-11-07T08:00:00Z' },
+    ]);
+    await render();
+    const history = node.querySelector('[aria-label="Riwayat versi"]');
+    const rows = [...history.querySelectorAll('li')];
+    expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual(['Versi 3', 'Versi 2', 'Versi 1']);
+    expect(rows[0].textContent).toContain('Draft');
+    expect(rows[0].textContent).toContain('(terbaru)');
+    expect(rows[0].querySelector('button').textContent).toBe('Sedang ditampilkan');
+    expect(rows[1].textContent).toContain('Ditolak');
+    expect(rows[1].textContent).toContain('Catatan revisi: Minggu 5-8 terlalu padat.');
+  });
+
+  it('setelah regenerasi versi baru tampil dan versi sebelumnya tetap dapat dibuka', async () => {
+    plans.getWorkflowPlan.mockResolvedValue(plan({ version: 1, status: 'REJECTED', revision_notes: 'Terlalu padat.' }));
+    plans.listWorkflowPlanVersions.mockResolvedValue([{ version: 1, status: 'REJECTED' }]);
+    plans.regenerateWorkflowPlan.mockResolvedValue({ workflow_id: 'wf-1', status: 'RUNNING', message: 'ok' });
+    await render();
+    await act(async () => button('Regenerasi rencana').click());
+    openDialog = 'Regenerasi rencana';
+
+    // Backend menyimpan hasil regenerasi sebagai versi baru; versi lama tidak berubah.
+    plans.getWorkflowPlan.mockResolvedValue(plan({ version: 2, status: 'DRAFT', weeks: [{ week_number: 1, title: 'Versi baru' }] }));
+    plans.listWorkflowPlanVersions.mockResolvedValue([{ version: 2, status: 'DRAFT' }, { version: 1, status: 'REJECTED' }]);
+    plans.getWorkflowPlanVersion.mockResolvedValue(plan({ version: 1, status: 'REJECTED', weeks: [{ week_number: 1, title: 'Versi pertama' }] }));
+    await submitDialog('Regenerasi rencana');
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(node.textContent).toContain('Rencana course · versi 2');
+    expect(node.textContent).toContain('Versi baru');
+
+    await act(async () => button('Lihat versi 1').click());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(plans.getWorkflowPlanVersion).toHaveBeenCalledWith('wf-1', 1);
+    expect(node.textContent).toContain('Versi pertama');
+    expect(node.textContent).toContain('Ditolak');
+  });
+
+  it('rencana yang disetujui tidak dapat disetujui ulang maupun ditolak dan menautkan ke eksekusi struktur', async () => {
+    context.workflow = { ...waitingReview };
+    plans.getWorkflowPlan.mockResolvedValue(plan({ status: 'APPROVED', approved_at: '2026-11-08T10:00:00Z' }));
+    await render();
+    expect(button('Setujui rencana')).toBeUndefined();
+    expect(button('Tolak dengan catatan')).toBeUndefined();
+    expect(button('Regenerasi rencana')).toBeUndefined();
+    const next = [...node.querySelectorAll('a')].find((a) => a.textContent === 'Lanjut ke eksekusi struktur');
+    expect(next.getAttribute('href')).toBe('/course/2/ai/publish');
   });
 });
 
