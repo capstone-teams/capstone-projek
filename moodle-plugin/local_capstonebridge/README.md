@@ -1,11 +1,11 @@
 # Capstone Bridge (`local_capstonebridge`)
 
-Local plugin Moodle yang menyediakan external function untuk membuat dan memperbarui activity (Page, Assignment, URL resource, dan Quiz beserta soalnya) melalui Moodle Web Service. Plugin ini merupakan mekanisme pembuatan activity yang dipilih pada DL-003, karena Moodle tidak menyediakan external function bawaan untuk membuat course module.
+Local plugin Moodle yang menyediakan external function untuk membuat dan memperbarui activity (Page, Assignment, URL resource, dan Quiz beserta soalnya) serta nama dan ringkasan section melalui Moodle Web Service. Plugin ini merupakan mekanisme pembuatan activity yang dipilih pada DL-003, karena Moodle tidak menyediakan external function bawaan untuk membuat course module.
 
 | Item               | Value                                            |
 | ------------------ | ------------------------------------------------ |
 | Component          | `local_capstonebridge`                           |
-| Release            | 0.5.0 (`2026110900`)                             |
+| Release            | 0.6.0 (`2026110901`)                             |
 | Requires           | Moodle 4.5 (`2024100700`) atau lebih baru        |
 | Teruji pada        | Moodle 4.5.14+, 4.5.15+, dan 5.2.4+              |
 | Modifikasi core    | Tidak ada                                        |
@@ -24,12 +24,14 @@ Local plugin Moodle yang menyediakan external function untuk membuat dan memperb
 | `local_capstonebridge_update_url`    | Memperbarui nama, alamat, deskripsi, dan section URL resource  | `moodle/course:manageactivities`                             |
 | `local_capstonebridge_create_quiz`   | Membuat Quiz beserta soal pilihan ganda dan kunci jawabannya   | `moodle/course:manageactivities`, `mod/quiz:addinstance`, `moodle/question:add` |
 | `local_capstonebridge_update_quiz`   | Memperbarui nama, deskripsi, konfigurasi, soal, dan section Quiz | `moodle/course:manageactivities`, `mod/quiz:manage`, `moodle/question:add` |
+| `local_capstonebridge_update_section` | Memperbarui nama dan ringkasan (summary HTML) satu section     | `moodle/course:update`                                       |
 
 Aturan umum:
 
 * **Idempotency.** Function `create_*` menerima `idnumber`, yang disimpan sebagai *ID number* activity. Bila activity dengan `idnumber` yang sama sudah ada pada course tersebut, function mengembalikan activity lama dengan `created = 0` tanpa membuat duplikat.
 * **Section.** Nomor section yang belum ada dibuat otomatis oleh Moodle. Pada function `update_*`, nilai `section = -1` (default) berarti section tidak diubah.
 * **Validasi.** Function `update_*` menolak `cmid` yang bukan milik `courseid` atau bukan jenis activity yang sesuai. `externalurl` harus berupa URL `http(s)` yang valid.
+* **Section.** `update_section` mencari section berdasarkan `sectionid` (bukan nomor section) dan menolak section milik course lain. Nama wajib 1 sampai 255 karakter; ringkasan disimpan sebagai HTML. Section baru tetap dibuat lewat `core_courseformat_update_course`.
 * Setiap function melakukan capability check Moodle pada context course atau module.
 
 ### 1.1 Pengaturan Assignment

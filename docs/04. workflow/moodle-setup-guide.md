@@ -3,7 +3,7 @@
 | Item | Value |
 | :--- | :--- |
 | **Status** | Draft |
-| **Issue** | #48 (BE-04 Moodle Integration), #138 (BE-12 Moodle Activity Operations) |
+| **Issue** | #48 (BE-04 Moodle Integration), #138 (BE-12 Moodle Activity Operations), #188 (BE-16 Moodle Course Structure Execution) |
 | **Target Version** | Moodle 5.2 (DL-002), branch `MOODLE_502_STABLE` |
 | **Teruji pada** | Moodle 4.5.14+ (moodle-docker, laptop Windows), Moodle 4.5.15+ dan 5.2.4+ (instance uji, PHP 8.3, PostgreSQL 16), serta upgrade 4.5.15+ → 5.2.4+ |
 | **Related Documents** | `moodle-integration-contract.md`, `moodle-integration.md`, `design-api.md`, `development-workflow.md`, `panduan-restart-server.md`, `moodle-plugin/local_capstonebridge/README.md` |
@@ -28,6 +28,7 @@ Panduan ini ditulis supaya anggota tim bisa membuat Moodle yang **sama persis** 
 | BE-12.1 | Learning resource (URL) | 10.2 |
 | BE-12.2 | Assignment | 10.2 |
 | BE-12.3 | Quiz beserta soal pilihan ganda | 10.2 |
+| BE-16.2 | Eksekusi struktur course: section mingguan beserta ringkasannya | 6, 10.1, 10.2 |
 
 ---
 
@@ -235,6 +236,7 @@ Moodle tidak menyediakan function bawaan untuk membuat activity (Page, Assignmen
 | 0.3.0 | Page, Assignment, URL (create & update) | BE-04.6, BE-12.1 |
 | 0.4.0 | + nilai maksimum dan jenis submission Assignment | BE-12.2 |
 | 0.5.0 | + Quiz beserta soal pilihan ganda dan kunci jawaban | BE-12.3 |
+| 0.6.0 | + Nama dan ringkasan section | BE-16.2 |
 
 Selalu pakai plugin dari branch `develop` terbaru.
 
@@ -267,7 +269,7 @@ cd /c/moodle-dev/moodle-docker
 bin/moodle-docker-compose exec webserver php admin/cli/upgrade.php --non-interactive
 ```
 
-Hasil benar: baris terakhir `... completed successfully.`. Cek di **Site administration → Plugins → Plugins overview**, cari **Capstone Bridge**. Versinya harus sama dengan `version.php` plugin (misalnya `2026110900` untuk 0.5.0).
+Hasil benar: baris terakhir `... completed successfully.`. Cek di **Site administration → Plugins → Plugins overview**, cari **Capstone Bridge**. Versinya harus sama dengan `version.php` plugin (misalnya `2026110901` untuk 0.6.0).
 
 Setiap kali plugin di repo berubah, ulangi 6.1 dan 6.2.
 
@@ -279,7 +281,7 @@ Setiap kali plugin di repo berubah, ulangi 6.1 dan 6.2.
 
 1. **Site administration → Server → Web services → External services → Add**.
 2. Isi **Name**: `Capstone Integration`, centang **Enabled**, biarkan **Authorised users only** tercentang → **Add service**.
-3. Pada service itu, klik **Add functions** dan tambahkan **27 function** berikut. Cari satu per satu; satu kotak isian bisa diisi beberapa function sekaligus sebelum **Add functions**.
+3. Pada service itu, klik **Add functions** dan tambahkan **28 function** berikut. Cari satu per satu; satu kotak isian bisa diisi beberapa function sekaligus sebelum **Add functions**.
 
 | # | Function | Dipakai oleh |
 | :-- | :--- | :--- |
@@ -310,8 +312,9 @@ Setiap kali plugin di repo berubah, ulangi 6.1 dan 6.2.
 | 25 | `local_capstonebridge_create_quiz` | Plugin (BE-12.3) |
 | 26 | `local_capstonebridge_update_quiz` | Plugin (BE-12.3) |
 | 27 | `core_user_create_users` | Script akun uji (BE-04.5) |
+| 28 | `local_capstonebridge_update_section` | Plugin: nama dan ringkasan section (BE-16.2) |
 
-Function 17–22, 25, dan 26 baru muncul setelah plugin terpasang (bagian 6).
+Function 17–22, 25, 26, dan 28 baru muncul setelah plugin terpasang (bagian 6).
 
 4. Pada service itu, buka **Authorised users** → tambahkan `admin`. **Tanpa ini token ditolak** dengan `invalidtoken`.
 
@@ -331,7 +334,7 @@ PowerShell/CMD (pakai `curl.exe` supaya tidak terpakai alias PowerShell). Ganti 
 curl.exe "http://localhost:8000/webservice/rest/server.php?wstoken=TOKEN_KAMU&wsfunction=core_webservice_get_site_info&moodlewsrestformat=json"
 ```
 
-Hasil benar: JSON berisi `"sitename":"Capstone Local"`, `"release":"5.2.x+ (Build: ...)"`, dan daftar `functions` berisi 27 function di atas.
+Hasil benar: JSON berisi `"sitename":"Capstone Local"`, `"release":"5.2.x+ (Build: ...)"`, dan daftar `functions` berisi 28 function di atas.
 
 > Response ini juga memuat `sitesecret` dan `userprivateaccesskey`. **Jangan** di-screenshot atau dibagikan. Backend hanya mengambil nama site, versi, dan daftar function.
 
@@ -502,6 +505,7 @@ Test yang butuh PostgreSQL dilewati bila `db` tidak menyala; nyalakan dulu (`doc
 | `tests/test_moodle_page_service.py` | BE-04.4: page learning material, konversi Markdown ke HTML, tanpa duplikat |
 | `tests/test_moodle_retry.py` | BE-04.5: retry terbatas hanya untuk error transient dan operasi yang aman diulang; kegagalan di tengah tidak membuat objek ganda |
 | `tests/test_setup_moodle_test_accounts.py` | BE-04.5: script akun uji membuat akun, course, dan enrolment tanpa duplikat |
+| `tests/test_execution_structure.py` | BE-16.2: course plan 16 minggu menjadi 16 section berurutan dengan nama dan ringkasan, eksekusi ulang tanpa section baru, retry hanya minggu gagal, read-back |
 
 Jalankan hanya test Moodle:
 
@@ -524,6 +528,7 @@ Test live memanggil Moodle yang sedang menyala dan **dilewati secara default**. 
 | `tests/test_moodle_quiz_live.py` | Quiz 3 soal di section minggu, tanpa duplikat, update mengganti soal, dikerjakan mahasiswa sampai selesai, kunci jawaban benar (BE-12.3) | 3 |
 | `tests/test_moodle_core_live.py` | Course dibaca lewat id, shortname, dan daftar; course di-update; section mingguan dan page dibuat ulang tanpa duplikat (BE-04.4) | 4 |
 | `tests/test_moodle_access_live.py` | Mahasiswa terdaftar bisa membuka course, mahasiswa tidak terdaftar ditolak; dosen terdaftar sebagai teacher (BE-04.5) | 2 |
+| `tests/test_moodle_execution_live.py` | Course plan 16 minggu dieksekusi ke course baru: 16 section berurutan dengan nama dan ringkasan, eksekusi kedua tidak menambah section, minggu gagal diulang tanpa mengulang yang berhasil (BE-16.2) | 2 |
 
 Jalankan hanya file yang sudah ada di branch-mu.
 
@@ -561,11 +566,11 @@ set MOODLE_TEACHER_USERNAME=
 set MOODLE_TEACHER_PASSWORD=
 ```
 
-Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **33 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
+Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **35 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
 
 Baris terakhir (mengosongkan variabel) wajib dijalankan agar `pytest` biasa tidak ikut memanggil Moodle.
 
-Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
+Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`, `Structure Execution Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
 
 ### 10.3 Cek mata sebagai mahasiswa (untuk bukti PR)
 
@@ -816,6 +821,7 @@ Hasil benar: `http://192.168.1.20:8081`, lalu `200`. Setelah itu login ke Swagge
 | Mahasiswa mendapat error permission `errorcoursecontextnotvalid` | Mahasiswa tidak terdaftar di course itu (perilaku yang benar) | Enrol lewat script bagian 8.2 atau *Participants → Enrol users* |
 | Test assignment gagal di setting `grade`/`filesubmission` | Plugin masih 0.3.0 | Pasang plugin terbaru dari `develop` (bagian 6) |
 | Test quiz gagal: `Can't find data record in database table external_functions` atau `accessexception` untuk `create_quiz` | Plugin masih 0.4.0, atau function quiz belum ditambahkan ke service | Pasang plugin 0.5.0 (bagian 6), lalu tambahkan function 25–26 (bagian 7.1) |
+| Eksekusi struktur gagal di semua minggu dengan `accessexception` atau `Can't find data record in database table external_functions` untuk `update_section` | Plugin masih 0.5.0, atau function 28 belum ditambahkan ke service | Pasang plugin 0.6.0 (bagian 6), lalu tambahkan function 28 (bagian 7.1) |
 | `504` atau timeout pada panggilan pertama | Moodle lambat saat cache dingin | Panggil ulang. Naikkan `MOODLE_TIMEOUT_SECONDS` (60 di laptop). Matikan debug (5.1), naikkan CPU/RAM Docker, *Site administration → Development → Purge caches* |
 | Moodle sangat lambat di Windows walau resource cukup | Source Moodle di drive Windows (`/c/...`) dibaca container lewat bind-mount yang lambat | Matikan debug (5.1). Alternatif: simpan `moodle-dev` di filesystem WSL2 (misalnya `\\wsl$\Ubuntu\home\<user>\moodle-dev`) dan jalankan perintah dari terminal WSL |
 | Klik menu Moodle berputar lama | Resource Docker kurang | Naikkan CPU/RAM (bagian 3) |
@@ -881,7 +887,7 @@ Kalau plugin lupa dipindah, core tetap ter-upgrade, tetapi plugin berstatus *Mis
 2. **Plugins overview**: Capstone Bridge berstatus normal (bukan *Missing from disk*).
 3. *Site administration → Development → Purge caches → Purge all caches*.
 4. Jalankan `curl.exe` bagian 7.3 dengan token lama. `release` harus `5.2.x+`.
-5. Jalankan test live bagian 10.2. Target sama: **27 passed**.
+5. Jalankan test live bagian 10.2. Target sama: **35 passed**.
 
 Token, service *Capstone Integration*, dan akun `mhs.uji` tidak perlu dibuat ulang.
 
@@ -914,12 +920,12 @@ Database Moodle tidak bisa diturunkan versinya tanpa backup, jadi langkah 15.1 w
 - [ ] Debug dimatikan di `config.php` (wajib di server).
 - [ ] Plugin Capstone Bridge terpasang dengan versi sama dengan `develop`.
 - [ ] Web service aktif, REST aktif, *Enable web services for mobile devices* aktif.
-- [ ] Service `Capstone Integration` berisi 27 function, `admin` terdaftar sebagai Authorised user.
+- [ ] Service `Capstone Integration` berisi 28 function, `admin` terdaftar sebagai Authorised user.
 - [ ] `curl` ke `core_webservice_get_site_info` mengembalikan JSON dengan `release` `5.2.x+`.
 - [ ] Akun Moodle `mhs.uji` ada.
 - [ ] `MOODLE_BASE_URL` sama persis dengan alamat Moodle di browser; `.env` tidak muncul di `git status`.
 - [ ] `uv run pytest` tidak memiliki test Moodle yang gagal.
-- [ ] Test live (10.2): 27 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
+- [ ] Test live (10.2): 35 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
 - [ ] Skenario 1–15 (11.3) sesuai hasil yang diharapkan.
 - [ ] Cek mata (10.3 dan 11.4) sesuai.
 - [ ] Uji keamanan A–G (11.5) sesuai.
