@@ -20,7 +20,7 @@ import { nullOn404 } from '../../../services/apiClient';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { useOnChange } from '../../../hooks/useOnChange';
 import { AppStateContext } from '../../../context/appStateContext';
-import { Alert, Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
+import { Alert, Badge, Card, EmptyState, ErrorAlert, Modal, Spinner } from '../../../components/ui';
 import InstructionModal from '../../../components/ai/InstructionModal';
 import CoursePlanDetails from '../../../components/ai/course/CoursePlanDetails';
 import CoursePlanProgress from '../../../components/ai/course/CoursePlanProgress';
@@ -33,28 +33,43 @@ import { formatDateTime } from '../../../utils/format';
 const statusMeta = (status) => PLAN_STATUS_META[status] ?? { label: status || 'Status belum tersedia', tone: 'neutral' };
 const PLAN_FAILED_MESSAGE = 'Penyusunan rencana gagal. Silakan coba lagi.';
 
-/** Daftar versi course plan (GET /plan/versions); memilih versi lama menampilkannya tanpa aksi review. */
-function PlanVersions({ versions, selected, latest, onSelect }) {
-  if (versions.length < 2) return null;
+/**
+ * Riwayat versi course plan (GET /plan/versions, terbaru di atas) dengan penanda status approval per versi.
+ * Membuka versi lama menampilkannya tanpa aksi review (GET /plan/versions/{version}).
+ */
+function PlanHistory({ versions, selected, latest, onSelect }) {
+  if (!versions.length) return null;
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Versi rencana">
-      <span className="text-muted">Versi:</span>
-      {[...versions].sort((a, b) => b.version - a.version).map((item) => {
-        const active = (selected ?? latest) === item.version;
-        return (
-          <button
-            key={item.version}
-            type="button"
-            aria-pressed={active}
-            className={`btn btn--sm ${active ? 'btn--primary' : 'btn--ghost'}`}
-            title={`${statusMeta(item.status).label}${item.created_at ? ` · ${formatDateTime(item.created_at)}` : ''}`}
-            onClick={() => onSelect(item.version === latest ? null : item.version)}
-          >
-            v{item.version}{item.version === latest ? ' (terbaru)' : ''}
-          </button>
-        );
-      })}
-    </div>
+    <section className="mb-4 rounded-lg border border-line" aria-label="Riwayat versi">
+      <h3 className="border-b border-line px-4 py-2.5 text-[15px] font-semibold">Riwayat versi</h3>
+      <ol className="m-0 list-none divide-y divide-line p-0">
+        {[...versions].sort((a, b) => b.version - a.version).map((item) => {
+          const active = (selected ?? latest) === item.version;
+          const meta = statusMeta(item.status);
+          return (
+            <li key={item.version} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 ${active ? 'bg-primary-light/50' : ''}`} aria-label={`Versi ${item.version}`}>
+              <span className="font-semibold">Versi {item.version}</span>
+              {item.version === latest && <span className="text-xs text-muted">(terbaru)</span>}
+              <Badge tone={meta.tone}>{meta.label}</Badge>
+              <span className="text-sm text-muted">
+                {item.created_at && `Dibuat ${formatDateTime(item.created_at)}`}
+                {item.approved_at && ` · Disetujui ${formatDateTime(item.approved_at)}`}
+              </span>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm ml-auto"
+                aria-pressed={active}
+                disabled={active}
+                onClick={() => onSelect(item.version === latest ? null : item.version)}
+              >
+                {active ? 'Sedang ditampilkan' : `Lihat versi ${item.version}`}
+              </button>
+              {item.revision_notes && <p className="w-full text-sm text-ink-subtle">Catatan revisi: {item.revision_notes}</p>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
@@ -80,7 +95,7 @@ function PlanFailure({ message, children }) {
 export default function CoursePlanPage() {
   const { course, workflow: projectWorkflow, workflowId: projectWorkflowId, events: projectEvents = [], refresh } = useCourse();
   const notify = useContext(AppStateContext)?.notify;
-  const [dialog, setDialog] = useState(null); // 'reject' | 'regenerate'
+  const [dialog, setDialog] = useState(null); // 'approve' | 'reject' | 'regenerate'
   const [selectedVersion, setSelectedVersion] = useState(null);
 
   // Workflow lain lewat ?workflow= dipantau sendiri; workflow project sudah dipantau AiCourseLayout.
@@ -122,6 +137,11 @@ export default function CoursePlanPage() {
   const generate = useAction(() => generateWorkflowPlan(workflowId), { loadingLabel: 'Meminta penyusunan rencana…' });
   const approve = useAction(() => approveWorkflowPlan(workflowId), { loadingLabel: 'Menyetujui rencana…' });
   const startGenerate = () => generate.run().then(after('Penyusunan rencana dimulai.')).catch(() => {});
+  // Approve setelah dikonfirmasi; galat ditampilkan di dialog agar dosen dapat mencoba lagi.
+  const confirmApprove = () => approve.run().then(() => {
+    setDialog(null);
+    after('Rencana course disetujui.')();
+  }).catch(() => {});
 
   const latest = plan.data;
   const progress = coursePlanProgressOf(workflow, events);
@@ -138,7 +158,6 @@ export default function CoursePlanPage() {
   const waitingReview = needsInstructorAction(workflow);
   const validationPassed = latest?.validation?.passed === true;
   const issuesByWeek = useMemo(() => groupValidationIssues(shown?.validation?.issues ?? []).byWeek, [shown]);
-  const actionError = generate.error || approve.error;
 
   if (workflowId && plan.loading && latest === null && !plan.error) return <Spinner label="Memuat rencana…" />;
 
@@ -211,9 +230,12 @@ export default function CoursePlanPage() {
                   type="button"
                   className="btn btn--primary"
                   disabled={!waitingReview || approve.pending || !validationPassed}
-                  onClick={() => approve.run().then(after('Rencana course disetujui.')).catch(() => {})}
+                  onClick={() => {
+                    approve.clearError();
+                    setDialog('approve');
+                  }}
                 >
-                  {approve.pending ? 'Menyimpan…' : 'Setujui rencana'}
+                  Setujui rencana
                 </button>
               </>
             )}
@@ -226,7 +248,7 @@ export default function CoursePlanPage() {
         )
       }
     >
-      <ErrorAlert error={actionError} onClose={() => { generate.clearError(); approve.clearError(); }} />
+      <ErrorAlert error={generate.error} onClose={generate.clearError} />
       <ErrorAlert error={plan.error} />
       {inProgress && <CoursePlanProgress progress={progress} events={events} replacing />}
       {planFailed && (
@@ -238,7 +260,7 @@ export default function CoursePlanPage() {
           )}
         </PlanFailure>
       )}
-      <PlanVersions versions={versions.data ?? []} selected={selectedVersion} latest={latest.version} onSelect={setSelectedVersion} />
+      <PlanHistory versions={versions.data ?? []} selected={selectedVersion} latest={latest.version} onSelect={setSelectedVersion} />
       {viewingOld && (
         <Alert tone="info" title={`Menampilkan versi ${selectedVersion}`}>
           Versi lama hanya untuk ditinjau.{' '}
@@ -251,12 +273,15 @@ export default function CoursePlanPage() {
       {shown?.validation && <CoursePlanValidation validation={shown.validation} />}
       {latest.status === PLAN_STATUS.APPROVED && !viewingOld && (
         <Alert tone="success" title="Rencana course telah disetujui">
-          Lanjutkan dengan konten mingguan berdasarkan rencana ini.
-          {course?.id && (
-            <>
-              {' '}<Link to="../content" relative="path" className="font-semibold underline">Buka tab konten</Link>
-            </>
-          )}
+          {latest.approved_at && <p>Disetujui {formatDateTime(latest.approved_at)}.</p>}
+          <p>
+            Langkah berikutnya: buat struktur mingguan rencana ini di kursus Moodle target.
+            {course?.id && (
+              <>
+                {' '}<Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke eksekusi struktur</Link>
+              </>
+            )}
+          </p>
         </Alert>
       )}
       {shown?.revision_notes && <Alert tone="warning" title="Catatan revisi">{shown.revision_notes}</Alert>}
@@ -265,6 +290,25 @@ export default function CoursePlanPage() {
       {viewingOld && older.loading ? <Spinner /> : shown ? <CoursePlanDetails plan={shown} course={course ?? {}} issuesByWeek={issuesByWeek} /> : null}
       <ErrorAlert error={older.error} />
 
+      <Modal
+        open={dialog === 'approve'}
+        title="Setujui rencana"
+        onClose={() => !approve.pending && setDialog(null)}
+        footer={(
+          <>
+            <button type="button" className="btn btn--ghost" disabled={approve.pending} onClick={() => setDialog(null)}>Batal</button>
+            <button type="button" className="btn btn--primary" disabled={approve.pending} onClick={confirmApprove}>
+              {approve.pending ? 'Menyimpan…' : 'Ya, setujui'}
+            </button>
+          </>
+        )}
+      >
+        <ErrorAlert error={approve.error} onClose={approve.clearError} />
+        <p>
+          Versi {latest.version} akan disetujui sebagai rencana course. Rencana yang sudah disetujui tidak dapat ditolak
+          maupun disetujui ulang, dan menjadi dasar struktur mingguan di kursus Moodle.
+        </p>
+      </Modal>
       <InstructionModal
         open={dialog === 'reject'}
         title="Tolak rencana"
