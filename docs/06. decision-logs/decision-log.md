@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** Decision Log
-**Version:** 0.8
+**Version:** 0.9
 **Status:** Active
 **Owner:** Project Manager (Noel)
 **Related Documents:** `project-charter.md`, `prd.md`, `quality-plan.md`, `moodle-integration.md`, `design-system.md`, `design-api.md`, `agent-design.md`, `content-schema.md`, `data-model.md`
@@ -40,8 +40,8 @@ Keputusan berstatus `Accepted` tidak diedit isinya. Jika arah berubah, buat entr
 | ID     | Tanggal    | Keputusan                                                     | Kategori           | Status   | Owner             |
 | ------ | ---------- | ------------------------------------------------------------- | ------------------ | -------- | ----------------- |
 | DL-001 | 2026-10-13 | Target integrasi menggunakan Moodle open-source self-hosted   | Scope, Integration | Accepted | Project Manager   |
-| DL-002 | 2026-10-13 | Penetapan satu versi Moodle dan referensi dokumentasi         | Technology         | Proposed | Moodle Integration |
-| DL-003 | 2026-10-13 | Mekanisme pembuatan activity Moodle (page, assignment, quiz)  | Architecture       | Open     | Moodle Integration |
+| DL-002 | 2026-10-13 | Penetapan satu versi Moodle dan referensi dokumentasi         | Technology         | Accepted | Moodle Integration |
+| DL-003 | 2026-10-13 | Mekanisme pembuatan activity Moodle (page, assignment, quiz)  | Architecture       | Accepted | Moodle Integration |
 | DL-004 | 2026-10-13 | Restrukturisasi milestone M03–M14 dan penerapan sprint 1 minggu | Schedule, Governance | Accepted | Project Manager   |
 | DL-005 | 2026-10-13 | Penyesuaian kepemilikan stream pekerjaan backend              | Resource           | Accepted | Project Manager   |
 | DL-006 | 2026-10-12 | Representasi data RPS: satu skema JSON tersimpan, YAML untuk input LLM | Architecture, Data | Accepted | Project Manager   |
@@ -114,7 +114,7 @@ Integrasi dengan Moodle production ITK berada di luar scope MVP dan diposisikan 
 | -------- | ------------------------------------------------- |
 | Tanggal  | 2026-10-13                                        |
 | Kategori | Technology                                        |
-| Status   | Proposed — menunggu konfirmasi versi terpasang    |
+| Status   | Accepted — Moodle 5.2 (2026-11-09)                |
 | Owner    | Moodle Integration Engineer                       |
 
 **Konteks**
@@ -142,6 +142,20 @@ Perbedaan versi berisiko menimbulkan ketidaksesuaian antara dokumentasi yang dip
 
 Versi instance yang terpasang sudah dikonfirmasi oleh Moodle Integration Engineer dan seluruh referensi tim sudah diseragamkan.
 
+**Keputusan (2026-11-09)**
+
+1. Versi Moodle untuk MVP dan expo adalah **Moodle 5.2** (branch `MOODLE_502_STABLE`), sesuai rekomendasi no. 2. Seluruh integration test lulus pada Moodle 5.2.4+ (PHP 8.3, PostgreSQL 16).
+2. Moodle 5.3 LTS tidak diambil untuk MVP karena belum diuji dan waktu terbatas. Upgrade ke 5.3 LTS dicatat sebagai pekerjaan lanjutan setelah MVP.
+3. Kode integrasi dan plugin `local_capstonebridge` juga lulus pada Moodle 4.5 LTS, sehingga instance 4.5 yang masih dipakai selama development tetap dapat digunakan sampai di-upgrade. Prosedur upgrade 4.5 → 5.2 sudah diuji (`moodle-setup-guide.md` §15).
+4. Referensi tim diseragamkan ke versi 5.2: developer docs `moodledev.io` versi 5.2, dokumentasi instalasi `docs.moodle.org/502/...`, dan panduan tim `docs/04. workflow/moodle-setup-guide.md`. Penyesuaian `moodle-integration.md` §4 menyusul.
+
+**Dampak**
+
+| Area      | Dampak                                                                                  |
+| --------- | --------------------------------------------------------------------------------------- |
+| Technology | Moodle 5.2 membutuhkan PHP 8.3 dan PostgreSQL 16; nilai bawaan `moodle-docker` sudah memenuhi. |
+| Risk      | General support Moodle 5.2 berakhir 19 April 2027 dan security support 4 Oktober 2027. |
+
 ---
 
 ### DL-003 — Mekanisme pembuatan activity Moodle (page, assignment, quiz)
@@ -150,7 +164,7 @@ Versi instance yang terpasang sudah dikonfirmasi oleh Moodle Integration Enginee
 | --------------- | --------------------------------------------- |
 | Tanggal dibuka  | 2026-10-13                                    |
 | Kategori        | Architecture, Integration                     |
-| Status          | Open                                          |
+| Status          | Accepted — Opsi B (2026-11-09)                |
 | Owner           | Moodle Integration Engineer                   |
 | Target keputusan | 2026-10-25 (Sprint S1, M02)                  |
 
@@ -204,6 +218,19 @@ Opsi B, dengan batasan:
 **Dokumen yang akan disesuaikan setelah keputusan**
 
 `project-charter.md` §7.2, `prd.md` §6, `moodle-integration.md` §3.1, §5, §8, §11–§13, §32, §36.
+
+**Keputusan dan hasil verifikasi (2026-11-09)**
+
+Opsi B diambil: local plugin `local_capstonebridge` yang disimpan di repository (`moodle-plugin/local_capstonebridge`, versi 0.5.0).
+
+Hasil verifikasi pada instance tim:
+
+1. External functions bawaan cukup untuk course, isi course, section (`core_courseformat_update_course`, `core_update_inplace_editable`), user, dan enrolment.
+2. Tidak ada external function bawaan untuk membuat page, assignment, URL resource, quiz, dan soal quiz. Operasi tersebut disediakan plugin: create/update page (BE-04.4, BE-04.6), URL resource (BE-12.1), assignment (BE-12.2), serta quiz beserta soal pilihan ganda pada question bank course (BE-12.3).
+3. Batasan rekomendasi terpenuhi: plugin hanya berisi operasi MVP, setiap function melakukan capability check, kode memiliki versi, tidak ada modifikasi core, dan setiap create bersifat idempotent melalui ID number.
+4. Seluruh function plugin lulus integration test pada Moodle 4.5.14+, 4.5.15+, dan 5.2.4+, termasuk akses dan pengerjaan oleh akun mahasiswa uji.
+
+Penyesuaian rumusan out-of-scope "custom Moodle API" pada `project-charter.md` §7.2 dan `prd.md` §6 mengikuti bagian "Dampak bila Opsi B diambil" di atas.
 
 ---
 
@@ -601,7 +628,6 @@ Keputusan berikut belum diambil dan menjadi bagian dari exit criteria milestone.
 
 | Topik                                     | Target       | Milestone | Referensi                  |
 | ----------------------------------------- | ------------ | --------- | -------------------------- |
-| Mekanisme pembuatan activity Moodle       | 2026-10-25   | M02       | DL-003                     |
 | Model OpenAI untuk MVP                     | 2026-10-25   | M02       | DL-007, Agent Design §39, Quality Plan §16 |
 | Document processing final (Docling atau alternatif) | 2026-10-25 | M02 | Project Charter §22.3     |
 | Mekanisme structured output dan tool calling | 2026-10-25 | M02       | Agent Design §52           |
@@ -616,10 +642,10 @@ Keputusan berikut belum diambil dan menjadi bagian dari exit criteria milestone.
 | ------------ | -------------------------------------- |
 | Document     | Decision Log                           |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.8                                    |
+| Version      | 0.9                                    |
 | Status       | Active                                 |
 | Owner        | Project Manager                        |
-| Last Updated | 2026-10-19                             |
+| Last Updated | 2026-11-09                             |
 
 ### Version History
 
@@ -633,3 +659,4 @@ Keputusan berikut belum diambil dan menjadi bagian dari exit criteria milestone.
 | 0.6     | 2026-10-19 | Penambahan DL-010 dan DL-011 | Project Manager |
 | 0.7     | 2026-10-19 | Penyesuaian referensi task DL-011 dengan issue M02 yang sudah ada | Project Manager |
 | 0.8     | 2026-10-19 | Penambahan DL-012 (Proposed) untuk M03 | Project Manager |
+| 0.9     | 2026-11-09 | DL-002 (Moodle 5.2) dan DL-003 (local plugin) menjadi Accepted | Moodle Integration Engineer |

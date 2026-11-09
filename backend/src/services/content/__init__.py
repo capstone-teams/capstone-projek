@@ -23,7 +23,7 @@ from src.services.content.errors import (
     ContentStateError,
     ContentValidationError,
 )
-from src.services.content.repository import ContentRepository
+from src.services.content.repository import ContentGenerationRepository
 from src.services.content.service import ContentReviewService
 
 __all__ = [

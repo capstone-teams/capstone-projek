@@ -1,3 +1,4 @@
+
 <?php
 defined('MOODLE_INTERNAL') || die();
 
@@ -18,7 +19,7 @@ $functions = [
     ],
     'local_capstonebridge_create_assign' => [
         'classname' => 'local_capstonebridge\external\create_assign',
-        'description' => 'Creates an Assignment activity in a course section.',
+        'description' => 'Creates an Assignment activity in a course section with grade and submission settings.',
         'type' => 'write',
         'ajax' => false,
         'capabilities' => 'moodle/course:manageactivities,mod/assign:addinstance',
@@ -43,5 +44,19 @@ $functions = [
         'type' => 'write',
         'ajax' => false,
         'capabilities' => 'moodle/course:manageactivities',
+    ],
+        'local_capstonebridge_create_quiz' => [
+        'classname' => 'local_capstonebridge\external\create_quiz',
+        'description' => 'Creates a Quiz with multiple choice questions from the course question bank.',
+        'type' => 'write',
+        'ajax' => false,
+        'capabilities' => 'moodle/course:manageactivities,mod/quiz:addinstance,moodle/question:add',
+    ],
+    'local_capstonebridge_update_quiz' => [
+        'classname' => 'local_capstonebridge\external\update_quiz',
+        'description' => 'Updates a Quiz; questions are replaced only while it has no attempts.',
+        'type' => 'write',
+        'ajax' => false,
+        'capabilities' => 'moodle/course:manageactivities,mod/quiz:manage,moodle/question:add',
     ],
 ];

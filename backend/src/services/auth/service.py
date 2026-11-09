@@ -23,6 +23,7 @@ berisi identifier login: username atau email — lihat
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,10 +73,12 @@ class AuthService:
 
         if user is None:
             # Verifikasi dummy agar waktu respons tidak membocorkan keberadaan user.
-            verify_password(password, None)
+            await asyncio.to_thread(verify_password, password, None)
             raise InvalidCredentialsError("login gagal: identifier tidak terdaftar")
 
-        if not verify_password(password, user.password):
+        # bcrypt memakan ~180 ms CPU: jalankan di thread agar event loop tidak
+        # berhenti melayani request lain selama verifikasi.
+        if not await asyncio.to_thread(verify_password, password, user.password):
             raise InvalidCredentialsError(
                 f"login gagal: password tidak cocok untuk user {user.id}"
             )
