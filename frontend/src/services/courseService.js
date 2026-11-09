@@ -10,9 +10,15 @@ export function listCourses() {
  * Hasil tetap disaring di sini supaya benar walau backend belum mendukung filter moodle_course_id.
  */
 export async function findCourseByMoodleId(moodleCourseId) {
-  const res = await api.get('/courses', { query: { moodle_course_id: moodleCourseId } }).catch(() => null);
+  if (!moodleCourseId) return null;
+  const isNumeric = Number.isInteger(Number(moodleCourseId)) && Number(moodleCourseId) > 0;
+  const res = await api.get('/courses', isNumeric ? { query: { moodle_course_id: moodleCourseId } } : undefined).catch(() => null);
   const list = res?.items ?? res?.courses ?? [];
-  const found = list.find((c) => String(c.moodle_course_id) === String(moodleCourseId) || String(c.id) === String(moodleCourseId));
+  const found = list.find((c) =>
+    (isNumeric && String(c.moodle_course_id) === String(moodleCourseId)) ||
+    String(c.id) === String(moodleCourseId) ||
+    String(c.shortname).toLowerCase() === String(moodleCourseId).toLowerCase()
+  );
   const targetId = found?.id ?? moodleCourseId;
   const detail = await api.get(`/courses/${targetId}`).catch(() => null);
   return detail ?? found ?? null;

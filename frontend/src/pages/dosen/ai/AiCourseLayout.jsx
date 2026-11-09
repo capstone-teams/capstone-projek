@@ -1,11 +1,16 @@
-import { useCallback, useState } from 'react';
-import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { findCourseByMoodleId } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
 import { getRps } from '../../../services/rpsService';
-import { findWorkflowForCourse } from '../../../services/workflowService';
+import {
+  findWorkflowForCourse,
+  getActiveCourseBinding,
+  moodleCourseIdOf,
+  saveActiveCourseBinding,
+} from '../../../services/workflowService';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { ErrorAlert, ErrorBoundary, Spinner, StatusBadge } from '../../../components/ui';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
@@ -28,32 +33,52 @@ export const TABS = [
  * Sesuai design-api.md §17: ambil initial state via HTTP dulu, baru pakai event stream.
  */
 function CourseProjectLayout() {
-  const { course: moodleCourse, isTeacher } = useMoodleCourse();
+  const { course: moodleCourse, isTeacher } = useMoodleCourse() ?? {};
+  const params = useParams();
+  const courseIdParam = params.courseId;
+  const moodleId = moodleCourseIdOf(moodleCourse) || (Number.isInteger(Number(courseIdParam)) && Number(courseIdParam) > 0 ? Number(courseIdParam) : null);
+  const courseLookupKey = moodleId || courseIdParam;
+
   // Status workflow dapat dibuka walau kursus ini belum punya project, mis. dari tautan di daftar RPS.
   const onStatusPage = useLocation().pathname.endsWith('/workflows');
   // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.
   const [version, setVersion] = useState(0);
 
   const { data: dbCourse, error, loading, reload } = useApi(async () => {
-    if (!moodleCourse?.id) return null;
-    return findCourseByMoodleId(moodleCourse.id);
-  }, [moodleCourse?.id]);
+    if (!courseLookupKey) return null;
+    return findCourseByMoodleId(courseLookupKey);
+  }, [courseLookupKey]);
 
   // ?rps=<id>: hasil analisis RPS dari daftar RPS, walau kursus ini belum punya project.
-  const [params] = useSearchParams();
-  const rpsParam = params.get('rps');
-  const workflowParam = params.get('workflow');
+  const [searchParams] = useSearchParams();
+  const rpsParam = searchParams.get('rps');
+  const workflowParam = searchParams.get('workflow');
+
+  // Kumpulkan seluruh alias identifier yang mungkin milik kursus ini (angka, string ID, shortname)
+  const courseKeys = [moodleId, courseIdParam, dbCourse?.id, dbCourse?.shortname, moodleCourse?.id, moodleCourse?.shortname].filter(Boolean);
+  const courseKeysKey = courseKeys.join(',');
+
+  // Binding aktif kursus ini yang tersimpan (FE-10 / RPS overwrite persistence)
+  const activeBinding = getActiveCourseBinding(...courseKeys);
 
   // Cari workflow yang menargetkan kursus Moodle ini (FE-10 / FE-11)
   const activeWfQuery = useApi(
-    () => (moodleCourse?.id ? findWorkflowForCourse(moodleCourse.id).catch(() => null) : null),
-    [moodleCourse?.id, version]
+    () => (courseKeys.length ? findWorkflowForCourse(...courseKeys).catch(() => null) : null),
+    [courseKeysKey, version]
   );
   const activeWorkflow = activeWfQuery.data;
 
-  // Baca session storage untuk rps / workflow yang baru diunggah di kursus ini
-  const sessionRpsId = moodleCourse?.id ? sessionStorage.getItem(`agentic-lms.course-rps.${moodleCourse.id}`) : null;
-  const sessionWorkflowId = moodleCourse?.id ? sessionStorage.getItem(`agentic-lms.course-workflow.${moodleCourse.id}`) : null;
+  // Sinkronkan ke storage lokal HANYA jika belum ada binding lokal atau workflowId-nya cocok
+  useEffect(() => {
+    if (courseKeys.length && activeWorkflow?.id) {
+      if (!activeBinding?.rpsId || activeBinding.workflowId === activeWorkflow.id) {
+        saveActiveCourseBinding(moodleId || courseIdParam, {
+          workflowId: activeWorkflow.id,
+          rpsId: activeWorkflow.rps_id,
+        }, courseKeys);
+      }
+    }
+  }, [moodleId, courseIdParam, activeWorkflow?.id, activeWorkflow?.rps_id, activeBinding?.rpsId, activeBinding?.workflowId, courseKeysKey]);
 
   // Fallback course dari data Moodle jika belum tercatat di database internal
   const baseCourse = dbCourse ?? (moodleCourse ? {
@@ -67,24 +92,26 @@ function CourseProjectLayout() {
   } : null);
 
   const effectiveWorkflowId = workflowParam
+    ?? activeBinding?.workflowId
     ?? activeWorkflow?.id
-    ?? sessionWorkflowId
     ?? baseCourse?.workflow_id
     ?? null;
 
   // Workflow project: dari project bila ada, atau dari RPS-nya (GET /rps/{id}); dipantau real-time (FE-10.2).
   const projectRps = useApi(
-    () => (!effectiveWorkflowId && (rpsParam || sessionRpsId || baseCourse?.rps_id) ? getRps(rpsParam || sessionRpsId || baseCourse.rps_id).catch(() => null) : null),
-    [effectiveWorkflowId, rpsParam, sessionRpsId, baseCourse?.rps_id],
+    () => (!effectiveWorkflowId && (rpsParam || (!activeBinding?.rpsId && baseCourse?.rps_id))
+      ? getRps(rpsParam || baseCourse.rps_id).catch(() => null)
+      : null),
+    [effectiveWorkflowId, rpsParam, activeBinding?.rpsId, baseCourse?.rps_id],
   );
 
   const workflowId = effectiveWorkflowId ?? projectRps.data?.workflow_id ?? null;
 
   const effectiveRpsId = rpsParam
+    ?? activeBinding?.rpsId
     ?? activeWorkflow?.rps_id
-    ?? sessionRpsId
     ?? projectRps.data?.id
-    ?? baseCourse?.rps_id
+    ?? (!activeBinding?.rpsId ? baseCourse?.rps_id : null)
     ?? null;
 
   const course = baseCourse ? {
@@ -101,7 +128,7 @@ function CourseProjectLayout() {
     reloadWorkflow();
     activeWfQuery.reload({ silent: true });
     return reload({ silent: true });
-  }, [reload, reloadWorkflow, activeWfQuery]);
+  }, [reload, reloadWorkflow, activeWfQuery, setVersion]);
 
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
