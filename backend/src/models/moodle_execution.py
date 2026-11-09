@@ -41,7 +41,9 @@ class ExecutionStatus(str, enum.Enum):
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
-
+    #: Tidak ada operasi yang perlu diterapkan ke Moodle (mis. eksekusi ulang
+    #: cakupan FULL pada M04 ketika seluruh konten tidak berubah).
+    SKIPPED = "SKIPPED"
 
 class MoodleExecution(BaseModel):
     __tablename__ = "moodle_executions"

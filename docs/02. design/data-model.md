@@ -10,8 +10,8 @@
 | Database          | PostgreSQL — Proposed                                          |
 | Owner             | Capstone Team                                                  |
 | Related Documents | Project Charter, PRD, System Design, Moodle Integration Design, Content Schema |
-| Version           | 0.4                                                            |
-| Last Updated      | 2026-10-19                                                     |
+| Version           | 0.5                                                            |
+| Last Updated      | 2026-11-09                                                     |
 
 ---
 
@@ -609,26 +609,52 @@ Instructor Review
 
 # 19. Moodle Execution
 
-Represents an operation performed against Moodle.
+Satu run eksekusi course plan ke Moodle (BE-16.1, BE-17.1). Setiap run memiliki
+beberapa **Execution Operation**, satu per objek Moodle yang diterapkan.
+Implementasi: `backend/src/models/moodle_execution.py` dan
+`backend/src/models/execution_operation.py`, diakses lewat
+`ExecutionRepository` (`backend/src/services/execution/repository.py`).
 
-Conceptual fields:
+## 19.1 MoodleExecution (`moodle_executions`)
 
-| Field             | Type      | Description                                               |
-| ----------------- | --------- | --------------------------------------------------------- |
-| id                | UUID      | Primary key                                               |
-| course_id         | UUID      | FK → Course                                               |
-| agent_run_id      | UUID      | FK → AgentRun                                             |
-| operation         | String    | Moodle operation                                          |
-| target_type       | String    | Course / Section / Content / Activity                     |
-| target_id         | UUID      | Internal target                                           |
-| moodle_object_id  | String    | External Moodle ID                                        |
-| status            | Enum      | Pending / Running / Success / Failed / Blocked / Retrying |
-| request_reference | String    | Internal operation reference                              |
-| error_code        | String    | Normalized error                                          |
-| error_message     | Text      | Safe error message                                        |
-| retry_count       | Integer   | Retry count                                               |
-| started_at        | Timestamp | Execution start                                           |
-| completed_at      | Timestamp | Execution end                                             |
+| Field            | Type      | Description                                             |
+| ---------------- | --------- | ------------------------------------------------------- |
+| id               | String    | Primary key                                             |
+| workflow_id      | String    | FK → Workflow                                           |
+| course_plan_id   | String    | FK → Course Plan (versi yang dieksekusi)                |
+| moodle_course_id | Integer   | ID course target di Moodle                              |
+| scope            | Enum      | `STRUCTURE` (M03, section saja) / `FULL` (M04, beserta konten dan aktivitas) |
+| status           | Enum      | `PENDING` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED` |
+| error_message    | Text      | Pesan error aman (tanpa token)                          |
+| readback         | JSONB     | Ringkasan hasil baca ulang dari Moodle setelah eksekusi |
+| started_at       | Timestamp | Waktu mulai                                             |
+| completed_at     | Timestamp | Waktu selesai                                           |
+
+`SKIPPED` berarti run tidak memiliki operasi yang perlu diterapkan ke Moodle
+(misalnya eksekusi ulang cakupan `FULL` ketika seluruh konten tidak berubah).
+Nilai lama `BLOCKED` dan `RETRYING` masih ada di enum database untuk
+kompatibilitas, tetapi tidak dipakai aplikasi.
+
+## 19.2 ExecutionOperation (`execution_operations`)
+
+| Field               | Type    | Description                                                  |
+| ------------------- | ------- | ------------------------------------------------------------ |
+| id                  | String  | Primary key                                                  |
+| execution_id        | String  | FK → MoodleExecution                                         |
+| course_plan_week_id | String  | FK → Course Plan Week (rencana mingguan)                     |
+| content_id          | String  | FK → Content, opsional (cakupan `FULL`)                      |
+| operation_type      | Enum    | `SECTION` / `LEARNING_MATERIAL` / `LEARNING_RESOURCE` / `ASSIGNMENT` / `QUIZ` |
+| idempotency_key     | String  | Kunci stabil operasi, unik per eksekusi                      |
+| moodle_object_id    | String  | ID objek Moodle hasil operasi (section id, cmid)             |
+| status              | Enum    | `PENDING` / `RUNNING` / `SUCCESS` / `FAILED` / `SKIPPED`     |
+| error_message       | Text    | Pesan error aman                                             |
+| retry_count         | Integer | Jumlah retry (≥ 0)                                           |
+
+Sumber idempotency lintas run adalah tabel `moodle_entity_mappings` (BE-04.3):
+operasi yang berhasil menyimpan pemetaan objek internal → ID Moodle (mis.
+`course_plan_week` → section id), sehingga run berikutnya memperbarui objek yang
+sama alih-alih membuat duplikat. `moodle_object_id` pada operasi sama dengan
+`moodle_id` pada pemetaan tersebut.
 
 Raw authentication information must never be stored.
 
@@ -723,6 +749,7 @@ Recommended relationships:
 | AgentRun → ValidationResult    | 1 : N       |
 | User → Review                  | 1 : N       |
 | Course → MoodleExecution       | 1 : N       |
+| MoodleExecution → ExecutionOperation | 1 : N |
 | MoodleExecution → Verification | 1 : N       |
 
 ---
@@ -1300,3 +1327,4 @@ Perubahan schema harus dievaluasi terhadap PRD dan System Design sebelum impleme
 | 0.2     | 2026-10-13 | Penyesuaian entitas RPS untuk RPS Structured Data (DL-006)            | Project Manager |
 | 0.3     | 2026-10-13 | Contoh provider LLM disesuaikan dengan DL-007                         | Project Manager |
 | 0.4     | 2026-10-19 | Role DOSEN/MAHASISWA, Instructor Profile, Workflow, Workflow Event, Activity Configuration per dosen (DL-011) | Project Manager |
+| 0.5     | 2026-11-09 | Moodle Execution per run, Execution Operation, status SKIPPED, dan tautan ke tabel mapping BE-04.3 (BE-16.1) | Moodle Integration Engineer |
