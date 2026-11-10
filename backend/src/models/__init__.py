@@ -29,6 +29,7 @@ from src.models.validation_result import (
     ValidationTargetType,
 )
 from src.models.verification import Verification, VerificationStatus
+from src.models.verification_result import VerificationResult
 from src.models.category import Category
 from src.models.workflow import Workflow, WorkflowStatus
 from src.models.workflow_event import EventType, WorkflowEvent
@@ -74,6 +75,7 @@ __all__ = [ "Base",
             "ValidationStatus",
             "ValidationTargetType",
             "Verification",
+            "VerificationResult",
             "VerificationStatus",
             "Workflow",
             "WorkflowEvent",

@@ -46,6 +46,7 @@ DEFAULT_LLM_RETRY_MAX_WAIT = 10.0
 
 # Batas waktu request ke Moodle Web Service 
 DEFAULT_MOODLE_TIMEOUT_SECONDS = 10.0
+DEFAULT_MOODLE_VERIFICATION_MAX_REPAIRS = 2
 
 # Nilai bawaan konfigurasi analisis RPS
 DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 2
@@ -81,6 +82,8 @@ class Settings(BaseSettings):
     MOODLE_WEB_SERVICE_TOKEN: str
     
     MOODLE_TIMEOUT_SECONDS: float | None = None
+    #: Batas putaran perbaikan otomatis Moodle verification (BE-21.2); 0 = tanpa perbaikan.
+    MOODLE_VERIFICATION_MAX_REPAIRS: int | None = None
 
     LLM_PROVIDER: str
     # Optional shared credential/model, kept for single-provider setups. Prefer
@@ -195,6 +198,13 @@ class Settings(BaseSettings):
         if v is not None and v <= 0:
             raise ValueError("MOODLE_TIMEOUT_SECONDS harus lebih besar dari 0")
         return v
+
+    @field_validator("MOODLE_VERIFICATION_MAX_REPAIRS", mode="after")
+    @classmethod
+    def validate_moodle_verification_max_repairs(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("MOODLE_VERIFICATION_MAX_REPAIRS tidak boleh negatif")
+        return v
     
     @field_validator("RPS_CONVERTER_TABLE_MODE", mode="after")
     @classmethod
@@ -260,6 +270,13 @@ class Settings(BaseSettings):
         if self.MOODLE_TIMEOUT_SECONDS is None:
             return DEFAULT_MOODLE_TIMEOUT_SECONDS
         return float(self.MOODLE_TIMEOUT_SECONDS)
+
+    @property
+    def moodle_verification_max_repairs(self) -> int:
+        """Batas putaran perbaikan otomatis Moodle verification (BE-21.2)."""
+        if self.MOODLE_VERIFICATION_MAX_REPAIRS is None:
+            return DEFAULT_MOODLE_VERIFICATION_MAX_REPAIRS
+        return self.MOODLE_VERIFICATION_MAX_REPAIRS
     
     @property
     def rps_storage_path(self) -> Path:

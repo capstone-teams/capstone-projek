@@ -30,6 +30,7 @@ Panduan ini ditulis supaya anggota tim bisa membuat Moodle yang **sama persis** 
 | BE-12.3 | Quiz beserta soal pilihan ganda | 10.2 |
 | BE-16.2 | Eksekusi struktur course: section mingguan beserta ringkasannya | 6, 10.1, 10.2 |
 | BE-16.3 | Akses mahasiswa pada course hasil eksekusi | 8.2, 10.1, 10.2, 10.4 |
+| BE-21.2 | Moodle verification: read-back, pembandingan, dan perbaikan otomatis | 7.1, 10.1, 10.2 |
 
 ---
 
@@ -314,8 +315,9 @@ Setiap kali plugin di repo berubah, ulangi 6.1 dan 6.2.
 | 26 | `local_capstonebridge_update_quiz` | Plugin (BE-12.3) |
 | 27 | `core_user_create_users` | Script akun uji (BE-04.5) |
 | 28 | `local_capstonebridge_update_section` | Plugin: nama dan ringkasan section (BE-16.2) |
+| 29 | `core_course_delete_modules` | **Opsional**, hanya untuk test live verifikasi (BE-21.2) |
 
-Function 17–22, 25, 26, dan 28 baru muncul setelah plugin terpasang (bagian 6).
+Function 17–22, 25, 26, dan 28 baru muncul setelah plugin terpasang (bagian 6). Function 29 hanya dipakai test live BE-21.2 untuk meniru activity yang dihapus manual; aplikasi sendiri tidak pernah menghapus activity. Function ini tidak dihitung pada `all_functions_available` dan sebaiknya tidak didaftarkan pada Moodle server demo.
 
 4. Pada service itu, buka **Authorised users** → tambahkan `admin`. **Tanpa ini token ditolak** dengan `invalidtoken`.
 
@@ -430,7 +432,7 @@ MOODLE_WEB_SERVICE_TOKEN="isi-token-dari-7.2"
 MOODLE_TIMEOUT_SECONDS=60
 ```
 
-`MOODLE_TIMEOUT_SECONDS=60` dipakai karena Moodle di Docker Desktop sering lambat. Nilai bawaan backend adalah 10 detik.
+`MOODLE_TIMEOUT_SECONDS=60` dipakai karena Moodle di Docker Desktop sering lambat. Nilai bawaan backend adalah 10 detik. `MOODLE_VERIFICATION_MAX_REPAIRS` (opsional, bawaan 2) membatasi berapa kali Moodle verification menjalankan ulang operasi untuk memperbaiki perbedaan; `0` berarti hanya melaporkan.
 
 Pastikan nilai database di `.env` sama dengan compose (default: `DB_HOST=localhost`, `DB_PORT=5432`, `DB_USER=postgres`, `DB_PASSWORD=postgres`, `DB_NAME=lms_moodle_db`).
 
@@ -509,6 +511,7 @@ Test yang butuh PostgreSQL dilewati bila `db` tidak menyala; nyalakan dulu (`doc
 | `tests/test_execution_structure.py` | BE-16.2: course plan 16 minggu menjadi 16 section berurutan dengan nama dan ringkasan, eksekusi ulang tanpa section baru, retry hanya minggu gagal, read-back |
 | `tests/test_moodle_student_access.py` | BE-16.3: enrolment mahasiswa uji, visibilitas course dan section, mahasiswa terdaftar melihat seluruh section, mahasiswa tidak terdaftar ditolak |
 | `tests/test_verify_student_access.py` | BE-16.3: script demo student access dan laporannya |
+| `tests/test_verification_service.py` | BE-21.2: verifikasi course hasil eksekusi FULL, activity dihapus/diganti nama/dipindah lalu diperbaiki, activity tidak terduga, batas perbaikan, hasil tersimpan per workflow |
 
 Jalankan hanya test Moodle:
 
@@ -533,6 +536,7 @@ Test live memanggil Moodle yang sedang menyala dan **dilewati secara default**. 
 | `tests/test_moodle_access_live.py` | Mahasiswa terdaftar bisa membuka course, mahasiswa tidak terdaftar ditolak; dosen terdaftar sebagai teacher (BE-04.5) | 2 |
 | `tests/test_moodle_execution_live.py` | Course plan 16 minggu dieksekusi ke course baru: 16 section berurutan dengan nama dan ringkasan, eksekusi kedua tidak menambah section, minggu gagal diulang tanpa mengulang yang berhasil (BE-16.2) | 2 |
 | `tests/test_moodle_student_access_live.py` | Course hasil eksekusi 16 minggu: mahasiswa terdaftar melihat 16 section, mahasiswa tidak terdaftar ditolak; section tersembunyi terdeteksi dan ditampilkan kembali (BE-16.3) | 2 |
+| `tests/test_moodle_verification_live.py` | Course hasil eksekusi FULL terverifikasi `PASS`; page yang dihapus manual terdeteksi, dibuat ulang, dan verifikasi berikutnya `PASS` (BE-21.2, butuh function 29) | 1 |
 
 Jalankan hanya file yang sudah ada di branch-mu.
 
@@ -570,11 +574,11 @@ set MOODLE_TEACHER_USERNAME=
 set MOODLE_TEACHER_PASSWORD=
 ```
 
-Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **37 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
+Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **38 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
 
 Baris terakhir (mengosongkan variabel) wajib dijalankan agar `pytest` biasa tidak ikut memanggil Moodle.
 
-Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`, `Structure Execution Test`, `Student Access Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
+Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`, `Structure Execution Test`, `Student Access Test`, `Verification Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
 
 ### 10.3 Cek mata sebagai mahasiswa (untuk bukti PR)
 
@@ -933,7 +937,7 @@ Kalau plugin lupa dipindah, core tetap ter-upgrade, tetapi plugin berstatus *Mis
 2. **Plugins overview**: Capstone Bridge berstatus normal (bukan *Missing from disk*).
 3. *Site administration → Development → Purge caches → Purge all caches*.
 4. Jalankan `curl.exe` bagian 7.3 dengan token lama. `release` harus `5.2.x+`.
-5. Jalankan test live bagian 10.2. Target sama: **37 passed**.
+5. Jalankan test live bagian 10.2. Target sama: **38 passed**.
 
 Token, service *Capstone Integration*, dan akun `mhs.uji` tidak perlu dibuat ulang.
 
@@ -971,7 +975,7 @@ Database Moodle tidak bisa diturunkan versinya tanpa backup, jadi langkah 15.1 w
 - [ ] Akun Moodle `mhs.uji` ada.
 - [ ] `MOODLE_BASE_URL` sama persis dengan alamat Moodle di browser; `.env` tidak muncul di `git status`.
 - [ ] `uv run pytest` tidak memiliki test Moodle yang gagal.
-- [ ] Test live (10.2): 37 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
+- [ ] Test live (10.2): 38 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
 - [ ] Skenario 1–15 (11.3) sesuai hasil yang diharapkan.
 - [ ] Cek mata (10.3 dan 11.4) sesuai.
 - [ ] Demo student access (10.4): `Hasil: student access TERBUKTI.` pada course hasil eksekusi.
