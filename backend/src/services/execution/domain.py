@@ -57,6 +57,9 @@ class ExecutionOperationRecord:
     retry_count: int = 0
     #: Nomor minggu course plan (di-join saat dibaca) untuk tampilan per minggu.
     week_number: int | None = None
+    #: Judul yang ditampilkan per operasi (di-join saat dibaca): judul konten
+    #: untuk operasi konten, judul minggu course plan untuk operasi ``SECTION``.
+    title: str | None = None
     id: str | None = None
 
 

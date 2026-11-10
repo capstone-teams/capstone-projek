@@ -49,11 +49,18 @@ CONTRACT_ENDPOINTS = {
         "/api/v1/workflows/{workflow_id}/executions/{execution_id}/retry",
         "post",
     ): "ExecutionResponse",
+    ("/api/v1/workflows/{workflow_id}/verifications", "post"): "VerificationResponse",
+    ("/api/v1/workflows/{workflow_id}/verifications", "get"): "VerificationListResponse",
+    (
+        "/api/v1/workflows/{workflow_id}/verifications/{verification_id}",
+        "get",
+    ): "VerificationResponse",
 }
 
 RPS_ID = "kP3nQ7vRtYx2bM8sLdWfZa"
 WORKFLOW_ID = "q7RtYx2bM8sLdWfZaKp3nQ"
 EXECUTION_ID = "Xa9bC2dE4fG6hJ8kLm3nP"
+VERIFICATION_ID = "Vr5tY7uJ9oP2aS4dF6gHjK"
 
 
 @pytest.fixture(scope="module")
@@ -89,11 +96,12 @@ def test_every_contracted_endpoint_is_published(openapi, path, method):
 )
 def test_contracted_response_uses_the_promised_schema(openapi, path, method):
     expected = CONTRACT_ENDPOINTS[(path, method)]
-    status_code = (
-        "202"
-        if method == "post" and (path.endswith("/reanalyze") or "/executions" in path)
-        else "200"
-    )
+    if method == "post" and path.endswith("/verifications"):
+        status_code = "201"
+    elif method == "post" and (path.endswith("/reanalyze") or "/executions" in path):
+        status_code = "202"
+    else:
+        status_code = "200"
 
     assert _schema_ref(_response_schema(openapi, path, method, status_code)) == expected
     # Contoh response disertakan supaya frontend dapat menyalinnya ke mock.
@@ -169,6 +177,12 @@ def test_the_workflow_event_contract_is_published_for_the_websocket_client(opena
         (
             "post",
             f"/api/v1/workflows/{WORKFLOW_ID}/executions/{EXECUTION_ID}/retry",
+        ),
+        ("post", f"/api/v1/workflows/{WORKFLOW_ID}/verifications"),
+        ("get", f"/api/v1/workflows/{WORKFLOW_ID}/verifications"),
+        (
+            "get",
+            f"/api/v1/workflows/{WORKFLOW_ID}/verifications/{VERIFICATION_ID}",
         ),
     ],
 )

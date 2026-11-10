@@ -41,6 +41,7 @@ from src.services.rps.service import RPSService
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.service import UserService
+from src.services.verification.service import VerificationService
 from src.services.workflow.orchestrator import (
     run_content_generation_workflow,
     run_course_planning_workflow,
@@ -90,6 +91,7 @@ __all__ = [
     "get_rps_processing_runner",
     "get_rps_service",
     "get_user_service",
+    "get_verification_service",
     "get_workflow_service",
     "require_development_environment",
     "require_roles",
@@ -251,6 +253,20 @@ def get_execution_service(
     eksekusi sendiri berjalan di background dengan client-nya sendiri.
     """
     return ExecutionService.from_session(
+        session, moodle=MoodleIntegrationService(client)
+    )
+
+
+def get_verification_service(
+    session: AsyncSession = Depends(get_db_session),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> VerificationService:
+    """Verification Service untuk endpoint verifikasi berbasis workflow (BE-22.2).
+
+    Verifikasi dijalankan di dalam request dengan client Moodle milik request,
+    sehingga client ditutup setelah hasilnya tersimpan.
+    """
+    return VerificationService.from_session(
         session, moodle=MoodleIntegrationService(client)
     )
 
