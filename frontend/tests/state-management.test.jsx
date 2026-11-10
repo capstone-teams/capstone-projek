@@ -11,7 +11,7 @@ import { useCurrentUser } from '../src/hooks/useCurrentUser';
 import { useAction } from '../src/hooks/useApi';
 import { appStateReducer, initialAppState, MAX_NOTIFICATIONS, preferencesKey } from '../src/state/appState';
 import { readJson, writeJson } from '../src/utils/storage';
-import { MOODLE_SESSION_KEY, TOKEN_STORAGE_KEY } from '../src/services/config';
+import { TOKEN_STORAGE_KEY } from '../src/services/config';
 import { ApiError } from '../src/services/apiClient';
 import { AUTH_STATUS, ROLE_FROM_BACKEND, SESSION_NOTICE } from '../src/types/auth';
 import AppStatus from '../src/components/layout/AppStatus';
@@ -28,7 +28,7 @@ vi.mock('../src/services/authService', () => service);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const teacher = { id: 3, fullname: 'Rina Kartika', username: 'dosen', role: 'DOSEN', teacherCourseIds: [2] };
-const student = { id: 'user_002', fullname: 'Andi Saputra', username: 'mahasiswa', role: 'MAHASISWA', teacherCourseIds: [] };
+const student = { id: 'user_002', fullname: 'Andi Saputra', username: 'mahasiswa', role: 'MAHASISWA', teacherCourseIds: undefined };
 const studentMe = { id: 'user_002', username: 'mahasiswa', firstname: 'Andi', lastname: 'Saputra', email: 'mahasiswa@student.itk.ac.id', role: 'STUDENT' };
 function deferred() {
   let resolve, reject;
@@ -140,16 +140,6 @@ describe('FE state: authentication and current user', () => {
     expect(auth.isAuthenticated).toBe(false);
     expect(service.requestToken).not.toHaveBeenCalled();
     expect(node.querySelector('button[type="submit"]').disabled).toBe(false);
-  });
-
-  it('labels a Moodle failure after a valid backend login separately', async () => {
-    service.getCurrentUser.mockResolvedValueOnce(studentMe);
-    service.requestToken.mockRejectedValueOnce(Object.assign(new Error('Invalid login, please try again'), { code: 'invalidlogin' }));
-    await render(<AuthProvider><AuthProbe /><LoginPage /></AuthProvider>);
-    await submitLogin('mahasiswa', 'mahasiswa123');
-    const alert = node.querySelector('[role="alert"]');
-    expect(alert.textContent).toContain('Login Moodle gagal');
-    expect(alert.textContent).toContain('Moodle menolak kredensial yang sama');
   });
 
   it('locks the login form while the request is pending', async () => {

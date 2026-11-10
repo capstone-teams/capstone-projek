@@ -6,7 +6,6 @@ import CourseContentPage from '../src/pages/dosen/ai/CourseContentPage';
 import { ApiError } from '../src/services/apiClient';
 import * as contentService from '../src/services/contentService';
 import * as coursePlanService from '../src/services/coursePlanService';
-import * as courseService from '../src/services/courseService';
 import {
   WORKFLOW_EVENT,
   WORKFLOW_EVENT_LABELS,
@@ -336,22 +335,5 @@ describe('FE-16.1 Content Generation Trigger & Week Selection', () => {
     expect(container.querySelector('[role="alert"]').textContent).toContain(
       'Tidak ada jenis konten aktif yang dapat dihasilkan pada minggu yang dipilih.',
     );
-  });
-
-  it('tetap mempertahankan fallback ProjectContent untuk mode mock legacy tanpa workflowId', async () => {
-    mockUseCourse.mockReturnValue({
-      course: { id: 'course_project_1', status: 'PLAN_APPROVED' },
-      workflow: null,
-      workflowId: null,
-      events: [],
-      version: 0,
-      refresh: vi.fn(),
-    });
-    vi.spyOn(courseService, 'getContent').mockResolvedValue({ weeks: [] });
-    vi.spyOn(courseService, 'getPlan').mockResolvedValue({ weeks: [{ week: 1, topic: 'Pengantar' }] });
-
-    await renderPage();
-    await waitFor(() => container.textContent.includes('Generate semua minggu'), 'Legacy ProjectContent');
-    expect(courseService.getContent).toHaveBeenCalledWith('course_project_1');
   });
 });

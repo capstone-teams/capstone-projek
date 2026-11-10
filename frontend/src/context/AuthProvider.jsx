@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthContext } from './authContext';
 import { ApiError, onUnauthorized } from '../services/apiClient';
 import * as backendAuth from '../services/authService';
-import { AUTH_STATUS, ROLE, SESSION_NOTICE } from '../types/auth';
-
-const MOCK_SESSION = import.meta.env.VITE_USE_MOCK === 'true';
+import { AUTH_STATUS, SESSION_NOTICE } from '../types/auth';
 
 function isTransient(error) {
   return error instanceof ApiError && (error.status === 0 || error.status >= 500);
@@ -17,7 +15,6 @@ function isTransient(error) {
 function buildSession(me) {
   const fullname = `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || me.username;
   const role = backendAuth.toUiRole(me.role);
-  const isDosen = role === ROLE.DOSEN || role === 'dosen';
   return {
     site: { name: 'Moodle ITK' },
     user: {
@@ -31,9 +28,8 @@ function buildSession(me) {
       avatar: null,
       role,
       isAdmin: me.role === 'ADMIN',
-      // Kursus ajar hanya diketahui pada data mock (kursus 2-4). Lewat Backend Gateway tidak ada data pendaftaran
-      // Moodle, jadi dibiarkan kosong (undefined) dan peran pengajar mengikuti role dosen dari backend.
-      teacherCourseIds: MOCK_SESSION ? (isDosen ? [2, 3, 4] : []) : undefined,
+      // Lewat Backend Gateway peran pengajar mengikuti role dosen dari backend.
+      teacherCourseIds: undefined,
     },
   };
 }
