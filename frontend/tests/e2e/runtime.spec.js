@@ -40,9 +40,8 @@ test('mobile login controls and password recovery keep navigation usable', async
   await page.getByRole('button', { name: 'Sembunyikan kata sandi', exact: true }).click();
   await expect(password).toHaveAttribute('type', 'password');
 
-  await page.getByRole('button', { name: 'Lanjutkan dengan Google' }).click();
-  await expect(page.getByRole('status')).toContainText('Login menggunakan Google belum tersedia');
-  await expect(page).toHaveURL(/\/login$/);
+  // Login dengan Google sudah dihapus dari halaman login.
+  await expect(page.getByRole('button', { name: 'Lanjutkan dengan Google' })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem('agentic-lms.moodle-session'))).toBeNull();
 
   await page.getByRole('link', { name: 'Lupa password?', exact: true }).click();
