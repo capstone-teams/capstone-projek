@@ -143,6 +143,11 @@ class MoodleIntegrationService:
     def __init__(self, client: MoodleClient) -> None:
         self._client = client
 
+    @property
+    def client(self) -> MoodleClient:
+        """Client dasar untuk operasi activity (BE-12) pada cakupan FULL."""
+        return self._client
+
     async def get_status(self) -> MoodleStatus:
         # Probe status harus cepat dan jujur: tidak di-retry.
         info = _expect_dict(await self._client.call(SITE_INFO_FUNCTION, retry=False), SITE_INFO_FUNCTION)
@@ -361,6 +366,24 @@ class MoodleIntegrationService:
                 if summary is not None
                 else RENAME_SECTION_FUNCTION
             ),
+        )
+
+    async def set_section_visibility(
+        self,
+        moodle_course_id: int,
+        moodle_section_ids: Sequence[int],
+        visible: bool,
+    ) -> None:
+        """Tampilkan atau sembunyikan section course bagi mahasiswa."""
+        if not moodle_section_ids:
+            return
+        await self._client.call(
+            UPDATE_COURSE_FORMAT_FUNCTION,
+            {
+                "action": "section_show" if visible else "section_hide",
+                "courseid": moodle_course_id,
+                "ids": list(moodle_section_ids),
+            },
         )
 
     # --- User dan enrolment (BE-04.5) ----------------------------------------
