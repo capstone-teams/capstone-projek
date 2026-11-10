@@ -73,6 +73,20 @@ class CoursePlanRepository:
         await self._session.refresh(entity)
         return await self._to_record(entity)
 
+    async def get_approved(self, workflow_id: str) -> CoursePlanRecord | None:
+        """Versi ``APPROVED`` pada workflow (satu-satunya yang boleh digenerate)."""
+        entity = (
+            await self._session.execute(
+                select(CoursePlanEntity)
+                .where(
+                    CoursePlanEntity.workflow_id == workflow_id,
+                    CoursePlanEntity.status == CoursePlanStatus.APPROVED,
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return None if entity is None else await self._to_record(entity)
+
     async def get_latest(self, workflow_id: str) -> CoursePlanRecord | None:
         """Versi dengan nomor tertinggi pada sebuah workflow."""
         entity = (
@@ -83,6 +97,15 @@ class CoursePlanRepository:
                 .limit(1)
             )
         ).scalar_one_or_none()
+        return None if entity is None else await self._to_record(entity)
+
+    async def get_by_id(self, plan_id: str) -> CoursePlanRecord | None:
+        """Satu versi berdasarkan identifier.
+
+        Dipakai eksekusi (BE-17.1) untuk membaca **snapshot** rencana yang
+        dieksekusi, bukan versi terbaru yang mungkin sudah berubah.
+        """
+        entity = await self._session.get(CoursePlanEntity, plan_id)
         return None if entity is None else await self._to_record(entity)
 
     async def get_version(

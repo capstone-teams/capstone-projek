@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
 import { getRps, getRpsAnalysis, processRps, reanalyzeRps } from '../../../services/rpsService';
+import { generateWorkflowPlan, getWorkflowPlan } from '../../../services/coursePlanService';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
-import { useApi } from '../../../hooks/useApi';
+import { useAction, useApi } from '../../../hooks/useApi';
 import { useOnChange } from '../../../hooks/useOnChange';
 import { usePolling } from '../../../hooks/usePolling';
 import { Card, ErrorAlert, Spinner } from '../../../components/ui';
@@ -14,10 +15,14 @@ import RpsUploadForm from '../../../components/ai/RpsUploadForm';
 import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsStatus';
 import { formatDateTime } from '../../../utils/format';
-import { WORKFLOW_EVENT } from '../../../utils/workflowStatus';
+import { WORKFLOW_EVENT, coursePlanProgressOf } from '../../../utils/workflowStatus';
+import {
+  bindWorkflowToCourse,
+  getActiveCourseBinding,
+  moodleCourseIdOf,
+  saveActiveCourseBinding,
+} from '../../../services/workflowService';
 
-// Course planning (FE-05) baru tersedia di backend pada M03; di mode mock sudah dapat dicoba.
-const COURSE_PLANNING_AVAILABLE = COURSE_API_AVAILABLE;
 const POLL_MS = 3000;
 const RPS_REFRESH_DEBOUNCE_MS = 300;
 
@@ -25,11 +30,12 @@ const RPS_REFRESH_DEBOUNCE_MS = 300;
  * RPS yang belum ANALYZED: GET /rps/{id}/analysis menjawab 422, jadi tampilkan statusnya dan aksi
  * lanjutan (analisis lewat POST /rps/{id}/reanalyze, atau konversi ulang lewat POST /rps/{id}/process).
  */
-function RpsNotAnalyzed({ rps, events = [], onChanged }) {
+function RpsNotAnalyzed({ rps, events = [], onChanged, onUploaded }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
   const meta = rpsStatusMeta(rps.status);
+  const inProgress = isRpsInProgress(rps);
   const canAnalyze = rps.has_source_document && [RPS_STATUS.PROCESSED, RPS_STATUS.FAILED].includes(rps.status);
   const canProcess = !rps.has_source_document && [RPS_STATUS.UPLOADED, RPS_STATUS.FAILED].includes(rps.status);
 
@@ -51,12 +57,21 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
   };
 
   return (
-    <Card title="Hasil analisis belum tersedia">
+    <Card title={inProgress ? 'Pemrosesan RPS sedang berlangsung' : 'Hasil analisis belum tersedia'}>
       <ErrorAlert error={error} onClose={() => setError(null)} />
-      <p className="text-sm" aria-live="polite">
-        {meta.description}
-        {isRpsInProgress(rps) && ' Status diperbarui otomatis.'}
-      </p>
+      {inProgress ? (
+        <div className="mb-3 flex items-center gap-3 rounded-lg border border-line bg-muted/10 p-3">
+          <Spinner size="sm" />
+          <div className="text-sm">
+            <p className="font-semibold">{meta.label}</p>
+            <p className="text-xs text-muted">{meta.description} Proses berjalan di background walau Anda berpindah halaman.</p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm" aria-live="polite">
+          {meta.description}
+        </p>
+      )}
       {rps.status === RPS_STATUS.FAILED && (
         <div className="alert alert--danger mt-3" role="status">
           <p className="font-medium">Diagnostik kegagalan:</p>
@@ -82,11 +97,9 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
         <div className="mt-4 border-t pt-4">
           <h3 className="mb-2 text-sm font-medium">Unggah berkas RPS baru:</h3>
           <RpsUploadForm
-            onUploaded={async ({ rps: newRps, error: uploadErr }) => {
-              if (!uploadErr && newRps) {
-                setShowUpload(false);
-                await onChanged(newRps);
-              }
+            onUploaded={async (res) => {
+              setShowUpload(false);
+              await onUploaded?.(res);
             }}
           />
         </div>
@@ -95,13 +108,76 @@ function RpsNotAnalyzed({ rps, events = [], onChanged }) {
   );
 }
 
+/**
+ * Tombol lanjut ke Course Planning (FE-12.1): memulai penyusunan lewat POST /workflows/{id}/plan lalu membuka
+ * tab Rencana, yang menampilkan progresnya. Bila workflow sudah punya course plan atau sedang menyusunnya,
+ * tombol membuka tab Rencana saja.
+ */
+function CoursePlanningAction({ analyzed, workflowId, planPath, planning }) {
+  const navigate = useNavigate();
+  const existing = useApi(() => (analyzed && workflowId ? getWorkflowPlan(workflowId).catch(() => null) : null), [analyzed, workflowId]);
+  const generate = useAction(() => generateWorkflowPlan(workflowId), { loadingLabel: 'Memulai course planning…' });
+  // 409: workflow sudah punya rencana atau sedang menyusunnya; tab Rencana menampilkan keadaannya.
+  const openPlan = () => navigate(planPath, { relative: 'path' });
+  const start = () => generate.run().then(openPlan, (e) => e?.status === 409 && openPlan());
+
+  if (analyzed && workflowId && (existing.data || planning)) {
+    return <Link to={planPath} relative="path" className="btn btn--primary">{planning ? 'Lihat progres Course Planning' : 'Lihat Course Plan'}</Link>;
+  }
+  const disabled = !analyzed || !workflowId || existing.loading || generate.pending;
+  const hint = !analyzed ? 'Tersedia setelah RPS selesai dianalisis.' : !workflowId ? 'Course planning belum dapat dimulai untuk RPS ini.' : null;
+  return (
+    <span className="flex flex-col items-end gap-1">
+      <button type="button" className="btn btn--primary" disabled={disabled} aria-describedby={hint ? 'planning-hint' : undefined} onClick={start}>
+        {generate.pending ? 'Memulai…' : 'Lanjut ke Course Planning'}
+      </button>
+      {hint && <span id="planning-hint" className="text-xs text-muted">{hint}</span>}
+      <ErrorAlert error={generate.error} onClose={generate.clearError} />
+    </span>
+  );
+}
+
 /** Hasil analisis RPS. */
 export default function CourseRpsPage() {
-  const { course, events = [], refresh } = useCourse();
+  const { course, moodleCourse, events = [], refresh, initialRpsId, workflowId: projectWorkflowId } = useCourse();
+  const routeParams = useParams();
+  const courseIdParam = routeParams.courseId;
+  const moodleId = moodleCourseIdOf(course) || moodleCourseIdOf(moodleCourse) || (Number.isInteger(Number(courseIdParam)) && Number(courseIdParam) > 0 ? Number(courseIdParam) : null);
+  const courseKeys = [
+    moodleId,
+    courseIdParam,
+    course?.id,
+    course?.shortname,
+    course?.code,
+    moodleCourse?.id,
+    moodleCourse?.shortname,
+  ].filter(Boolean);
+  const primaryKey = moodleId || courseIdParam || course?.id;
+  const bound = getActiveCourseBinding(...courseKeys);
   // ?rps=<id> dari daftar RPS membuka RPS itu; RPS yang baru diunggah dari halaman ini didahulukan.
   const [params] = useSearchParams();
   const [activeRpsId, setActiveRpsId] = useState(null);
-  const rpsId = activeRpsId || params.get('rps') || course.rps_id;
+  const [showReplace, setShowReplace] = useState(false);
+  const rpsId = activeRpsId || params.get('rps') || bound?.rpsId || course?.rps_id;
+
+  const handleRpsUploaded = async ({ rps: newRps, processing, error: uploadErr }) => {
+    if (uploadErr || !newRps?.id) return;
+    setShowReplace(false);
+    setActiveRpsId(newRps.id);
+    const wfId = processing?.workflow_id || newRps.workflow_id;
+    if (primaryKey) {
+      saveActiveCourseBinding(primaryKey, { workflowId: wfId, rpsId: newRps.id }, courseKeys);
+      if (wfId) {
+        try {
+          await bindWorkflowToCourse(wfId, moodleId || primaryKey, { rpsId: newRps.id, aliases: courseKeys });
+        } catch (err) {
+          console.warn('Failed to bind workflow to course:', err);
+        }
+      }
+    }
+    await refresh?.();
+  };
+
   // Status dulu (GET /rps/{id}); hasil analisis hanya diminta bila sudah ANALYZED.
   const rpsQuery = useApi(() => (rpsId ? getRps(rpsId) : null), [rpsId]);
   const rps = rpsQuery.data;
@@ -119,8 +195,13 @@ export default function CourseRpsPage() {
   usePolling(() => rpsQuery.reload({ silent: true }), POLL_MS, !!rps && isRpsInProgress(rps));
   const effectiveEvents = monitor.events.length > 0 ? monitor.events : events;
   // Workflow RPS dari GET /rps/{id}; project /courses di backend tidak memuat workflow_id.
-  const workflowId = rps?.workflow_id ?? (COURSE_API_AVAILABLE ? course.workflow_id : course.id);
-  const hasProject = !!course.id;
+  const workflowId = rps?.workflow_id ?? (COURSE_API_AVAILABLE ? course?.workflow_id : course?.id);
+  const hasProject = Boolean(course?.id);
+  // Tab Rencana memakai workflow project; workflow RPS lain diteruskan lewat ?workflow= (dan ?rps= tanpa project).
+  const planSearch = workflowId && workflowId !== projectWorkflowId
+    ? `?${new URLSearchParams({ ...(hasProject ? {} : { rps: rps?.id ?? '' }), workflow: workflowId })}`
+    : '';
+  const planning = !!coursePlanProgressOf(monitor.workflow, monitor.events);
 
   // ?bagian=hasil (dari tombol "Hasil analisis" di tab Kursus): gulir ke hasil analisis setelah tampil.
   const jumpToResult = params.get('bagian') === 'hasil' && !!analysis;
@@ -144,12 +225,7 @@ export default function CourseRpsPage() {
       <Card title="Belum ada RPS terkait">
         <p className="text-muted text-sm">Kursus ini belum memiliki dokumen RPS yang diunggah.</p>
         <div className="mt-3">
-          <RpsUploadForm
-            onUploaded={async ({ rps: newRps }) => {
-              if (newRps?.id) setActiveRpsId(newRps.id);
-              refresh?.();
-            }}
-          />
+          <RpsUploadForm onUploaded={handleRpsUploaded} />
         </div>
       </Card>
     );
@@ -164,13 +240,28 @@ export default function CourseRpsPage() {
             <span className="wrap-anywhere">{rps.filename}</span>
             <RpsStatusBadge status={rps.status} />
             {analysis?.analyzedAt && <span>Dianalisis {formatDateTime(analysis.analyzedAt)}</span>}
-            {activeRpsId && activeRpsId !== course?.rps_id && (
+            {initialRpsId && initialRpsId !== rpsId && (
               <button
                 type="button"
                 className="btn btn--ghost btn--xs"
-                onClick={() => setActiveRpsId(null)}
+                onClick={() => {
+                  setActiveRpsId(initialRpsId);
+                  refresh?.();
+                }}
               >
-                Kembali ke RPS awal kursus
+                Lihat RPS awal kursus
+              </button>
+            )}
+            {activeRpsId && activeRpsId === initialRpsId && course?.rps_id !== initialRpsId && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--xs"
+                onClick={() => {
+                  setActiveRpsId(null);
+                  refresh?.();
+                }}
+              >
+                Kembali ke RPS aktif
               </button>
             )}
           </p>
@@ -178,25 +269,26 @@ export default function CourseRpsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* Status workflow ada di tab Workflow; tanpa project kursus, RPS dibuka dari daftar RPS. */}
           {!hasProject && <Link to=".." relative="path" className="btn btn--ghost btn--sm">Kembali ke daftar RPS</Link>}
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={() => setShowReplace((s) => !s)}
+          >
+            {showReplace ? 'Tutup upload' : 'Ganti RPS'}
+          </button>
           {workflowId && (
             <Link to={`../workflows?workflow=${workflowId}`} relative="path" className="btn btn--ghost btn--sm">Pantau workflow</Link>
           )}
-          {COURSE_PLANNING_AVAILABLE && analyzed && hasProject ? (
-            <Link to="../plan" relative="path" className="btn btn--primary">
-              Lanjut ke Course Planning
-            </Link>
-          ) : (
-            <span className="flex flex-col items-end gap-1">
-              <button type="button" className="btn btn--primary" disabled aria-describedby="planning-hint">
-                Lanjut ke Course Planning
-              </button>
-              <span id="planning-hint" className="text-xs text-muted">
-                {!analyzed ? 'Tersedia setelah RPS selesai dianalisis.' : COURSE_PLANNING_AVAILABLE ? 'Mulai generator AI untuk kursus ini terlebih dahulu.' : 'Course planning aktif pada M03.'}
-              </span>
-            </span>
-          )}
+          <CoursePlanningAction analyzed={analyzed} workflowId={workflowId} planPath={`../plan${planSearch}`} planning={planning} />
         </div>
       </div>
+
+      {showReplace && (
+        <Card title="Unggah RPS Pengganti">
+          <p className="text-xs text-muted mb-3">Mengunggah RPS baru akan menggantikan RPS aktif saat ini untuk kursus ini.</p>
+          <RpsUploadForm onUploaded={handleRpsUploaded} />
+        </Card>
+      )}
 
       {analysis ? (
         <div id="hasil-analisis" className="scroll-mt-4">
@@ -206,10 +298,11 @@ export default function CourseRpsPage() {
         <RpsNotAnalyzed
           rps={rps}
           events={effectiveEvents}
+          onUploaded={handleRpsUploaded}
           onChanged={async (newRps) => {
             if (newRps?.id) {
               setActiveRpsId(newRps.id);
-              refresh?.();
+              await refresh?.();
             } else {
               rpsQuery.reload({ silent: true });
             }

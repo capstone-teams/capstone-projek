@@ -39,10 +39,21 @@ CONTRACT_ENDPOINTS = {
     ("/api/v1/workflows/{workflow_id}", "get"): "WorkflowResponse",
     ("/api/v1/workflows/{workflow_id}/events", "get"): "WorkflowEventListResponse",
     ("/api/v1/workflows/{workflow_id}/moodle-target", "put"): "WorkflowResponse",
+    ("/api/v1/workflows/{workflow_id}/executions", "post"): "ExecutionResponse",
+    ("/api/v1/workflows/{workflow_id}/executions", "get"): "ExecutionListResponse",
+    (
+        "/api/v1/workflows/{workflow_id}/executions/{execution_id}",
+        "get",
+    ): "ExecutionDetailResponse",
+    (
+        "/api/v1/workflows/{workflow_id}/executions/{execution_id}/retry",
+        "post",
+    ): "ExecutionResponse",
 }
 
 RPS_ID = "kP3nQ7vRtYx2bM8sLdWfZa"
 WORKFLOW_ID = "q7RtYx2bM8sLdWfZaKp3nQ"
+EXECUTION_ID = "Xa9bC2dE4fG6hJ8kLm3nP"
 
 
 @pytest.fixture(scope="module")
@@ -78,7 +89,11 @@ def test_every_contracted_endpoint_is_published(openapi, path, method):
 )
 def test_contracted_response_uses_the_promised_schema(openapi, path, method):
     expected = CONTRACT_ENDPOINTS[(path, method)]
-    status_code = "202" if path.endswith("/reanalyze") else "200"
+    status_code = (
+        "202"
+        if method == "post" and (path.endswith("/reanalyze") or "/executions" in path)
+        else "200"
+    )
 
     assert _schema_ref(_response_schema(openapi, path, method, status_code)) == expected
     # Contoh response disertakan supaya frontend dapat menyalinnya ke mock.
@@ -148,6 +163,13 @@ def test_the_workflow_event_contract_is_published_for_the_websocket_client(opena
         ("get", f"/api/v1/workflows/{WORKFLOW_ID}"),
         ("get", f"/api/v1/workflows/{WORKFLOW_ID}/events"),
         ("put", f"/api/v1/workflows/{WORKFLOW_ID}/moodle-target"),
+        ("post", f"/api/v1/workflows/{WORKFLOW_ID}/executions"),
+        ("get", f"/api/v1/workflows/{WORKFLOW_ID}/executions"),
+        ("get", f"/api/v1/workflows/{WORKFLOW_ID}/executions/{EXECUTION_ID}"),
+        (
+            "post",
+            f"/api/v1/workflows/{WORKFLOW_ID}/executions/{EXECUTION_ID}/retry",
+        ),
     ],
 )
 def test_implemented_endpoints_require_authentication(method, path):

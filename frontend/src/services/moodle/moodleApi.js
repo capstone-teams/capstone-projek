@@ -7,12 +7,65 @@
  */
 import { api } from '../apiClient';
 import { MoodleError, callWs, uploadDraftFiles } from './moodleClient';
+import { isMoodleCourseId } from '../../utils/courseId';
 
-// Helper untuk mengambil daftar kursus dari Backend Gateway (/api/v1/courses atau /api/v1/integrations/moodle/courses)
-async function fetchGatewayCourses() {
-  const res = (await api.get('/courses').catch(() => null))
-    ?? (await api.get('/integrations/moodle/courses').catch(() => null));
-  return res?.items ?? res?.courses ?? [];
+// Daftar kursus dari Backend Gateway: kursus Moodle lewat integrasi (/integrations/moodle/courses) lebih dulu, lalu
+// project kursus backend (/courses). Bila integrasi Moodle gagal dan tidak ada project, galatnya diteruskan (pesannya
+// sudah ramah pengguna dari apiClient) agar halaman menampilkan gangguan, bukan "belum ada kursus".
+async function loadGatewayCourses() {
+  let moodleError = null;
+  const moodleRes = await api.get('/integrations/moodle/courses').catch((error) => {
+    moodleError = error;
+    return null;
+  });
+  if (moodleRes?.courses?.length) {
+    return moodleRes.courses.map((c) => ({
+      ...c,
+      id: c.moodle_course_id ?? c.id,
+      summary: c.summary ?? '',
+      category: c.category ?? null,
+    }));
+  }
+  const legacyRes = await api.get('/courses').catch(() => null);
+  const items = legacyRes?.items ?? legacyRes?.courses ?? [];
+  if (!items.length && moodleError) throw moodleError;
+  return items;
+}
+
+// Beberapa bagian halaman (dasbor, kursus berjalan, kursus terakhir) meminta daftar yang sama bersamaan: selama
+// permintaan masih berjalan, permintaan itu dipakai bersama. Hasilnya tidak disimpan, jadi pemanggilan berikutnya
+// (termasuk "Coba lagi") selalu mengambil data terbaru.
+let pendingGatewayCourses = null;
+
+function fetchGatewayCourses() {
+  if (!pendingGatewayCourses) {
+    pendingGatewayCourses = loadGatewayCourses().finally(() => {
+      pendingGatewayCourses = null;
+    });
+  }
+  return pendingGatewayCourses;
+}
+
+/** Section dari GET /integrations/moodle/courses/{id}/contents dalam bentuk core_course_get_contents. */
+function fromMoodleSection(section) {
+  return {
+    id: section.moodle_section_id,
+    section: section.section_number,
+    name: section.name || (section.section_number === 0 ? 'Umum' : `Pertemuan ${section.section_number}`),
+    summary: section.summary ?? '',
+    summaryformat: 1,
+    visible: section.visible === false ? 0 : 1,
+    uservisible: true,
+    modules: (section.modules ?? []).map((module) => ({
+      id: module.moodle_module_id,
+      name: module.name,
+      modname: module.modname,
+      description: module.description ?? '',
+      content: module.content ?? null,
+      visible: module.visible === false ? 0 : 1,
+      uservisible: true,
+    })),
+  };
 }
 
 // Situs & user
@@ -43,19 +96,17 @@ export async function getCoursesByClassification(classification = 'all') {
     });
     return res.courses;
   } catch (err) {
-    // Single Gateway: jika Moodle WS client tidak memiliki sesi/token langsung di browser,
-    // ambil daftar kursus dari Backend Gateway (/api/v1/courses atau /api/v1/integrations/moodle/courses)
-    const courses = await fetchGatewayCourses();
-    if (courses.length > 0) return courses;
-    throw err;
+    // Single Gateway: tanpa sesi Moodle di browser, daftar kursus diambil dari Backend Gateway. Galat sesi Moodle
+    // browser (`err`) tidak relevan bagi pengguna, jadi yang diteruskan adalah hasil atau galat gateway.
+    if (!(err instanceof MoodleError)) throw err;
+    return fetchGatewayCourses();
   }
 }
 
 export function getRecentCourses(userId, limit = 6) {
   return callWs('core_course_get_recent_courses', { userid: userId, limit }).catch(async (err) => {
-    const courses = await fetchGatewayCourses();
-    if (courses.length > 0) return courses.slice(0, limit);
-    throw err;
+    if (!(err instanceof MoodleError)) throw err;
+    return (await fetchGatewayCourses()).slice(0, limit);
   });
 }
 
@@ -64,7 +115,10 @@ export async function getCourse(courseId) {
     const res = await callWs('core_course_get_courses_by_field', { field: 'id', value: courseId });
     return res.courses[0] ?? null;
   } catch (err) {
-    const byId = await api.get(`/courses/${courseId}`).catch(() => null);
+    // Kursus Moodle (ID angka) lewat integrasi; /courses/{id} hanya menerima ID project backend.
+    const byId = isMoodleCourseId(courseId)
+      ? await api.get(`/integrations/moodle/courses/${courseId}`).then((c) => ({ ...c, id: c.moodle_course_id ?? c.id }), () => null)
+      : await api.get(`/courses/${courseId}`).catch(() => null);
     if (byId) {
       return {
         ...byId,
@@ -72,7 +126,7 @@ export async function getCourse(courseId) {
       };
     }
     const courses = await fetchGatewayCourses();
-    const found = courses.find((c) => String(c.id) === String(courseId) || String(c.moodle_course_id) === String(courseId));
+    const found = courses.find((c) => String(c.id) === String(courseId) || String(c.moodle_course_id) === String(courseId) || String(c.shortname).toLowerCase() === String(courseId).toLowerCase());
     if (found) {
       return {
         ...found,
@@ -100,9 +154,14 @@ export async function getCourseContents(courseId) {
   try {
     return await callWs('core_course_get_contents', { courseid: courseId });
   } catch {
-    // Single Gateway: tanpa token Moodle di browser, isi kursus diambil dari Backend Gateway. Konten mingguan
-    // (GET /courses/{id}/content) memberi aktivitas, rencana (GET /courses/{id}/plan) memberi Sub-CPMK dan
-    // bahan kajian; keduanya digabung per pertemuan.
+    // Single Gateway: tanpa token Moodle di browser, isi kursus diambil dari Backend Gateway.
+    // Kursus Moodle: section dan modul apa adanya dari GET /integrations/moodle/courses/{id}/contents.
+    if (isMoodleCourseId(courseId)) {
+      const contents = await api.get(`/integrations/moodle/courses/${courseId}/contents`).catch(() => null);
+      return (contents?.sections ?? []).map(fromMoodleSection);
+    }
+    // Project kursus backend: konten mingguan (GET /courses/{id}/content) memberi aktivitas, rencana
+    // (GET /courses/{id}/plan) memberi Sub-CPMK dan bahan kajian; keduanya digabung per pertemuan.
     const [content, plan] = await Promise.all([
       api.get(`/courses/${courseId}/content`).catch(() => null),
       api.get(`/courses/${courseId}/plan`).catch(() => null),

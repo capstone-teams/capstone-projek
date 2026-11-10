@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from urllib.parse import parse_qs
@@ -10,12 +11,14 @@ BASE_URL = "http://moodle.test/moodle"
 ALL_FUNCTIONS = [
     "core_webservice_get_site_info",
     "core_course_get_courses",
+    "core_course_get_courses_by_field",
     "core_course_get_contents",
     "core_course_create_courses",
     "core_course_update_courses",
     "core_course_edit_section",
     "core_courseformat_update_course",
     "core_update_inplace_editable",
+    "local_capstonebridge_update_section",
     "mod_page_get_pages_by_courses",
 ]
 
@@ -60,6 +63,11 @@ class FakeMoodle:
             ]
         }
         self.pages: dict[int, str] = {501: "<h2>Isi halaman yang digenerate</h2>"}
+        self.users: dict[int, dict] = {
+            2: {"id": 2, "username": "admin", "firstname": "Admin", "lastname": "User", "email": "admin@example.com"}
+        }
+        self.enrolments: dict[int, dict[int, set[int]]] = {}
+        self._next_user_id = 10
         self._next_course_id = 3
         self._next_section_id = 300
 
@@ -77,7 +85,11 @@ class FakeMoodle:
             return httpx.Response(200, json=moodle_exception("invalidtoken", "Invalid token - token not found"))
         if wsfunction in self.failing:
             return httpx.Response(200, json=self.failing[wsfunction])
-        return httpx.Response(200, json=self._dispatch(wsfunction, params))
+
+        result = self._dispatch(wsfunction, params)
+        if result is None:  # Moodle membalas function tanpa nilai kembali dengan teks "null"
+            return httpx.Response(200, content=b"null", headers={"content-type": "application/json"})
+        return httpx.Response(200, json=result)
 
     def _dispatch(self, wsfunction: str, params: dict[str, str]):
         if wsfunction == "core_webservice_get_site_info":
@@ -92,6 +104,71 @@ class FakeMoodle:
                 wanted = {int(value) for key, value in params.items() if key.startswith("options[ids]")}
                 return [course for cid, course in self.courses.items() if cid in wanted]
             return list(self.courses.values())
+        if wsfunction == "core_course_get_courses_by_field":
+            field, value = params.get("field"), params.get("value")
+            return {
+                "courses": [course for course in self.courses.values() if str(course.get(field)) == value],
+                "warnings": [],
+            }
+        if wsfunction == "core_course_update_courses":
+            course_id = int(params["courses[0][id]"])
+            shortname = params.get("courses[0][shortname]")
+            if shortname and any(
+                cid != course_id and course.get("shortname") == shortname for cid, course in self.courses.items()
+            ):
+                return {
+                    "warnings": [
+                        {"item": "course", "itemid": course_id, "warningcode": "shortnametaken",
+                         "message": "Short name is already used"}
+                    ]
+                }
+            course = self.courses[course_id]
+            for field in ("fullname", "shortname", "summary"):
+                if f"courses[0][{field}]" in params:
+                    course[field] = params[f"courses[0][{field}]"]
+            if "courses[0][visible]" in params:
+                course["visible"] = int(params["courses[0][visible]"])
+            return {"warnings": []}
+        if wsfunction == "core_user_get_users_by_field":
+            wanted = {value for key, value in params.items() if key.startswith("values[")}
+            return [user for user in self.users.values() if str(user.get(params["field"])) in wanted]
+        if wsfunction == "core_user_create_users":
+            username = params["users[0][username]"]
+            if any(user["username"] == username for user in self.users.values()):
+                return moodle_exception("usernameexists", "Username already exists", "invalid_parameter_exception")
+            user_id = self._next_user_id
+            self._next_user_id += 1
+            self.users[user_id] = {
+                "id": user_id,
+                "username": username,
+                "firstname": params["users[0][firstname]"],
+                "lastname": params["users[0][lastname]"],
+                "email": params["users[0][email]"],
+            }
+            return [{"id": user_id, "username": username}]
+        if wsfunction == "enrol_manual_enrol_users":
+            index = 0
+            while f"enrolments[{index}][userid]" in params:
+                course_id = int(params[f"enrolments[{index}][courseid]"])
+                user_id = int(params[f"enrolments[{index}][userid]"])
+                role_id = int(params[f"enrolments[{index}][roleid]"])
+                self.enrolments.setdefault(course_id, {}).setdefault(user_id, set()).add(role_id)
+                index += 1
+            return None
+        if wsfunction == "core_enrol_get_enrolled_users":
+            course_id = int(params["courseid"])
+            shortnames = {3: "editingteacher", 5: "student"}
+            return [
+                {
+                    **self.users[user_id],
+                    "fullname": f"{self.users[user_id]['firstname']} {self.users[user_id]['lastname']}",
+                    "roles": [
+                        {"roleid": role, "shortname": shortnames[role]}
+                        for role in sorted(roles)
+                    ],
+                }
+                for user_id, roles in self.enrolments.get(course_id, {}).items()
+            ]
         if wsfunction == "core_course_get_contents":
             course_id = int(params["courseid"])
             if course_id not in self.sections:
@@ -116,6 +193,12 @@ class FakeMoodle:
                 {"id": self._take_section_id(), "section": 0, "name": "", "summary": "", "visible": 1, "modules": []}
             ]
             return [{"id": course_id, "shortname": shortname}]
+        if wsfunction == "core_courseformat_update_course" and params.get("action") in ("section_show", "section_hide"):
+            ids = {int(value) for key, value in params.items() if key.startswith("ids[")}
+            for section in self.sections[int(params["courseid"])]:
+                if section["id"] in ids:
+                    section["visible"] = int(params["action"] == "section_show")
+            return "[]"
         if wsfunction == "core_courseformat_update_course":
             course_sections = self.sections[int(params["courseid"])]
             course_sections.append(
@@ -136,6 +219,13 @@ class FakeMoodle:
                     if section["id"] == section_id:
                         section["name"] = params["value"]
             return {"itemid": section_id, "displayvalue": params["value"]}
+        if wsfunction == "local_capstonebridge_update_section":
+            course_id, section_id = int(params["courseid"]), int(params["sectionid"])
+            section = next((s for s in self.sections.get(course_id, []) if s["id"] == section_id), None)
+            if section is None:
+                return moodle_exception("invalidrecord", "Can't find data record in database table course_sections.")
+            section.update(name=params["name"], summary=params.get("summary", ""))
+            return {"sectionid": section_id, "section": section["section"], "name": params["name"], "updated": 1}
         if wsfunction == "mod_page_get_pages_by_courses":
             return {
                 "pages": [{"coursemodule": cmid, "content": content} for cmid, content in self.pages.items()],
@@ -146,3 +236,57 @@ class FakeMoodle:
     def _take_section_id(self) -> int:
         self._next_section_id += 1
         return self._next_section_id
+
+
+# --- Akses mahasiswa (BE-16.3) -------------------------------------------------
+
+STUDENT_COURSE_ID = 2
+STUDENT_ACCOUNT = ("mhs.uji", "Mhs-pass-1#")
+OTHER_STUDENT_ACCOUNT = ("mhs.uji2", "Mhs-pass-2#")
+STUDENT_ROLE_ID = 5
+
+
+class StudentMoodle(FakeMoodle):
+    """Moodle tiruan dengan login mahasiswa dan pemeriksaan enrolment."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.passwords = {STUDENT_ACCOUNT[0]: STUDENT_ACCOUNT[1], OTHER_STUDENT_ACCOUNT[0]: OTHER_STUDENT_ACCOUNT[1]}
+        self.users[20] = {"id": 20, "username": STUDENT_ACCOUNT[0], "firstname": "Mahasiswa", "lastname": "Uji",
+                          "email": "mhs.uji@example.com"}
+        self.users[21] = {"id": 21, "username": OTHER_STUDENT_ACCOUNT[0], "firstname": "Mahasiswa", "lastname": "Dua",
+                          "email": "mhs.uji2@example.com"}
+        self.sections[STUDENT_COURSE_ID] += [
+            {"id": 203, "section": 2, "name": "Minggu 2", "summary": "", "visible": 1, "modules": []},
+            {"id": 204, "section": 3, "name": "Minggu 3", "summary": "", "visible": 1, "modules": []},
+        ]
+        self.login_requests: list[dict[str, str]] = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        body = {key: values[0] for key, values in parse_qs(request.content.decode()).items()}
+        if request.url.path.endswith("/login/token.php"):
+            self.login_requests.append(body)
+            if self.passwords.get(body.get("username")) != body.get("password"):
+                return httpx.Response(200, json={"error": "Invalid login, please try again", "errorcode": "invalidlogin"})
+            return httpx.Response(200, json={"token": f"student-token-{body['username']}"})
+        token = body.get("wstoken", "")
+        if token.startswith("student-token-"):
+            return httpx.Response(200, json=self._as_student(token.removeprefix("student-token-"), body))
+        return super().handler(request)
+
+    def _as_student(self, username: str, body: dict[str, str]):
+        if body.get("wsfunction") != "core_course_get_contents":
+            return moodle_exception("accessexception", "Access control exception", "webservice_access_exception")
+        course_id = int(body["courseid"])
+        user_id = next(uid for uid, user in self.users.items() if user["username"] == username)
+        enrolled = STUDENT_ROLE_ID in self.enrolments.get(course_id, {}).get(user_id, set())
+        if not enrolled or not self.courses[course_id].get("visible", 1):
+            return moodle_exception("requireloginerror", "Course or activity not accessible.", "require_login_exception")
+        return [
+            {**section, "uservisible": bool(section["visible"])}
+            for section in self.sections[course_id]
+            if section["visible"] or section["section"] == 0
+        ]
+
+    def enrol(self, user_id: int) -> None:
+        self.enrolments.setdefault(STUDENT_COURSE_ID, {}).setdefault(user_id, set()).add(STUDENT_ROLE_ID)

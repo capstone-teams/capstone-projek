@@ -1,169 +1,352 @@
-import { useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
-import { approveContent, getReview, rejectContent, validateContent } from '../../../services/courseService';
 import { useAction, useApi } from '../../../hooks/useApi';
-import { Alert, Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
+import { useOnChange } from '../../../hooks/useOnChange';
+import { AppStateContext } from '../../../context/appStateContext';
+import {
+  CONTENT_KIND_LABELS,
+  CONTENT_STATUS_META,
+  MAX_CONTENT_NOTE_LENGTH,
+  REGENERATION_SCOPE,
+  VALIDATION_STATUS_META,
+  approveContents,
+  generateContents,
+  getWorkflowContent,
+  listContentVersions,
+  listWorkflowContents,
+  regenerateContents,
+  rejectContents,
+} from '../../../services/contentService';
+import { PLAN_STATUS, getWorkflowPlan } from '../../../services/coursePlanService';
+import { Alert, Badge, Card, EmptyState, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import InstructionModal from '../../../components/ai/InstructionModal';
+import ContentDetailView from '../../../components/ai/course/ContentDetailView';
+import {
+  approvalBlocker,
+  contentGenerationProgressOf,
+  groupContentsByWeek,
+  isApprovable,
+  isContentApproved,
+  reviewProgress,
+  validationFindings,
+} from '../../../utils/contentReview';
+import { WORKFLOW_STATUS } from '../../../utils/workflowStatus';
 import { formatDateTime } from '../../../utils/format';
-import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
-import PendingFeatureNote from '../../../components/ai/PendingFeatureNote';
 
-const SEVERITY_TONES = { high: 'danger', medium: 'warning', low: 'neutral' };
-const REVIEWABLE = ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
+const GENERATION_LABELS = {
+  [WORKFLOW_STATUS.GENERATING_CONTENT]: 'Agent sedang membuat konten mingguan…',
+  [WORKFLOW_STATUS.VALIDATING]: 'Agent sedang memvalidasi konten…',
+  [WORKFLOW_STATUS.RETRYING]: 'Agent sedang mencoba ulang pembuatan konten…',
+};
+// Detail tiap konten dimuat bertahap di latar untuk menghitung temuan validasi, beberapa sekaligus.
+const FINDINGS_BATCH = 4;
+const meta = (table, key) => table[key] ?? { label: key ?? '-', tone: 'neutral' };
 
+/**
+ * Jumlah temuan validasi per konten. GET /contents hanya memberi status dan skor, jadi detail tiap konten
+ * (GET /contents/{id}) dimuat di latar setelah daftar tampil. Id konten berbeda tiap versi, sehingga hasilnya
+ * disimpan per id dan hanya konten baru yang dimuat.
+ */
+function useFindingCounts(workflowId, items) {
+  const [counts, setCounts] = useState({});
+  const loaded = useRef(new Set());
+  const ids = items.map((item) => item.id).join(',');
+  useEffect(() => {
+    const pending = ids ? ids.split(',').filter((id) => !loaded.current.has(id)) : [];
+    if (!workflowId || !pending.length) return undefined;
+    let cancelled = false;
+    (async () => {
+      for (let start = 0; start < pending.length && !cancelled; start += FINDINGS_BATCH) {
+        const batch = pending.slice(start, start + FINDINGS_BATCH);
+        const results = await Promise.all(batch.map((id) => getWorkflowContent(workflowId, id)
+          .then((detail) => [id, validationFindings(detail.validation).length])
+          .catch(() => [id, null])));
+        if (cancelled) return;
+        results.forEach(([id, count]) => count != null && loaded.current.add(id));
+        setCounts((current) => ({ ...current, ...Object.fromEntries(results) }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workflowId, ids]);
+  return counts;
+}
+
+/** Ringkasan validasi satu konten di daftar: status, skor, dan jumlah temuan. */
+function ValidationSummary({ validation, findings }) {
+  if (!validation) return <span className="text-xs text-muted">Belum divalidasi</span>;
+  const status = meta(VALIDATION_STATUS_META, validation.status);
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 text-xs">
+      <Badge tone={status.tone}>{status.label}</Badge>
+      {validation.score != null && <span>Skor {Math.round(validation.score * 100)}%</span>}
+      <span className="text-muted">{findings == null ? 'Memuat temuan…' : `${findings} temuan`}</span>
+    </span>
+  );
+}
+
+/** Detail konten terpilih beserta riwayat versinya (GET /contents/{id}/versions); versi lama dapat dibuka. */
+function ContentDetailPanel({ workflowId, content, onClose }) {
+  const [versionId, setVersionId] = useState(content.id);
+  const versions = useApi(() => listContentVersions(workflowId, content.id).catch(() => []), [workflowId, content.id]);
+  const detail = useApi(() => getWorkflowContent(workflowId, versionId), [workflowId, versionId]);
+  const items = [...(versions.data ?? [])].sort((a, b) => b.version - a.version);
+  const latestId = items[0]?.id ?? content.id;
+
+  return (
+    <Card
+      title="Detail konten"
+      actions={<button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>Tutup</button>}
+    >
+      {items.length > 1 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Riwayat versi konten">
+          <span className="text-muted">Versi:</span>
+          {items.map((item) => {
+            const active = item.id === versionId;
+            const status = meta(CONTENT_STATUS_META, item.status);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={active}
+                className={`btn btn--sm ${active ? 'btn--primary' : 'btn--ghost'}`}
+                title={`${status.label}${item.created_at ? ` · ${formatDateTime(item.created_at)}` : ''}`}
+                onClick={() => setVersionId(item.id)}
+              >
+                {`Versi ${item.version}`}{item.id === latestId ? ' (terbaru)' : ''}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {versionId !== latestId && <Alert tone="info" title="Menampilkan versi sebelumnya">Versi lama hanya untuk ditinjau; keputusan review berlaku untuk versi terbaru.</Alert>}
+      <ErrorAlert error={detail.error} />
+      {detail.loading && !detail.data ? <Spinner label="Memuat konten…" /> : detail.data && <ContentDetailView content={detail.data} />}
+    </Card>
+  );
+}
+
+/**
+ * Review konten mingguan per workflow (FE-17): daftar per minggu dengan filter jenis dan status, ringkasan validasi,
+ * progres review, detail sesuai jenis beserta riwayat versi, serta approve, reject, dan regenerasi per konten,
+ * per minggu, atau seluruh konten. Bila belum ada konten dan course plan sudah disetujui, konten dapat digenerate.
+ */
 export default function CourseReviewPage() {
-  const { course, version, refresh } = useCourse();
-  const review = useApi(() => getReview(course.id), [course.id, version]);
-  const validate = useAction(() => validateContent(course.id));
-  const approve = useAction(() => approveContent(course.id));
-  const [rejecting, setRejecting] = useState(false);
+  const { workflow, workflowId, events = [], refresh } = useCourse();
+  const notify = useContext(AppStateContext)?.notify;
+  const [kind, setKind] = useState('');
+  const [status, setStatus] = useState('');
+  const [selectedId, setSelectedId] = useState(null);
+  // { type: 'reject' | 'regenerate', scope, weekNumber, contentIds, contentId, label }
+  const [dialog, setDialog] = useState(null);
 
-  const data = review.data;
-  const items = data?.items ?? [];
-  const issues = items.flatMap((i) => i.issues);
-  const blocking = issues.some((i) => i.severity === 'high');
-  const waiting = course.status === 'WAITING_CONTENT_REVIEW';
+  const contents = useApi(() => (workflowId ? listWorkflowContents(workflowId) : []), [workflowId]);
+  const plan = useApi(() => (workflowId ? getWorkflowPlan(workflowId).catch(() => null) : null), [workflowId]);
+  const items = contents.data ?? [];
+  const findings = useFindingCounts(workflowId, items);
 
-  if (review.loading && !data) return <Spinner />;
-  if (!items.length) {
+  // Event workflow (generation per konten/minggu, keputusan review) memuat ulang daftar tanpa memuat ulang halaman.
+  const workflowChange = workflow ? `${workflow.status}|${workflow.stage}|${workflow.updated_at}` : null;
+  const { reload: reloadContents } = contents;
+  useOnChange(workflowChange, () => reloadContents({ silent: true }), 300);
+
+  const afterAction = (message) => {
+    notify?.(message, { type: 'success' });
+    reloadContents({ silent: true });
+    refresh?.();
+  };
+  const approve = useAction((ids) => approveContents(workflowId, ids), { loadingLabel: 'Menyetujui konten…' });
+  const generate = useAction(() => generateContents(workflowId), { loadingLabel: 'Meminta pembuatan konten…' });
+  const runApprove = (ids, message) => approve.run(ids).then(() => afterAction(message)).catch(() => {});
+
+  const progress = reviewProgress(items);
+  const generating = contentGenerationProgressOf(workflow, events);
+  const planApproved = plan.data?.status === PLAN_STATUS.APPROVED;
+  const filtered = items.filter((item) => (!kind || item.kind === kind) && (!status || item.status === status));
+  const weeks = groupContentsByWeek(filtered);
+  const kinds = [...new Set(items.map((item) => item.kind))];
+  const approvableIds = (list) => list.filter(isApprovable).map((item) => item.id);
+  const allApprovable = approvableIds(items);
+  const selected = items.find((item) => item.id === selectedId);
+
+  if (!workflowId) {
     return (
-      <Card>
-        <ErrorAlert error={review.error} />
-        <EmptyState title="Belum ada konten untuk direview.">Konten akan muncul di sini setelah selesai digenerate dan divalidasi.</EmptyState>
+      <Card title="Review konten">
+        <EmptyState title="Belum ada workflow untuk kursus ini.">Unggah dan analisis RPS di tab RPS, lalu susun course plan.</EmptyState>
       </Card>
     );
   }
+  if (contents.loading && !contents.data) return <Spinner label="Memuat konten…" />;
 
   return (
     <div className="stack">
       <Card
-        title="Hasil validasi"
-        actions={
+        title="Review konten mingguan"
+        actions={items.length > 0 && (
           <>
-            {data.validation_result && (
-              <Badge tone={data.validation_result === 'passed' ? 'success' : 'warning'}>
-                {data.validation_result === 'passed' ? 'Lolos' : 'Ada temuan'}
-              </Badge>
-            )}
-            {REVIEWABLE.includes(course.status) && (
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                disabled={!COURSE_ACTIONS_AVAILABLE || validate.pending}
-                onClick={() => validate.run().then(refresh).catch(() => {})}
-              >
-                {validate.pending ? 'Memvalidasi…' : 'Validasi ulang'}
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={!!generating}
+              onClick={() => setDialog({ type: 'regenerate', scope: REGENERATION_SCOPE.COURSE, label: 'seluruh konten' })}
+            >
+              Regenerasi seluruh konten
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={!allApprovable.length || approve.pending}
+              title={allApprovable.length ? undefined : 'Tidak ada konten lolos validasi yang menunggu persetujuan.'}
+              onClick={() => runApprove(allApprovable, `${allApprovable.length} konten disetujui.`)}
+            >
+              Setujui semua yang lolos validasi ({allApprovable.length})
+            </button>
           </>
-        }
-      >
-        <ErrorAlert error={validate.error} onClose={validate.clearError} />
-        {!COURSE_ACTIONS_AVAILABLE && <PendingFeatureNote>Validasi dan review konten belum tersedia.</PendingFeatureNote>}
-        {issues.length === 0 ? (
-          <p className="muted">Tidak ada temuan. Konten konsisten dengan RPS dan struktur yang diharapkan.</p>
-        ) : (
-          <ul className="issues">
-            {issues.map((issue, i) => (
-              <li key={i}>
-                <Badge tone={SEVERITY_TONES[issue.severity]}>{issue.severity}</Badge>
-                <span>{issue.message}</span>
-                {issue.week && (
-                  <Link to={`../content?week=${issue.week}`} relative="path" className="btn btn--ghost btn--sm">
-                    Lihat minggu {issue.week}
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ul>
         )}
-      </Card>
+      >
+        <ErrorAlert error={contents.error} />
+        <ErrorAlert error={approve.error || generate.error} onClose={() => { approve.clearError(); generate.clearError(); }} />
+        {generating && (
+          <Alert tone="info" title={GENERATION_LABELS[generating]}>Daftar konten diperbarui otomatis setiap ada konten baru.</Alert>
+        )}
 
-      <Card
-        title="Review konten"
-        actions={
-          waiting && (
-            <>
-              <button type="button" className="btn btn--danger-ghost" disabled={!COURSE_ACTIONS_AVAILABLE} onClick={() => setRejecting(true)}>
-                Tolak
-              </button>
+        {items.length === 0 ? (
+          generating ? null : planApproved ? (
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 className="btn btn--primary"
-                disabled={!COURSE_ACTIONS_AVAILABLE || approve.pending || blocking}
-                title={blocking ? 'Selesaikan temuan tingkat high terlebih dahulu' : undefined}
-                onClick={() => approve.run().then(refresh).catch(() => {})}
+                disabled={generate.pending}
+                onClick={() => generate.run().then(() => afterAction('Pembuatan konten dimulai.')).catch(() => {})}
               >
-                {approve.pending ? 'Menyimpan…' : 'Setujui semua konten'}
+                {generate.pending ? 'Meminta…' : 'Generate konten'}
               </button>
-            </>
+              <span className="text-sm text-muted">Agent membuat konten setiap minggu sesuai course plan dan konfigurasi aktivitas.</span>
+            </div>
+          ) : (
+            <EmptyState title="Belum ada konten.">
+              Konten dibuat setelah course plan disetujui.{' '}
+              <Link to="../plan" relative="path">Buka tab Rencana</Link>
+            </EmptyState>
           )
-        }
-      >
-        <ErrorAlert error={approve.error || review.error} onClose={approve.clearError} />
-        {waiting && issues.length > 0 && !blocking && (
-          <Alert tone="warning">Masih ada temuan validasi. Anda tetap dapat menyetujui, atau regenerasi minggu terkait.</Alert>
+        ) : (
+          <>
+            <ProgressBar completed={progress.approved} total={progress.total} label="Konten disetujui" />
+            {progress.complete && (
+              <Alert tone="success" title="Seluruh konten telah disetujui">
+                <p>
+                  Langkah berikutnya: kirim struktur dan seluruh konten ke Moodle.{' '}
+                  <Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke eksekusi FULL</Link>
+                </p>
+              </Alert>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Filter konten">
+              <select className="!w-auto" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Filter jenis konten">
+                <option value="">Semua jenis</option>
+                {kinds.map((value) => <option key={value} value={value}>{CONTENT_KIND_LABELS[value] ?? value}</option>)}
+              </select>
+              <select className="!w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter status konten">
+                <option value="">Semua status</option>
+                {Object.entries(CONTENT_STATUS_META).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
+              </select>
+            </div>
+          </>
         )}
-        {!REVIEWABLE.includes(course.status) && <Alert tone="info">Review sudah selesai untuk tahap ini.</Alert>}
-
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Minggu</th>
-                <th>Topik</th>
-                <th>Materi</th>
-                <th>Tugas</th>
-                <th>Kuis</th>
-                <th>Temuan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it) => (
-                <tr key={it.content_id}>
-                  <td>{it.week}</td>
-                  <td>
-                    <Link to={`../content?week=${it.week}`} relative="path">
-                      {it.topic}
-                    </Link>
-                    {it.revision > 0 && <small className="muted"> · revisi {it.revision}</small>}
-                  </td>
-                  <td>{it.material_count}</td>
-                  <td>{it.has_assignment ? '✓' : '–'}</td>
-                  <td>{it.has_quiz ? '✓' : '–'}</td>
-                  <td>
-                    {it.issues.length ? <Badge tone={SEVERITY_TONES[it.issues[0].severity]}>{it.issues.length}</Badge> : '–'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </Card>
 
-      {data.rejections?.length > 0 && (
-        <Card title="Riwayat penolakan">
-          <ul className="list">
-            {data.rejections.map((r) => (
-              <li key={r.rejected_at} className="list__split">
-                <span>{r.reason}</span>
-                <small className="muted">{formatDateTime(r.rejected_at)}</small>
-              </li>
-            ))}
-          </ul>
-        </Card>
+      {items.length > 0 && (
+        <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
+          <div className="stack">
+            {weeks.length === 0 && <EmptyState title="Tidak ada konten yang cocok dengan filter." />}
+            {weeks.map(({ week, contents: weekItems }) => {
+              const weekApprovable = approvableIds(weekItems);
+              const weekLabel = week == null ? 'Tanpa minggu' : `Minggu ${week}`;
+              return (
+                <Card
+                  key={week ?? 'none'}
+                  title={weekLabel}
+                  actions={week != null && (
+                    <>
+                      <button type="button" className="btn btn--ghost btn--sm" disabled={!!generating} onClick={() => setDialog({ type: 'regenerate', scope: REGENERATION_SCOPE.MINGGU, weekNumber: week, label: weekLabel.toLowerCase() })}>
+                        Regenerasi minggu
+                      </button>
+                      <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDialog({ type: 'reject', contentIds: weekItems.filter((item) => !isContentApproved(item)).map((item) => item.id), label: weekLabel.toLowerCase() })} disabled={weekItems.every(isContentApproved)}>
+                        Tolak minggu
+                      </button>
+                      <button type="button" className="btn btn--secondary btn--sm" disabled={!weekApprovable.length || approve.pending} onClick={() => runApprove(weekApprovable, `${weekApprovable.length} konten ${weekLabel.toLowerCase()} disetujui.`)}>
+                        Setujui minggu ({weekApprovable.length})
+                      </button>
+                    </>
+                  )}
+                >
+                  <ul className="m-0 grid list-none gap-2 p-0" aria-label={`Konten ${weekLabel}`}>
+                    {weekItems.map((item) => {
+                      const itemStatus = meta(CONTENT_STATUS_META, item.status);
+                      const blocker = approvalBlocker(item);
+                      return (
+                        <li key={item.id} className={`flex flex-wrap items-center gap-3 rounded-md border p-3 ${item.id === selectedId ? 'border-primary bg-primary-light/40' : 'border-line'}`} aria-label={item.title}>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-semibold text-muted">{CONTENT_KIND_LABELS[item.kind] ?? item.kind}</span>
+                              <Badge tone={itemStatus.tone}>{itemStatus.label}</Badge>
+                              <span className="text-xs text-muted">Versi {item.version}</span>
+                            </div>
+                            <button type="button" className="mt-1 block cursor-pointer text-left font-semibold text-primary hover:underline" onClick={() => setSelectedId(item.id)}>
+                              {item.title}
+                            </button>
+                            <div className="mt-1"><ValidationSummary validation={item.validation} findings={findings[item.id]} /></div>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button type="button" className="btn btn--ghost btn--sm" disabled={!!generating} onClick={() => setDialog({ type: 'regenerate', scope: REGENERATION_SCOPE.ITEM, contentId: item.id, label: `"${item.title}"` })}>
+                              Regenerasi
+                            </button>
+                            <button type="button" className="btn btn--ghost btn--sm" disabled={isContentApproved(item)} onClick={() => setDialog({ type: 'reject', contentIds: [item.id], label: `"${item.title}"` })}>
+                              Tolak
+                            </button>
+                            <button type="button" className="btn btn--primary btn--sm" disabled={!!blocker || approve.pending} title={blocker ?? undefined} onClick={() => runApprove([item.id], `"${item.title}" disetujui.`)}>
+                              Setujui
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Card>
+              );
+            })}
+          </div>
+          {selected && <ContentDetailPanel key={selected.id} workflowId={workflowId} content={selected} onClose={() => setSelectedId(null)} />}
+        </div>
       )}
 
       <InstructionModal
-        open={rejecting}
+        open={dialog?.type === 'reject'}
         title="Tolak konten"
-        label="Alasan penolakan"
-        placeholder="Contoh: Materi minggu 4 tidak sesuai dengan RPS."
+        label="Catatan revisi"
+        hint={dialog ? `Konten yang ditolak: ${dialog.label}. Catatan dipakai agent saat regenerasi.` : ''}
+        placeholder="Contoh: Contoh kasus kurang relevan dengan materi minggu ini."
         submitLabel="Tolak konten"
         danger
-        onClose={() => setRejecting(false)}
-        onSubmit={(reason) => rejectContent(course.id, reason).then(refresh)}
+        maxLength={MAX_CONTENT_NOTE_LENGTH}
+        onClose={() => setDialog(null)}
+        onSubmit={(notes) => rejectContents(workflowId, dialog.contentIds, notes).then(() => afterAction('Konten ditolak.'))}
+      />
+      <InstructionModal
+        open={dialog?.type === 'regenerate'}
+        title={dialog?.scope === REGENERATION_SCOPE.COURSE ? 'Regenerasi seluruh konten' : 'Regenerasi konten'}
+        label="Catatan revisi"
+        hint={dialog?.scope === REGENERATION_SCOPE.COURSE
+          ? 'Seluruh konten kursus akan dibuat ulang sebagai versi baru. Pastikan ini yang Anda inginkan; versi lama tetap dapat dibuka.'
+          : dialog ? `Hanya ${dialog.label} yang dibuat ulang sebagai versi baru; konten lain tidak berubah.` : ''}
+        placeholder="Contoh: Tambahkan contoh kasus sistem informasi kampus."
+        submitLabel={dialog?.scope === REGENERATION_SCOPE.COURSE ? 'Ya, regenerasi seluruh konten' : 'Regenerasi'}
+        danger={dialog?.scope === REGENERATION_SCOPE.COURSE}
+        maxLength={MAX_CONTENT_NOTE_LENGTH}
+        onClose={() => setDialog(null)}
+        onSubmit={(notes) => regenerateContents(workflowId, { scope: dialog.scope, weekNumber: dialog.weekNumber, contentId: dialog.contentId, notes })
+          .then(() => afterAction('Regenerasi konten dimulai.'))}
       />
     </div>
   );

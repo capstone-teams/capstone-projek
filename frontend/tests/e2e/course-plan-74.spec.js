@@ -35,7 +35,7 @@ for (const width of [375, 768, 1024, 1440]) {
       }
       await expect(weeks.nth(7).getByText('Ujian', { exact: true })).toBeVisible();
     } else {
-      await expect(page.getByRole('columnheader', { name: 'Capaian pembelajaran', exact: true })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: 'Sub-CPMK', exact: true })).toBeVisible();
       await expect(page.getByRole('columnheader', { name: 'Metode mengajar', exact: true })).toBeVisible();
       const scroll = page.getByRole('region', { name: 'Tabel rencana mingguan' });
       const bounds = await scroll.boundingBox();

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useApi } from '../../../hooks/useApi';
 import { findCourseByMoodleId } from '../../../services/courseService';
 import { getRps } from '../../../services/rpsService';
+import { getActiveCourseBinding } from '../../../services/workflowService';
 import { RPS_STATUS, rpsStatusMeta } from '../../../utils/rpsStatus';
 import RpsStatusBadge from '../RpsStatusBadge';
 import ActivityIcon from '../../moodle/ActivityIcon';
@@ -13,10 +14,14 @@ import { COURSE_CARD } from '../../moodle/course/courseCard';
  * berisi data kursus tanpa rps_id. Backend belum menyediakan unduhan berkas RPS, jadi tautan membuka detailnya.
  */
 export default function CourseRpsBar({ course }) {
+  const courseKeys = [course?.id, course?.moodle_course_id, course?.shortname, course?.code].filter(Boolean);
+  const bound = getActiveCourseBinding(...courseKeys);
+  const boundRpsId = bound?.rpsId;
+
   const { data, loading } = useApi(async () => {
-    const rpsId = course.rps_id ?? (await findCourseByMoodleId(course.id).catch(() => null))?.rps_id;
+    const rpsId = boundRpsId ?? course?.rps_id ?? (await findCourseByMoodleId(course?.id).catch(() => null))?.rps_id;
     return rpsId ? getRps(rpsId).catch(() => ({ id: rpsId })) : null;
-  }, [course.id, course.rps_id]);
+  }, [course?.id, course?.rps_id, boundRpsId]);
 
   if (loading) return null;
   const base = `/course/${course.id}/ai`;

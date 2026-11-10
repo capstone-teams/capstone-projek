@@ -1,0 +1,14 @@
+name: quiz
+version: v1
+description: Generate a multiple-choice quiz with answer key and explanations based on RPS topics.
+
+required_variables:
+  # - rps_structured
+  - week_context
+
+optional_variables:
+  - instructor_profile
+  - additional_prompt
+  - previous_version
+  - revision_notes
+  - validation_feedback

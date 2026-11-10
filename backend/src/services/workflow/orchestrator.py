@@ -1,13 +1,14 @@
-"""Orkestrator workflow (BE-11.2, BE-14.3).
+"""Orkestrator workflow (BE-11.2, BE-14.3, BE-17.1).
 
 Orkestrator mengendalikan urutan tahap dan transisi status; LLM tidak dapat
-mengubah status workflow. Tiga rangkaian tahap berjalan di atas workflow yang
+mengubah status workflow. Empat rangkaian tahap berjalan di atas workflow yang
 sama:
 
 ```text
-Post /rps/{id}/process   PROCESSING_RPS → ANALYZING_RPS
-Post /workflows/{id}/plan        PLANNING_COURSE → VALIDATING
-Post /rps/{id}/reanalyze         ANALYZING_RPS
+Post /rps/{id}/process            PROCESSING_RPS → ANALYZING_RPS
+Post /workflows/{id}/plan         PLANNING_COURSE → VALIDATING
+Post /rps/{id}/reanalyze          ANALYZING_RPS
+Post /workflows/{id}/executions   EXECUTING_TO_MOODLE
 ```
 
 Setelah rangkaian tahap selesai, workflow berhenti pada
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.config.database import get_session_factory
+from src.config.settings import get_settings
 from src.models.workflow import WorkflowStatus
 from src.models.workflow_event import EventType
 from src.services.analysis.service import RPSEvent
@@ -41,7 +43,10 @@ from src.services.course_plan.planner import (
     PlanningRequest,
     get_course_planner,
 )
+from src.services.execution.errors import ExecutionDomainError
 from src.services.llm.base import LLMProviderError
+from src.services.moodle_client import MoodleClient
+from src.services.moodle_integration_service import MoodleIntegrationService
 from src.services.rps.errors import RPSDomainError
 from src.services.rps.service import RPSService
 from src.services.workflow.domain import WorkflowRecord, stage_name
@@ -54,18 +59,29 @@ from src.services.workflow.service import (
 )
 
 __all__ = [
+    "CONTENT_GENERATION_STAGES",
     "COURSE_PLANNING_STAGES",
+    "EXECUTION_STAGES",
     "RPS_ANALYSIS_STAGES",
     "RPS_PROCESSING_STAGES",
     "WorkflowStage",
     "execute_workflow",
+    "run_content_generation_workflow",
     "run_course_planning_workflow",
+    "run_execution_workflow",
     "run_rps_analysis_workflow",
     "run_rps_processing_workflow",
 ]
 
 if TYPE_CHECKING:  # pragma: no cover - hanya untuk anotasi tipe
+    from src.services.content.generation import (
+        ContentGenerationService,
+        ContentJob,
+        GenerationOutcome,
+        PreparedGeneration,
+    )
     from src.services.course_plan.service import CoursePlanService
+    from src.services.execution.service import ExecutionService
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +135,14 @@ class WorkflowContext:
     instruction: str | None = None
     planning_request: PlanningRequest | None = None
     planned_plan: PlannedCoursePlan | None = None
+    #: Hanya terisi pada rangkaian tahap eksekusi Moodle (BE-17.1).
+    execution_service: ExecutionService | None = None
+    execution_id: str | None = None
+    #: Hanya terisi pada rangkaian tahap content generation (BE-19.3).
+    content_service: ContentGenerationService | None = None
+    content_job: ContentJob | None = None
+    prepared_content: PreparedGeneration | None = None
+    generation_outcomes: list[GenerationOutcome] | None = None
     #: Event kegagalan sudah ditulis oleh service yang gagal (mis. analisis),
     #: sehingga orkestrator tidak perlu menulis event kegagalan kedua.
     failure_emitted: bool = False
@@ -354,6 +378,176 @@ COURSE_PLANNING_STAGES: tuple[WorkflowStage, ...] = (
     PLAN_VALIDATION_STAGE,
 )
 
+# --- Tahap: eksekusi ke Moodle (BE-17.1) -------------------------------------
+
+#: Nama tahap eksekusi pada event (sama dengan ``stage_name`` domain).
+EXECUTION_STAGE_NAME = stage_name(WorkflowStatus.EXECUTING_TO_MOODLE) or (
+    "moodle_execution"
+)
+
+
+async def _run_execution(ctx: WorkflowContext) -> None:
+    """Jalankan eksekusi struktur course plan yang sudah dibuat route (BE-17.1).
+
+    Prasyarat dan pembuatan ``MoodleExecution`` berstatus ``PENDING`` dilakukan
+    endpoint ``POST /workflows/{id}/executions`` sebelum runner dijadwalkan,
+    sehingga tahap ini hanya menjalankan operasi yang belum berhasil dan
+    mencatat satu event ``OPERASI_MOODLE`` per operasi.
+    """
+    if ctx.execution_service is None or ctx.execution_id is None:
+        raise RuntimeError("tahap eksekusi memerlukan ExecutionService dan execution_id")
+
+    async def emit(*, event: str, message: str, metadata: dict | None = None) -> None:
+        await ctx.workflow_service.record_event(
+            ctx.workflow,
+            event_type=EventType.OPERASI_MOODLE,
+            event=event,
+            stage=EXECUTION_STAGE_NAME,
+            message=message,
+            metadata=metadata,
+        )
+
+    await ctx.execution_service.execute(
+        execution_id=ctx.execution_id,
+        owner_id=ctx.owner_id,
+        emit_event=emit,
+    )
+
+
+EXECUTION_STAGE = WorkflowStage(
+    WorkflowStatus.EXECUTING_TO_MOODLE, _run_execution
+)
+
+#: Run eksekusi: EXECUTING_TO_MOODLE. Sukses kembali ke WAITING_FOR_REVIEW (DL-012).
+EXECUTION_STAGES: tuple[WorkflowStage, ...] = (EXECUTION_STAGE,)
+
+
+# --- Tahap: content generation (BE-19.3) -------------------------------------
+
+#: Nama tahap pada event (sama dengan ``stage_name`` domain).
+CONTENT_GENERATION_STAGE_NAME = (
+    stage_name(WorkflowStatus.GENERATING_CONTENT) or "content_generation"
+)
+CONTENT_VALIDATION_STAGE_NAME = stage_name(WorkflowStatus.VALIDATING) or "validation"
+
+#: Label jenis konten untuk pesan event. Contoh pesan: "Minggu 3 - Learning
+#: Material selesai."
+CONTENT_TYPE_LABELS: dict[str, str] = {
+    "LEARNING_MATERIAL": "Learning Material",
+    "RESOURCE": "Learning Resource",
+    "ASSIGNMENT": "Assignment",
+    "QUIZ": "Quiz",
+}
+
+#: Event Content Generation Service (BE-20.3) → event workflow.
+CONTENT_EVENT_VERBS: dict[str, str] = {
+    "GENERATION_STARTED": "dimulai",
+    "CONTEXT_BUILT": "konteksnya disiapkan",
+    "LLM_CALLING": "sedang dihasilkan",
+    "LLM_RESPONDED": "respons model diterima",
+    "GENERATION_COMPLETED": "selesai",
+    "RETRY_FIX": "diperbaiki",
+    "GENERATION_FAILED": "gagal",
+}
+
+
+def _content_emitter(ctx: WorkflowContext) -> Callable[..., Awaitable[None]]:
+    """Terjemahkan event Content Generation Service menjadi WorkflowEvent.
+
+    Setiap event membawa ``week`` dan ``content_type`` sehingga frontend dapat
+    menampilkan progres per minggu × jenis konten (FE-16.2). Retry memindahkan
+    workflow ke ``RETRYING`` dan kembali ke ``GENERATING_CONTENT`` saat
+    percobaan berikutnya benar-benar dikirim ke model.
+    """
+
+    async def emit(*, event_type: object, message: str, **data: object) -> None:
+        name = getattr(event_type, "name", str(event_type))
+        week = data.get("week")
+        content_type = str(data.get("content_type") or "")
+        label = CONTENT_TYPE_LABELS.get(content_type, content_type)
+
+        category = EventType.AKTIVITAS_AGENT
+        public_event = EVENT_STAGE_PROGRESS
+        if name == "RETRY_FIX":
+            category = EventType.RETRY_FIX
+            public_event = EVENT_RETRY
+            ctx.workflow = await ctx.workflow_service.mark_retrying(ctx.workflow)
+        if name == "LLM_CALLING" and int(data.get("attempt") or 1) > 1:
+            ctx.workflow = await ctx.workflow_service.resume_stage(
+                ctx.workflow, WorkflowStatus.GENERATING_CONTENT
+            )
+
+        verb = CONTENT_EVENT_VERBS.get(name)
+        text = (
+            f"Minggu {week} - {label} {verb}."
+            if week is not None and label and verb
+            else message
+        )
+        await ctx.workflow_service.record_event(
+            ctx.workflow,
+            event_type=category,
+            event=public_event,
+            stage=CONTENT_GENERATION_STAGE_NAME,
+            message=text,
+            metadata={
+                "week_number": week,
+                "content_type": content_type or None,
+                **{
+                    key: value
+                    for key, value in data.items()
+                    if key not in {"week", "content_type"} and value is not None
+                },
+            },
+        )
+
+    return emit
+
+
+async def _run_content_generation(ctx: WorkflowContext) -> None:
+    """Susun target konten lalu jalankan Content Generation Service (BE-19.3)."""
+    if ctx.content_service is None or ctx.content_job is None:
+        raise RuntimeError(
+            "tahap content generation memerlukan ContentGenerationService dan job"
+        )
+
+    ctx.prepared_content = await ctx.content_service.prepare(
+        ctx.workflow, ctx.content_job
+    )
+    ctx.generation_outcomes = await ctx.content_service.generate(
+        ctx.workflow,
+        ctx.prepared_content,
+        emit_event=_content_emitter(ctx),
+    )
+
+
+async def _run_content_validation(ctx: WorkflowContext) -> None:
+    """Validasi dan simpan hasil generation, lalu catat event per minggu/item."""
+    if (
+        ctx.content_service is None
+        or ctx.prepared_content is None
+        or ctx.generation_outcomes is None
+    ):
+        raise RuntimeError("tahap validasi konten memerlukan hasil generation")
+
+    await ctx.content_service.store(
+        ctx.workflow, ctx.prepared_content, ctx.generation_outcomes
+    )
+
+
+CONTENT_GENERATION_STAGE = WorkflowStage(
+    WorkflowStatus.GENERATING_CONTENT, _run_content_generation
+)
+CONTENT_VALIDATION_STAGE = WorkflowStage(
+    WorkflowStatus.VALIDATING, _run_content_validation
+)
+
+#: Urutan tahap generate/regenerate konten: GENERATING_CONTENT → VALIDATING.
+CONTENT_GENERATION_STAGES: tuple[WorkflowStage, ...] = (
+    CONTENT_GENERATION_STAGE,
+    CONTENT_VALIDATION_STAGE,
+)
+
+
 # --- Eksekusi ----------------------------------------------------------------
 
 
@@ -366,6 +560,10 @@ async def execute_workflow(
     course_plan_service: CoursePlanService | None = None,
     planner: CoursePlanner | None = None,
     instruction: str | None = None,
+    execution_service: ExecutionService | None = None,
+    execution_id: str | None = None,
+    content_service: ContentGenerationService | None = None,
+    content_job: ContentJob | None = None,
 ) -> None:
     """Jalankan deretan tahap pada satu workflow.
 
@@ -375,6 +573,10 @@ async def execute_workflow(
     (DL-012), bukan ``COMPLETED``. Tidak ada exception yang dilempar ke
     pemanggil background.
     """
+    # Import lokal: paket content mengimpor workflow.service, sehingga import
+    # tingkat modul akan membentuk siklus dengan paket workflow.
+    from src.services.content.errors import ContentDomainError
+
     ctx = WorkflowContext(
         workflow=workflow,
         workflow_service=workflow_service,
@@ -382,6 +584,10 @@ async def execute_workflow(
         course_plan_service=course_plan_service,
         planner=planner,
         instruction=instruction,
+        execution_service=execution_service,
+        execution_id=execution_id,
+        content_service=content_service,
+        content_job=content_job,
     )
     ctx.workflow = await workflow_service.begin_run(workflow, total=len(stages))
 
@@ -402,6 +608,22 @@ async def execute_workflow(
                 ctx.workflow,
                 stage=stage.name,
                 message=exc.public_reason,
+                emit_event=not ctx.failure_emitted,
+            )
+            return
+        except ExecutionDomainError as exc:
+            await workflow_service.fail_run(
+                ctx.workflow,
+                stage=stage.name,
+                message=exc.public_message,
+                emit_event=not ctx.failure_emitted,
+            )
+            return
+        except ContentDomainError as exc:
+            await workflow_service.fail_run(
+                ctx.workflow,
+                stage=stage.name,
+                message=exc.public_message,
                 emit_event=not ctx.failure_emitted,
             )
             return
@@ -526,6 +748,140 @@ async def run_course_planning_workflow(
             )
         else:
             logger.info("course planning workflow %s selesai", workflow_id)
+
+
+async def run_execution_workflow(
+    *,
+    workflow_id: str,
+    owner_id: str,
+    execution_id: str,
+    moodle: MoodleIntegrationService | None = None,
+) -> None:
+    """Jalankan tahap ``EXECUTING_TO_MOODLE`` di background (BE-17.1).
+
+    Endpoint ``POST /workflows/{id}/executions`` sudah memeriksa prasyarat,
+    mengklaim workflow, dan membuat ``MoodleExecution`` ``PENDING`` sebelum
+    fungsi ini dijadwalkan. ``moodle`` dapat diganti pengujian; nilai bawaannya
+    client Moodle dari konfigurasi, ditutup setelah run selesai.
+
+    Seluruh kegagalan ditelan dan dilaporkan lewat status workflow, eksekusi,
+    event, dan log — tidak ada client yang menunggu pekerjaan background.
+    """
+    # Import lokal memutus siklus impor paket (pola yang sama dengan course
+    # planning): execution.service mengimpor WorkflowService, bukan orkestrator.
+    from src.services.execution.service import ExecutionService
+
+    client: MoodleClient | None = None
+    try:
+        if moodle is None:
+            client = MoodleClient.from_settings(get_settings())
+            moodle = MoodleIntegrationService(client)
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            workflow_service = WorkflowService.from_session(session)
+            rps_service = RPSService.from_session(session)
+            execution_service = ExecutionService.from_session(
+                session, moodle=moodle
+            )
+            workflow = await workflow_service.get_workflow(
+                workflow_id=workflow_id, owner_id=owner_id
+            )
+            await execute_workflow(
+                workflow=workflow,
+                stages=EXECUTION_STAGES,
+                workflow_service=workflow_service,
+                rps_service=rps_service,
+                execution_service=execution_service,
+                execution_id=execution_id,
+            )
+    except ExecutionDomainError as exc:
+        logger.warning(
+            "execution workflow %s gagal: %s", workflow_id, exc.log_message
+        )
+    except WorkflowDomainError as exc:
+        logger.warning(
+            "execution workflow %s gagal: %s", workflow_id, exc.log_message
+        )
+    except Exception:
+        logger.exception(
+            "execution workflow %s gagal di luar error domain", workflow_id
+        )
+    else:
+        logger.info("execution workflow %s selesai", workflow_id)
+    finally:
+        if client is not None:
+            await client.aclose()
+
+
+async def run_content_generation_workflow(
+    *,
+    workflow_id: str,
+    owner_id: str,
+    week_numbers: tuple[int, ...] | None = None,
+    content_id: str | None = None,
+    scope: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Jalankan tahap ``GENERATING_CONTENT`` → ``VALIDATING`` di background.
+
+    Route sudah memvalidasi prasyarat (course plan ``APPROVED``) dan mengklaim
+    workflow sebelum fungsi ini dijadwalkan. ``scope`` berisi ``COURSE``,
+    ``MINGGU``, atau ``ITEM`` untuk regenerasi; ``None`` berarti generate awal.
+    Seluruh kegagalan ditelan dan dilaporkan lewat status workflow, event, dan
+    log.
+    """
+    # Import lokal memutus siklus impor paket (pola yang sama dengan tahap lain).
+    from src.services.content.errors import ContentDomainError
+    from src.services.content.generation import (
+        ContentGenerationService,
+        ContentJob,
+        RegenerationScope,
+    )
+
+    job = ContentJob(
+        week_numbers=week_numbers,
+        content_id=content_id,
+        scope=RegenerationScope(scope) if scope is not None else None,
+        notes=notes,
+    )
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        workflow_service = WorkflowService.from_session(session)
+        rps_service = RPSService.from_session(session)
+        content_service = ContentGenerationService.from_session(session)
+        try:
+            workflow = await workflow_service.get_workflow(
+                workflow_id=workflow_id, owner_id=owner_id
+            )
+            await execute_workflow(
+                workflow=workflow,
+                stages=CONTENT_GENERATION_STAGES,
+                workflow_service=workflow_service,
+                rps_service=rps_service,
+                content_service=content_service,
+                content_job=job,
+            )
+        except ContentDomainError as exc:
+            logger.warning(
+                "content generation workflow %s gagal: %s",
+                workflow_id,
+                exc.log_message,
+            )
+        except WorkflowDomainError as exc:
+            logger.warning(
+                "content generation workflow %s gagal: %s",
+                workflow_id,
+                exc.log_message,
+            )
+        except Exception:
+            logger.exception(
+                "content generation workflow %s gagal di luar error domain",
+                workflow_id,
+            )
+        else:
+            logger.info("content generation workflow %s selesai", workflow_id)
 
 
 async def _run_in_background(

@@ -22,7 +22,7 @@ export default function MyCoursesPage() {
   const [storedClassification, setClassification] = usePreference('myCourses.classification', 'all');
   const classification = FILTERS.some((f) => f.value === storedClassification) ? storedClassification : 'all';
   const [query, setQuery] = useState('');
-  const { data, error, loading } = useApi(() => getCoursesByClassification(classification), [classification]);
+  const { data, error, loading, reload } = useApi(() => getCoursesByClassification(classification), [classification]);
   // Status generator AI per kursus (dosen saja). Backend AI tidak tersedia -> badge disembunyikan.
   const ai = useApi(() => (isDosen && COURSE_API_AVAILABLE ? listCourses().catch(() => null) : null), [isDosen]);
   const aiByMoodleId = new Map((ai.data?.courses ?? []).map((p) => [String(p.moodle_course_id), p.status]));
@@ -50,6 +50,8 @@ export default function MyCoursesPage() {
         <ErrorAlert error={error} />
         {loading && !data ? (
           <Spinner />
+        ) : error && !data ? (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => reload()}>Coba lagi</button>
         ) : courses.length === 0 ? (
           <EmptyState title="Tidak ada kursus.">{q ? 'Tidak ada kursus yang cocok dengan pencarian.' : 'Tidak ada kursus pada filter ini.'}</EmptyState>
         ) : (

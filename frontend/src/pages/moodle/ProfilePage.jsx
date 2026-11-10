@@ -13,7 +13,9 @@ export default function ProfilePage() {
   const profile = useApi(() => getUserById(user.id), [user.id]);
   const courses = useApi(() => getCoursesByClassification('all'));
   const p = profile.data;
-  const teacherIds = new Set(user.teacherCourseIds);
+  const teacherIds = new Set(user.teacherCourseIds ?? []);
+  // Tanpa data kursus ajar dari Moodle (Backend Gateway), peran di kursus mengikuti role backend.
+  const teaches = (courseId) => (user.teacherCourseIds ? teacherIds.has(courseId) : user.role === ROLE.DOSEN);
 
   return (
     <PageContainer>
@@ -61,7 +63,7 @@ export default function ProfilePage() {
               {(courses.data ?? []).map((c) => (
                 <li key={c.id} className="list__split">
                   <Link to={`/course/${c.id}`}>{c.fullname}</Link>
-                  <Badge tone={teacherIds.has(c.id) ? 'info' : 'neutral'}>{teacherIds.has(c.id) ? 'Dosen' : 'Mahasiswa'}</Badge>
+                  <Badge tone={teaches(c.id) ? 'info' : 'neutral'}>{teaches(c.id) ? 'Dosen' : 'Mahasiswa'}</Badge>
                 </li>
               ))}
             </ul>
