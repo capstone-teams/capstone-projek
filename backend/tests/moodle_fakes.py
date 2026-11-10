@@ -276,7 +276,7 @@ class StudentMoodle(FakeMoodle):
 
     def _as_student(self, username: str, body: dict[str, str]):
         if body.get("wsfunction") != "core_course_get_contents":
-            return moodle_exception("accessexception", "Access control exception", "webservice_access_exception")
+            return self._as_student_call(username, body)
         course_id = int(body["courseid"])
         user_id = next(uid for uid, user in self.users.items() if user["username"] == username)
         enrolled = STUDENT_ROLE_ID in self.enrolments.get(course_id, {}).get(user_id, set())
@@ -287,6 +287,10 @@ class StudentMoodle(FakeMoodle):
             for section in self.sections[course_id]
             if section["visible"] or section["section"] == 0
         ]
+
+    def _as_student_call(self, username: str, body: dict[str, str]):
+        """Web service lain dengan token mahasiswa; diperluas ``StudentActivityMoodle``."""
+        return moodle_exception("accessexception", "Access control exception", "webservice_access_exception")
 
     def enrol(self, user_id: int) -> None:
         self.enrolments.setdefault(STUDENT_COURSE_ID, {}).setdefault(user_id, set()).add(STUDENT_ROLE_ID)
@@ -398,3 +402,89 @@ class ActivityMoodle(FakeMoodle):
             "cmid": cmid, "instanceid": cmid + 1000, "created": created, "updated": 1,
             "section": self.section_of(cmid), "questioncount": 1, "questionsreplaced": 0, "hasattempts": 0,
         }
+
+
+# --- Akses mahasiswa ke activity (BE-21.3) --------------------------------------
+
+STUDENT_VIEW_FUNCTIONS = {
+    "mod_page_view_page": ("page", "pageid"),
+    "mod_url_view_url": ("url", "urlid"),
+    "mod_assign_view_assign": ("assign", "assignid"),
+    "mod_quiz_view_quiz": ("quiz", "quizid"),
+    "mod_quiz_get_quiz_access_information": ("quiz", "quizid"),
+    "mod_quiz_start_attempt": ("quiz", "quizid"),
+}
+
+
+class StudentActivityMoodle(StudentMoodle):
+    """Course 2 berisi page, url, assign, dan quiz di minggu 1 yang dapat dibuka mahasiswa.
+
+    Activity hanya terbuka bagi mahasiswa yang terdaftar sebagai student pada
+    course yang terlihat, dan activity tersembunyi ditolak, seperti di Moodle.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        week_one = self.sections[STUDENT_COURSE_ID][1]
+        week_one["modules"] = [
+            {"id": 501, "instance": 41, "name": "Pengantar HTML", "modname": "page", "visible": 1},
+            {"id": 502, "instance": 42, "name": "Tugas 1", "modname": "assign", "visible": 1},
+            {"id": 503, "instance": 43, "name": "Artikel HTML", "modname": "url", "visible": 1},
+            {"id": 504, "instance": 44, "name": "Kuis 1", "modname": "quiz", "visible": 1},
+        ]
+        self.student_calls: list[tuple[str, str]] = []
+        self.attempts: dict[int, dict] = {}
+        #: Fungsi yang ditolak Moodle walaupun mahasiswa terdaftar (mis. quiz tanpa soal).
+        self.student_failures: dict[str, dict] = {}
+
+    def module(self, cmid: int) -> dict:
+        return next(m for s in self.sections[STUDENT_COURSE_ID] for m in s["modules"] if m["id"] == cmid)
+
+    def _as_student_call(self, username: str, body: dict[str, str]):
+        function = body.get("wsfunction", "")
+        self.student_calls.append((username, function))
+        if function == "mod_quiz_process_attempt":
+            attempt = self.attempts[int(body["attemptid"])]
+            attempt["state"] = "finished" if body.get("finishattempt") == "1" else "inprogress"
+            return {"state": attempt["state"], "warnings": []}
+        if function not in STUDENT_VIEW_FUNCTIONS:
+            return super()._as_student_call(username, body)
+        modname, parameter = STUDENT_VIEW_FUNCTIONS[function]
+        instance = int(body[parameter])
+        located = next(
+            (
+                (section, module)
+                for section in self.sections[STUDENT_COURSE_ID]
+                for module in section["modules"]
+                if module["modname"] == modname and module.get("instance") == instance
+            ),
+            None,
+        )
+        if located is None:
+            return moodle_exception("invalidrecord", "Can't find data record in database.")
+        section, module = located
+        user_id = next(uid for uid, user in self.users.items() if user["username"] == username)
+        enrolled = STUDENT_ROLE_ID in self.enrolments.get(STUDENT_COURSE_ID, {}).get(user_id, set())
+        if not enrolled or not self.courses[STUDENT_COURSE_ID].get("visible", 1):
+            return moodle_exception("requireloginerror", "Course or activity not accessible.", "require_login_exception")
+        if not module["visible"] or not section["visible"]:
+            return moodle_exception("requireloginerror", "Activity is hidden.", "require_login_exception")
+        if function in self.student_failures:
+            return self.student_failures[function]
+        if function == "mod_quiz_get_quiz_access_information":
+            return {"canattempt": True, "canpreview": False, "preventaccessreasons": [], "warnings": []}
+        if function == "mod_quiz_start_attempt":
+            attempt_id = 7000 + len(self.attempts)
+            self.attempts[attempt_id] = {"user": username, "quiz": instance, "state": "inprogress"}
+            return {"attempt": {"id": attempt_id, "quiz": instance, "state": "inprogress"}, "warnings": []}
+        return {"status": True, "warnings": []}
+
+    def _dispatch(self, wsfunction, params):
+        if wsfunction == "core_courseformat_update_course" and params.get("action") in ("cm_show", "cm_hide"):
+            ids = {int(value) for key, value in params.items() if key.startswith("ids[")}
+            for section in self.sections[int(params["courseid"])]:
+                for module in section["modules"]:
+                    if module["id"] in ids:
+                        module["visible"] = int(params["action"] == "cm_show")
+            return "[]"
+        return super()._dispatch(wsfunction, params)

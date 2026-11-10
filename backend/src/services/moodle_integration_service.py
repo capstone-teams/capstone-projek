@@ -101,6 +101,8 @@ class MoodleModule:
     visible: bool
     description: str = ""
     content: str | None = None
+    #: ID instance module (mis. ``page.id``), dipakai web service ``mod_*``.
+    instance_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -386,6 +388,24 @@ class MoodleIntegrationService:
             },
         )
 
+    async def set_module_visibility(
+        self,
+        moodle_course_id: int,
+        moodle_module_ids: Sequence[int],
+        visible: bool,
+    ) -> None:
+        """Tampilkan atau sembunyikan activity (course module) bagi mahasiswa."""
+        if not moodle_module_ids:
+            return
+        await self._client.call(
+            UPDATE_COURSE_FORMAT_FUNCTION,
+            {
+                "action": "cm_show" if visible else "cm_hide",
+                "courseid": moodle_course_id,
+                "ids": list(moodle_module_ids),
+            },
+        )
+
     # --- User dan enrolment (BE-04.5) ----------------------------------------
 
     async def get_user_by_username(self, username: str) -> MoodleUser | None:
@@ -622,6 +642,7 @@ def _to_module(raw: dict[str, Any]) -> MoodleModule:
         modname=raw.get("modname", ""),
         visible=bool(raw.get("visible", 1)),
         description=raw.get("description") or "",
+        instance_id=int(raw["instance"]) if raw.get("instance") is not None else None,
     )
 
 
