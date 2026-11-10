@@ -1,3 +1,17 @@
+"""Endpoint Moodle Integration Layer (BE-04.7) dan akses course untuk mahasiswa.
+
+Endpoint baca course (``GET /courses``, ``/courses/{id}``, ``/courses/{id}/contents``)
+dipakai frontend sebagai gateway untuk kedua role:
+
+- dosen melihat seluruh course Moodle (untuk memilih course target) beserta
+  isinya apa adanya, termasuk yang tersembunyi;
+- mahasiswa hanya melihat course terlihat tempat ia terdaftar, tanpa section dan
+  activity yang disembunyikan (:mod:`src.services.moodle_student_courses`).
+  Course lain menghasilkan 404 yang sama seperti tidak ada.
+
+Status koneksi dan endpoint write tetap khusus dosen.
+"""
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -20,6 +34,8 @@ from src.services.dependencies import (
     require_roles,
 )
 from src.services.moodle_integration_service import MoodleIntegrationService
+from src.services.moodle_student_courses import StudentCourseService
+from src.services.user.domain import User
 from src.services.user.enums import UserRole
 
 ERROR_RESPONSES = {
@@ -44,9 +60,17 @@ router = APIRouter(
 )
 
 instructor_only = require_roles(UserRole.INSTRUCTOR)
+#: Pembaca course: dosen (seluruh course) dan mahasiswa (course tempat ia terdaftar).
+course_reader = require_roles(UserRole.INSTRUCTOR, UserRole.STUDENT)
 
 MoodleCourseIdPath = Annotated[int, Path(ge=1, description="ID course di Moodle")]
 ServiceDependency = Annotated[MoodleIntegrationService, Depends(get_moodle_integration_service)]
+ReaderDependency = Annotated[User, Depends(course_reader)]
+
+
+def _student_view(user: User, service: MoodleIntegrationService) -> StudentCourseService | None:
+    """Service pembatas untuk mahasiswa; ``None`` untuk dosen."""
+    return StudentCourseService(service) if user.role is UserRole.STUDENT else None
 
 
 @router.get(
@@ -64,11 +88,17 @@ async def get_status(service: ServiceDependency) -> MoodleStatusResponse:
     "/courses",
     response_model=MoodleCourseListResponse,
     summary="Daftar course Moodle",
-    dependencies=[Depends(instructor_only)],
 )
-async def list_courses(service: ServiceDependency) -> MoodleCourseListResponse:
-    """Daftar course Moodle yang dapat dipilih dosen sebagai course target."""
-    courses = await service.list_courses()
+async def list_courses(
+    user: ReaderDependency, service: ServiceDependency
+) -> MoodleCourseListResponse:
+    """Dosen: course yang dapat dipilih sebagai course target. Mahasiswa: course tempat ia terdaftar."""
+    student = _student_view(user, service)
+    courses = (
+        await student.list_courses(user.username)
+        if student is not None
+        else await service.list_courses()
+    )
     return MoodleCourseListResponse(
         courses=[MoodleCourseResponse.model_validate(course) for course in courses]
     )
@@ -78,26 +108,43 @@ async def list_courses(service: ServiceDependency) -> MoodleCourseListResponse:
     "/courses/{moodle_course_id}",
     response_model=MoodleCourseResponse,
     summary="Detail course Moodle",
-    dependencies=[Depends(instructor_only)],
 )
 async def get_course(
-    moodle_course_id: MoodleCourseIdPath, service: ServiceDependency
+    moodle_course_id: MoodleCourseIdPath,
+    user: ReaderDependency,
+    service: ServiceDependency,
 ) -> MoodleCourseResponse:
-    """Informasi satu course; 404 bila course tidak ada di Moodle."""
-    return MoodleCourseResponse.model_validate(await service.get_course(moodle_course_id))
+    """Informasi satu course; 404 bila course tidak ada (atau, bagi mahasiswa, tidak dapat diakses)."""
+    student = _student_view(user, service)
+    course = (
+        await student.get_course(user.username, moodle_course_id)
+        if student is not None
+        else await service.get_course(moodle_course_id)
+    )
+    return MoodleCourseResponse.model_validate(course)
 
 
 @router.get(
     "/courses/{moodle_course_id}/contents",
     response_model=MoodleCourseContentsResponse,
     summary="Section dan module course Moodle",
-    dependencies=[Depends(instructor_only)],
 )
 async def get_course_contents(
-    moodle_course_id: MoodleCourseIdPath, service: ServiceDependency
+    moodle_course_id: MoodleCourseIdPath,
+    user: ReaderDependency,
+    service: ServiceDependency,
 ) -> MoodleCourseContentsResponse:
-    """Isi course yang sebenarnya ada di Moodle saat ini, termasuk konten module Page."""
-    contents = await service.get_course_contents(moodle_course_id)
+    """Isi course yang sebenarnya ada di Moodle saat ini.
+
+    Memuat isi module Page, alamat module URL, dan intro assignment/quiz. Bagi
+    mahasiswa hanya section dan activity yang terlihat yang dikirim.
+    """
+    student = _student_view(user, service)
+    contents = (
+        await student.get_course_contents(user.username, moodle_course_id)
+        if student is not None
+        else await service.get_course_contents(moodle_course_id, with_intros=True)
+    )
     return MoodleCourseContentsResponse.model_validate(contents)
 
 

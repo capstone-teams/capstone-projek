@@ -21,6 +21,8 @@ UPDATE_COURSE_FORMAT_FUNCTION = "core_courseformat_update_course"
 RENAME_SECTION_FUNCTION = "core_update_inplace_editable"
 UPDATE_SECTION_FUNCTION = "local_capstonebridge_update_section"
 GET_PAGES_FUNCTION = "mod_page_get_pages_by_courses"
+GET_ASSIGNMENTS_FUNCTION = "mod_assign_get_assignments"
+GET_QUIZZES_FUNCTION = "mod_quiz_get_quizzes_by_courses"
 GET_USERS_BY_FIELD_FUNCTION = "core_user_get_users_by_field"
 CREATE_USERS_FUNCTION = "core_user_create_users"
 ENROL_USERS_FUNCTION = "enrol_manual_enrol_users"
@@ -45,6 +47,10 @@ MONITORED_FUNCTIONS = (
 
 SITE_COURSE_FORMAT = "site"
 PAGE_MODULE_NAME = "page"
+URL_MODULE_NAME = "url"
+#: Module yang deskripsinya (intro) dibaca terpisah bila ``core_course_get_contents``
+#: tidak menyertakannya (``showdescription`` mati).
+INTRO_MODULE_NAMES = ("assign", "quiz")
 
 CONNECTED_STATUS = "CONNECTED"
 DISCONNECTED_STATUS = "DISCONNECTED"
@@ -100,6 +106,8 @@ class MoodleModule:
     modname: str
     visible: bool
     description: str = ""
+    #: Alamat tujuan untuk module URL (learning resource); ``None`` untuk module lain.
+    url: str | None = None
     content: str | None = None
     #: ID instance module (mis. ``page.id``), dipakai web service ``mod_*``.
     instance_id: int | None = None
@@ -247,7 +255,14 @@ class MoodleIntegrationService:
             )
         return await self.get_course(moodle_course_id)
 
-    async def get_course_contents(self, moodle_course_id: int) -> MoodleCourseContents:
+    async def get_course_contents(
+        self, moodle_course_id: int, *, with_intros: bool = False
+    ) -> MoodleCourseContents:
+        """Section dan module course, termasuk isi module Page.
+
+        ``with_intros`` juga mengisi ``description`` assignment dan quiz yang
+        kosong dari intro activity-nya, untuk ditampilkan di halaman activity.
+        """
         await self.get_course(moodle_course_id)
         sections = await self._fetch_sections(moodle_course_id)
         if any(
@@ -257,6 +272,13 @@ class MoodleIntegrationService:
         ):
             pages = await self._fetch_page_contents(moodle_course_id)
             sections = [_with_page_content(section, pages) for section in sections]
+        if with_intros and any(
+            module.modname in INTRO_MODULE_NAMES and not module.description
+            for section in sections
+            for module in section.modules
+        ):
+            intros = await self._fetch_intros(moodle_course_id)
+            sections = [_with_intros(section, intros) for section in sections]
         return MoodleCourseContents(
             moodle_course_id=moodle_course_id,
             sections=sections,
@@ -561,6 +583,32 @@ class MoodleIntegrationService:
         )
         return [_to_section(raw) for raw in raw_sections]
 
+    async def _fetch_intros(self, moodle_course_id: int) -> dict[int, str]:
+        """Intro assignment dan quiz per cmid; function yang gagal dilewati."""
+        intros: dict[int, str] = {}
+        for wsfunction, params, collect in (
+            # Akun integrasi tidak terdaftar di course; tanpa flag ini Moodle
+            # mengembalikan daftar assignment kosong.
+            (
+                GET_ASSIGNMENTS_FUNCTION,
+                {"courseids": [moodle_course_id], "includenotenrolledcourses": 1},
+                _assignment_intros,
+            ),
+            (GET_QUIZZES_FUNCTION, {"courseids": [moodle_course_id]}, _quiz_intros),
+        ):
+            try:
+                payload = await self._client.call(wsfunction, params)
+            except MoodleError as exc:
+                logger.warning(
+                    "Intro activity tidak dapat dibaca: function=%s type=%s code=%s",
+                    wsfunction,
+                    exc.error_type,
+                    exc.code,
+                )
+                continue
+            intros.update(collect(payload))
+        return intros
+
     async def _fetch_page_contents(
         self,
         moodle_course_id: int,
@@ -641,9 +689,39 @@ def _to_module(raw: dict[str, Any]) -> MoodleModule:
         name=raw.get("name", ""),
         modname=raw.get("modname", ""),
         visible=bool(raw.get("visible", 1)),
+        url=_module_url(raw),
         description=raw.get("description") or "",
         instance_id=int(raw["instance"]) if raw.get("instance") is not None else None,
     )
+
+
+def _module_url(raw: dict[str, Any]) -> str | None:
+    """Alamat tujuan module URL dari ``contents``; module lain tidak diisi."""
+    if raw.get("modname") != URL_MODULE_NAME:
+        return None
+    for item in raw.get("contents") or []:
+        if item.get("type") == "url" and item.get("fileurl"):
+            return str(item["fileurl"])
+    return None
+
+
+def _assignment_intros(payload: Any) -> dict[int, str]:
+    courses = payload.get("courses") if isinstance(payload, dict) else None
+    return {
+        int(item["cmid"]): item.get("intro") or ""
+        for course in courses or []
+        for item in course.get("assignments") or []
+        if "cmid" in item
+    }
+
+
+def _quiz_intros(payload: Any) -> dict[int, str]:
+    quizzes = payload.get("quizzes") if isinstance(payload, dict) else None
+    return {
+        int(item["coursemodule"]): item.get("intro") or ""
+        for item in quizzes or []
+        if "coursemodule" in item
+    }
 
 
 def _to_section(raw: dict[str, Any]) -> MoodleSection:
@@ -668,6 +746,18 @@ def _with_page_content(
     modules = [
         replace(module, content=pages.get(module.moodle_module_id))
         if module.modname == PAGE_MODULE_NAME
+        else module
+        for module in section.modules
+    ]
+    return replace(section, modules=modules)
+
+
+def _with_intros(section: MoodleSection, intros: dict[int, str]) -> MoodleSection:
+    modules = [
+        replace(module, description=intros[module.moodle_module_id])
+        if module.modname in INTRO_MODULE_NAMES
+        and not module.description
+        and intros.get(module.moodle_module_id)
         else module
         for module in section.modules
     ]

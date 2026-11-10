@@ -917,13 +917,22 @@ POST /api/v1/integrations/moodle/courses/{moodle_course_id}/sections
 | Endpoint                | Kegunaan                                                         | Akses                    |
 | ----------------------- | ---------------------------------------------------------------- | ------------------------ |
 | `status`                | Status koneksi, versi Moodle, dan ketersediaan functions yang dibutuhkan | Dosen               |
-| `GET courses`           | Daftar course Moodle untuk dipilih sebagai course target (Proposal §3.4.7) | Dosen             |
-| `courses/{id}`          | Membaca informasi course                                         | Dosen                    |
-| `courses/{id}/contents` | Membaca section dan module course                                | Dosen                    |
+| `GET courses`           | Dosen: daftar course untuk dipilih sebagai course target (Proposal §3.4.7). Mahasiswa: course tempat ia terdaftar | Dosen, Mahasiswa |
+| `courses/{id}`          | Membaca informasi course                                         | Dosen, Mahasiswa         |
+| `courses/{id}/contents` | Membaca section dan module course: isi Page, alamat URL, intro assignment dan quiz | Dosen, Mahasiswa |
 | `POST courses`          | Membuat course untuk pengujian integrasi                         | Development environment  |
 | `POST .../sections`     | Membuat atau memperbarui section untuk pengujian integrasi       | Development environment  |
 
 Endpoint write hanya aktif pada development environment melalui konfigurasi. Eksekusi ke Moodle pada alur produk tetap melalui Moodle Execution API (§13.1).
+
+Ketiga endpoint baca course juga dipakai frontend untuk halaman course mahasiswa (*Access Result Course*, §22), karena browser tidak memegang token Moodle. Bagi mahasiswa berlaku aturan berikut:
+
+* akun aplikasi dicocokkan dengan akun Moodle berdasarkan `username`, jadi username mahasiswa di aplikasi harus sama dengan username Moodle-nya;
+* hanya course yang terlihat dan tempat mahasiswa terdaftar yang muncul di `GET courses`;
+* `contents` tidak memuat section maupun activity yang disembunyikan dosen;
+* course lain menghasilkan `404 RESOURCE_NOT_FOUND`, sama seperti course yang tidak ada.
+
+Dosen tetap melihat seluruh course dan isi course apa adanya, termasuk yang tersembunyi. `status` dan endpoint write tetap khusus dosen.
 
 ---
 
