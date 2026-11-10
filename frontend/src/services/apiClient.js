@@ -37,9 +37,9 @@ export function onForbidden(handler) {
   forbiddenHandler = handler;
 }
 
-function fail(status, payload) {
+function fail(status, payload, { ignoreForbidden = false } = {}) {
   const error = toApiError(status, payload);
-  if (error.code === 'AUTHORIZATION_DENIED' && forbiddenHandler) forbiddenHandler(error);
+  if (error.code === 'AUTHORIZATION_DENIED' && !ignoreForbidden && forbiddenHandler) forbiddenHandler(error);
   return error;
 }
 
@@ -151,7 +151,7 @@ function toApiError(status, payload) {
 /**
  * Satu pintu untuk semua request ke Backend API (Single Gateway).
  */
-export async function request(method, path, { body, query, headers = {} } = {}) {
+export async function request(method, path, { body, query, headers = {}, ignoreForbidden = false } = {}) {
   const qs = query
     ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null)).toString()
     : '';
@@ -178,13 +178,13 @@ export async function request(method, path, { body, query, headers = {} } = {}) 
     logTechnical('api', { method, path, error: String(cause) });
     throw networkError();
   }
-  return settle(response.status, await response.text(), { token, isAuthLogin });
+  return settle(response.status, await response.text(), { token, isAuthLogin, ignoreForbidden });
 }
 
 const networkError = () => new ApiError(0, 'NETWORK_ERROR', MSG_UNAVAILABLE);
 
 /** Ubah response HTTP mentah menjadi data, atau lempar ApiError (dipakai fetch dan upload XHR). */
-function settle(status, text, { token, isAuthLogin }) {
+function settle(status, text, { token, isAuthLogin, ignoreForbidden = false }) {
   const ok = status >= 200 && status < 300;
   let data = null;
   if (text) {
@@ -199,7 +199,7 @@ function settle(status, text, { token, isAuthLogin }) {
     }
   }
   if (status === 401 && token && !isAuthLogin && unauthorizedHandler) unauthorizedHandler();
-  if (!ok) throw fail(status, data);
+  if (!ok) throw fail(status, data, { ignoreForbidden });
   return data;
 }
 
