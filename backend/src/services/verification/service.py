@@ -39,7 +39,11 @@ from src.models.verification import VerificationStatus
 from src.services.course_plan.domain import CoursePlanRecord
 from src.services.course_plan.repository import CoursePlanRepository
 from src.services.execution.domain import ExecutionRecord
-from src.services.execution.errors import ExecutionNotFoundError
+from src.services.execution.errors import (
+    EXECUTION_IN_PROGRESS,
+    ExecutionNotFoundError,
+    ExecutionPreconditionError,
+)
 from src.services.execution.repository import ExecutionRepository
 from src.services.execution.service import (
     MOODLE_FAILURES,
@@ -92,6 +96,7 @@ MAPPING_ENTITY_BY_OPERATION_TYPE: dict[OperationType, str] = {
 
 #: Eksekusi yang sudah selesai dan dapat diverifikasi.
 _FINISHED = (ExecutionStatus.SUCCESS, ExecutionStatus.FAILED)
+_ACTIVE = (ExecutionStatus.PENDING, ExecutionStatus.RUNNING)
 
 EmitEvent = Callable[..., Awaitable[None]]
 
@@ -166,10 +171,15 @@ class VerificationService:
         yang diverifikasi. Service ini tidak mengubah status workflow; transisi
         ``VERIFYING`` → ``COMPLETED``/``FAILED`` diatur orkestrator berdasarkan
         :attr:`VerificationResultRecord.matches`.
+
+        Verifikasi ditolak ``EXECUTION_IN_PROGRESS`` selama workflow masih
+        memiliki eksekusi ``PENDING``/``RUNNING``, karena perbaikan menjalankan
+        ulang operasi pada course yang sama.
         """
         workflow = await self._workflows.get_workflow(
             workflow_id=workflow_id, owner_id=owner_id
         )
+        await self._reject_running_execution(workflow.id or "")
         execution = await self._resolve_execution(workflow.id or "", execution_id)
         plan = await self._plans.get_by_id(execution.course_plan_id)
 
@@ -257,6 +267,17 @@ class VerificationService:
         return record
 
     # --- Langkah verifikasi ---------------------------------------------------
+
+    async def _reject_running_execution(self, workflow_id: str) -> None:
+        for execution in await self._executions.list_for_workflow(workflow_id):
+            if execution.status in _ACTIVE:
+                raise ExecutionPreconditionError(
+                    EXECUTION_IN_PROGRESS,
+                    log_message=(
+                        f"verifikasi workflow {workflow_id} ditolak: eksekusi "
+                        f"{execution.id} berstatus {execution.status.value}"
+                    ),
+                )
 
     async def _resolve_execution(
         self, workflow_id: str, execution_id: str | None

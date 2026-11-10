@@ -32,6 +32,7 @@ Panduan ini ditulis supaya anggota tim bisa membuat Moodle yang **sama persis** 
 | BE-16.3 | Akses mahasiswa pada course hasil eksekusi | 8.2, 10.1, 10.2, 10.4 |
 | BE-21.2 | Moodle verification: read-back, pembandingan, dan perbaikan otomatis | 7.1, 10.1, 10.2 |
 | BE-21.3 | Akses mahasiswa ke page, url, assignment, dan quiz hasil eksekusi FULL | 10.1, 10.2, 10.4 |
+| BE-22.2 | Endpoint eksekusi FULL dan endpoint verifikasi berbasis workflow | 10.1, 10.2 |
 
 ---
 
@@ -513,6 +514,7 @@ Test yang butuh PostgreSQL dilewati bila `db` tidak menyala; nyalakan dulu (`doc
 | `tests/test_moodle_student_access.py` | BE-16.3: enrolment mahasiswa uji, visibilitas course dan section, mahasiswa terdaftar melihat seluruh section, mahasiswa tidak terdaftar ditolak |
 | `tests/test_verify_student_access.py` | BE-16.3: script demo student access dan laporannya |
 | `tests/test_verification_service.py` | BE-21.2: verifikasi course hasil eksekusi FULL, activity dihapus/diganti nama/dipindah lalu diperbaiki, activity tidak terduga, batas perbaikan, hasil tersimpan per workflow |
+| `tests/test_execution_verification_api.py` | BE-22.2: endpoint eksekusi FULL dengan operasi per konten termasuk SKIPPED, verifikasi beserta perbaikan dan daftar perbedaan, penolakan prasyarat, akses hanya dosen pemilik |
 | `tests/test_student_activity_access.py` | BE-21.3: visibilitas activity, mahasiswa terdaftar membuka page/url/assignment/quiz dan memulai attempt quiz, mahasiswa tidak terdaftar ditolak di setiap activity, laporan script demo |
 
 Jalankan hanya test Moodle:
@@ -540,6 +542,7 @@ Test live memanggil Moodle yang sedang menyala dan **dilewati secara default**. 
 | `tests/test_moodle_student_access_live.py` | Course hasil eksekusi 16 minggu: mahasiswa terdaftar melihat 16 section, mahasiswa tidak terdaftar ditolak; section tersembunyi terdeteksi dan ditampilkan kembali (BE-16.3) | 2 |
 | `tests/test_moodle_verification_live.py` | Course hasil eksekusi FULL terverifikasi `PASS`; page yang dihapus manual terdeteksi, dibuat ulang, dan verifikasi berikutnya `PASS` (BE-21.2, butuh function 29) | 1 |
 | `tests/test_moodle_student_activity_live.py` | Course hasil eksekusi FULL: mahasiswa terdaftar membuka page, url, assignment, dan memulai attempt quiz; mahasiswa tidak terdaftar ditolak di 4/4 activity; activity tersembunyi terdeteksi dan ditampilkan kembali (BE-21.3) | 2 |
+| `tests/test_moodle_execution_api_live.py` | Eksekusi FULL dan verifikasi lewat endpoint dengan dependency bawaan aplikasi: operasi per konten, verifikasi `PASS`, page yang dihapus manual dibuat ulang, hasil terbaca lewat daftar dan detail (BE-22.2, langkah terakhir butuh function 29) | 1 |
 
 Jalankan hanya file yang sudah ada di branch-mu.
 
@@ -577,11 +580,11 @@ set MOODLE_TEACHER_USERNAME=
 set MOODLE_TEACHER_PASSWORD=
 ```
 
-Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **40 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
+Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **41 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
 
 Baris terakhir (mengosongkan variabel) wajib dijalankan agar `pytest` biasa tidak ikut memanggil Moodle.
 
-Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`, `Structure Execution Test`, `Student Access Test`, `Verification Test`, `Student Activity Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
+Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`, `Structure Execution Test`, `Student Access Test`, `Verification Test`, `Student Activity Test`, `Execution API Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
 
 ### 10.3 Cek mata sebagai mahasiswa (untuk bukti PR)
 
@@ -950,7 +953,7 @@ Kalau plugin lupa dipindah, core tetap ter-upgrade, tetapi plugin berstatus *Mis
 2. **Plugins overview**: Capstone Bridge berstatus normal (bukan *Missing from disk*).
 3. *Site administration → Development → Purge caches → Purge all caches*.
 4. Jalankan `curl.exe` bagian 7.3 dengan token lama. `release` harus `5.2.x+`.
-5. Jalankan test live bagian 10.2. Target sama: **40 passed**.
+5. Jalankan test live bagian 10.2. Target sama: **41 passed**.
 
 Token, service *Capstone Integration*, dan akun `mhs.uji` tidak perlu dibuat ulang.
 
@@ -988,7 +991,7 @@ Database Moodle tidak bisa diturunkan versinya tanpa backup, jadi langkah 15.1 w
 - [ ] Akun Moodle `mhs.uji` ada.
 - [ ] `MOODLE_BASE_URL` sama persis dengan alamat Moodle di browser; `.env` tidak muncul di `git status`.
 - [ ] `uv run pytest` tidak memiliki test Moodle yang gagal.
-- [ ] Test live (10.2): 40 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
+- [ ] Test live (10.2): 41 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
 - [ ] Skenario 1–15 (11.3) sesuai hasil yang diharapkan.
 - [ ] Cek mata (10.3 dan 11.4) sesuai.
 - [ ] Demo student access (10.4): `Hasil: student access TERBUKTI.` pada course hasil eksekusi, termasuk keempat jenis activity.

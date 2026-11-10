@@ -14,6 +14,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.activity import Activity
+from src.models.content import Content
 from src.models.course_plan_week import CoursePlanWeek
 from src.models.execution_operation import (
     ExecutionOperation as ExecutionOperationEntity,
@@ -185,11 +187,21 @@ class ExecutionRepository:
     async def _to_record(self, entity: MoodleExecutionEntity) -> ExecutionRecord:
         rows = (
             await self._session.execute(
-                select(ExecutionOperationEntity, CoursePlanWeek.week_number)
+                select(
+                    ExecutionOperationEntity,
+                    CoursePlanWeek.week_number,
+                    CoursePlanWeek.title,
+                    Content.title,
+                    Activity.title,
+                )
                 .outerjoin(
                     CoursePlanWeek,
                     ExecutionOperationEntity.course_plan_week_id == CoursePlanWeek.id,
                 )
+                # Learning material/resource tersimpan di ``contents``,
+                # assignment/quiz di ``activities`` (BE-20).
+                .outerjoin(Content, ExecutionOperationEntity.content_id == Content.id)
+                .outerjoin(Activity, ExecutionOperationEntity.content_id == Activity.id)
                 .where(ExecutionOperationEntity.execution_id == entity.id)
                 .order_by(
                     CoursePlanWeek.week_number.asc().nulls_last(),
@@ -199,7 +211,14 @@ class ExecutionRepository:
             )
         ).all()
         operations = tuple(
-            _to_operation(operation, week_number) for operation, week_number in rows
+            _to_operation(
+                operation,
+                week_number,
+                week_title
+                if operation.operation_type == OperationType.SECTION
+                else content_title or activity_title,
+            )
+            for operation, week_number, week_title, content_title, activity_title in rows
         )
         return ExecutionRecord(
             id=entity.id,
@@ -219,7 +238,9 @@ class ExecutionRepository:
 
 
 def _to_operation(
-    entity: ExecutionOperationEntity, week_number: int | None
+    entity: ExecutionOperationEntity,
+    week_number: int | None,
+    title: str | None = None,
 ) -> ExecutionOperationRecord:
     return ExecutionOperationRecord(
         id=entity.id,
@@ -233,4 +254,5 @@ def _to_operation(
         error_message=entity.error_message,
         retry_count=entity.retry_count,
         week_number=week_number,
+        title=title,
     )
