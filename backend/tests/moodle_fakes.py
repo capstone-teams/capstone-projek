@@ -193,6 +193,12 @@ class FakeMoodle:
                 {"id": self._take_section_id(), "section": 0, "name": "", "summary": "", "visible": 1, "modules": []}
             ]
             return [{"id": course_id, "shortname": shortname}]
+        if wsfunction == "core_courseformat_update_course" and params.get("action") in ("section_show", "section_hide"):
+            ids = {int(value) for key, value in params.items() if key.startswith("ids[")}
+            for section in self.sections[int(params["courseid"])]:
+                if section["id"] in ids:
+                    section["visible"] = int(params["action"] == "section_show")
+            return "[]"
         if wsfunction == "core_courseformat_update_course":
             course_sections = self.sections[int(params["courseid"])]
             course_sections.append(
@@ -230,3 +236,57 @@ class FakeMoodle:
     def _take_section_id(self) -> int:
         self._next_section_id += 1
         return self._next_section_id
+
+
+# --- Akses mahasiswa (BE-16.3) -------------------------------------------------
+
+STUDENT_COURSE_ID = 2
+STUDENT_ACCOUNT = ("mhs.uji", "Mhs-pass-1#")
+OTHER_STUDENT_ACCOUNT = ("mhs.uji2", "Mhs-pass-2#")
+STUDENT_ROLE_ID = 5
+
+
+class StudentMoodle(FakeMoodle):
+    """Moodle tiruan dengan login mahasiswa dan pemeriksaan enrolment."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.passwords = {STUDENT_ACCOUNT[0]: STUDENT_ACCOUNT[1], OTHER_STUDENT_ACCOUNT[0]: OTHER_STUDENT_ACCOUNT[1]}
+        self.users[20] = {"id": 20, "username": STUDENT_ACCOUNT[0], "firstname": "Mahasiswa", "lastname": "Uji",
+                          "email": "mhs.uji@example.com"}
+        self.users[21] = {"id": 21, "username": OTHER_STUDENT_ACCOUNT[0], "firstname": "Mahasiswa", "lastname": "Dua",
+                          "email": "mhs.uji2@example.com"}
+        self.sections[STUDENT_COURSE_ID] += [
+            {"id": 203, "section": 2, "name": "Minggu 2", "summary": "", "visible": 1, "modules": []},
+            {"id": 204, "section": 3, "name": "Minggu 3", "summary": "", "visible": 1, "modules": []},
+        ]
+        self.login_requests: list[dict[str, str]] = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        body = {key: values[0] for key, values in parse_qs(request.content.decode()).items()}
+        if request.url.path.endswith("/login/token.php"):
+            self.login_requests.append(body)
+            if self.passwords.get(body.get("username")) != body.get("password"):
+                return httpx.Response(200, json={"error": "Invalid login, please try again", "errorcode": "invalidlogin"})
+            return httpx.Response(200, json={"token": f"student-token-{body['username']}"})
+        token = body.get("wstoken", "")
+        if token.startswith("student-token-"):
+            return httpx.Response(200, json=self._as_student(token.removeprefix("student-token-"), body))
+        return super().handler(request)
+
+    def _as_student(self, username: str, body: dict[str, str]):
+        if body.get("wsfunction") != "core_course_get_contents":
+            return moodle_exception("accessexception", "Access control exception", "webservice_access_exception")
+        course_id = int(body["courseid"])
+        user_id = next(uid for uid, user in self.users.items() if user["username"] == username)
+        enrolled = STUDENT_ROLE_ID in self.enrolments.get(course_id, {}).get(user_id, set())
+        if not enrolled or not self.courses[course_id].get("visible", 1):
+            return moodle_exception("requireloginerror", "Course or activity not accessible.", "require_login_exception")
+        return [
+            {**section, "uservisible": bool(section["visible"])}
+            for section in self.sections[course_id]
+            if section["visible"] or section["section"] == 0
+        ]
+
+    def enrol(self, user_id: int) -> None:
+        self.enrolments.setdefault(STUDENT_COURSE_ID, {}).setdefault(user_id, set()).add(STUDENT_ROLE_ID)
