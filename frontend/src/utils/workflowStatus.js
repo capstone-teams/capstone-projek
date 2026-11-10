@@ -146,11 +146,13 @@ export const WORKFLOW_EVENT = {
   PLAN_REJECTED: 'WORKFLOW_PLAN_REJECTED',
   // Satu operasi eksekusi ke Moodle (BE-17.1), mis. satu section mingguan.
   MOODLE_OPERATION: 'WORKFLOW_MOODLE_OPERATION',
-  // Hasil validasi dan penyelesaian per konten/minggu (BE-19.3).
+  // Generation konten (BE-19.3): hasil per konten dan per minggu, lalu keputusan dosen (BE-19.2).
   CONTENT_VALIDATED: 'WORKFLOW_CONTENT_VALIDATED',
   CONTENT_VALIDATION_FAILED: 'WORKFLOW_CONTENT_VALIDATION_FAILED',
   CONTENT_FAILED: 'WORKFLOW_CONTENT_FAILED',
   WEEK_COMPLETED: 'WORKFLOW_WEEK_COMPLETED',
+  CONTENTS_APPROVED: 'WORKFLOW_CONTENTS_APPROVED',
+  CONTENTS_REJECTED: 'WORKFLOW_CONTENTS_REJECTED',
   COMPLETED: 'WORKFLOW_COMPLETED',
   FAILED: 'WORKFLOW_FAILED',
 };
@@ -166,10 +168,12 @@ export const WORKFLOW_EVENT_LABELS = {
   [WORKFLOW_EVENT.PLAN_APPROVED]: 'Rencana disetujui',
   [WORKFLOW_EVENT.PLAN_REJECTED]: 'Rencana ditolak',
   [WORKFLOW_EVENT.MOODLE_OPERATION]: 'Operasi Moodle',
-  [WORKFLOW_EVENT.CONTENT_VALIDATED]: 'Konten tervalidasi',
-  [WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED]: 'Validasi konten gagal',
-  [WORKFLOW_EVENT.CONTENT_FAILED]: 'Konten gagal dihasilkan',
-  [WORKFLOW_EVENT.WEEK_COMPLETED]: 'Minggu konten selesai',
+  [WORKFLOW_EVENT.CONTENT_VALIDATED]: 'Konten lolos validasi',
+  [WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED]: 'Konten tidak lolos validasi',
+  [WORKFLOW_EVENT.CONTENT_FAILED]: 'Konten gagal dibuat',
+  [WORKFLOW_EVENT.WEEK_COMPLETED]: 'Konten minggu selesai',
+  [WORKFLOW_EVENT.CONTENTS_APPROVED]: 'Konten disetujui',
+  [WORKFLOW_EVENT.CONTENTS_REJECTED]: 'Konten ditolak',
   [WORKFLOW_EVENT.COMPLETED]: 'Workflow selesai',
   [WORKFLOW_EVENT.FAILED]: 'Workflow gagal',
 };
@@ -256,9 +260,12 @@ export function applyWorkflowEvent(workflow, event) {
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: WORKFLOW_STAGE.INSTRUCTOR_REVIEW };
     case WORKFLOW_EVENT.PLAN_GENERATED:
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
-    // Keputusan dosen tidak mengubah tahap; updated_at baru membuat halaman yang memantau memuat ulang datanya.
+    // Keputusan dosen tidak mengubah tahap; updated_at baru membuat halaman yang memantau
+    // (rencana, review konten) memuat ulang datanya.
     case WORKFLOW_EVENT.PLAN_APPROVED:
     case WORKFLOW_EVENT.PLAN_REJECTED:
+    case WORKFLOW_EVENT.CONTENTS_APPROVED:
+    case WORKFLOW_EVENT.CONTENTS_REJECTED:
       return next;
     case WORKFLOW_EVENT.COMPLETED:
       return { ...next, status: WORKFLOW_API_STATUS.COMPLETED, stage: null };

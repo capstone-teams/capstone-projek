@@ -255,7 +255,7 @@ describe('FE-16.2 Matriks Progres & Regenerasi Item', () => {
     // Sel Selesai tidak punya tombol pratinjau isi konten
     expect(container.textContent).toContain('✓ Selesai');
     expect(container.textContent).toContain('v1');
-    expect(container.querySelector('button[aria-label*="Learning Material"]')).toBeNull();
+    expect(container.querySelector('button[aria-label*="Materi pembelajaran"]')).toBeNull();
 
     // Minggu 2 yang belum selesai menampilkan Menunggu
     expect(container.textContent).toContain('Menunggu');
@@ -386,7 +386,7 @@ describe('FE-16.2 Matriks Progres & Regenerasi Item', () => {
       events: [],
     });
 
-    const regenBtn = container.querySelector('button[aria-label*="Regenerasi Minggu 1 Learning Resource"]');
+    const regenBtn = container.querySelector('button[aria-label*="Regenerasi Minggu 1 Sumber belajar"]');
     expect(regenBtn.disabled).toBe(true);
   });
 });
