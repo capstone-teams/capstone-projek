@@ -194,7 +194,7 @@ describe('FE-12.1 halaman Rencana', () => {
 
   it('kegagalan regenerasi pada versi yang ditolak menawarkan Generate ulang lewat regenerasi', async () => {
     context.workflow = workflowAt(null, 'FAILED');
-    context.events = [event('WORKFLOW_FAILED', 'validation', 'Validasi rencana gagal.')];
+    context.events = [event('WORKFLOW_STAGE_STARTED', 'course_planning'), event('WORKFLOW_STAGE_STARTED', 'validation'), event('WORKFLOW_FAILED', 'validation', 'Validasi rencana gagal.')];
     plans.getWorkflowPlan.mockResolvedValue(plan({ status: 'REJECTED' }));
     await renderPlan();
     expect(node.textContent).toContain('Validasi rencana gagal.');

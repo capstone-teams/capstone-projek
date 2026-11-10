@@ -78,9 +78,9 @@ const STATUS_BY_STAGE = {
 };
 
 /**
- * Urutan tahap workflow yang tersedia hingga M03 (DL-012): pemrosesan dan analisis RPS, course planning beserta
- * validasinya, review dosen, lalu eksekusi struktur ke Moodle. Tahap yang belum dijalankan backend tampil sebagai
- * menunggu. Tahap M04 (pembuatan konten, verifikasi) ikut tampil begitu backend menerbitkan event-nya.
+ * Urutan tahap workflow hingga M04 (DL-012): pemrosesan dan analisis RPS, course planning, validasi (rencana dan
+ * konten), review dosen, pembuatan konten, lalu eksekusi ke Moodle (struktur dan FULL). Tahap yang belum dijalankan
+ * backend tampil sebagai menunggu. Verifikasi menyusul begitu backend menyediakannya (BE-22.1).
  */
 export const WORKFLOW_PIPELINE = [
   WORKFLOW_STAGE.RPS_PROCESSING,
@@ -88,6 +88,7 @@ export const WORKFLOW_PIPELINE = [
   WORKFLOW_STAGE.COURSE_PLANNING,
   WORKFLOW_STAGE.VALIDATION,
   WORKFLOW_STAGE.INSTRUCTOR_REVIEW,
+  WORKFLOW_STAGE.CONTENT_GENERATION,
   WORKFLOW_STAGE.MOODLE_EXECUTION,
 ];
 
@@ -188,7 +189,6 @@ export function eventTypeOf(event) {
     case WORKFLOW_EVENT.WEEK_COMPLETED:
       return EVENT_TYPE.AKTIVITAS_AGENT;
     case WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED:
-      return EVENT_TYPE.RETRY_FIX;
     case WORKFLOW_EVENT.CONTENT_FAILED:
       return EVENT_TYPE.ERROR_FAILURE;
     case WORKFLOW_EVENT.MOODLE_OPERATION:
@@ -304,7 +304,7 @@ export const STAGE_LABELS = {
   [WORKFLOW_STAGE.RPS_ANALYSIS]: 'Analisis RPS',
   [WORKFLOW_STAGE.COURSE_PLANNING]: 'Penyusunan rencana',
   [WORKFLOW_STAGE.CONTENT_GENERATION]: 'Pembuatan konten',
-  [WORKFLOW_STAGE.VALIDATION]: 'Validasi rencana',
+  [WORKFLOW_STAGE.VALIDATION]: 'Validasi',
   [WORKFLOW_STAGE.INSTRUCTOR_REVIEW]: 'Review dosen',
   [WORKFLOW_STAGE.MOODLE_EXECUTION]: 'Eksekusi ke Moodle',
   [WORKFLOW_STAGE.VERIFICATION]: 'Verifikasi',
@@ -391,8 +391,12 @@ export const retryingStageOf = (events = []) => lastEvent(events, WORKFLOW_EVENT
 /** Event WORKFLOW_FAILED terakhir bila kegagalan workflow terjadi saat menyusun atau memvalidasi course plan. */
 export function coursePlanFailureOf(workflow, events = []) {
   if (workflow?.status !== WORKFLOW_API_STATUS.FAILED) return null;
-  const failed = lastEvent(events, WORKFLOW_EVENT.FAILED);
-  return failed && COURSE_PLAN_STAGES.includes(failed.stage) ? failed : null;
+  const index = events.map((event) => event.event === WORKFLOW_EVENT.FAILED).lastIndexOf(true);
+  const failed = events[index];
+  if (!failed || !COURSE_PLAN_STAGES.includes(failed.stage)) return null;
+  // Tahap validasi juga dipakai konten (M04): kegagalannya milik rencana hanya bila tahap kerja sebelumnya course planning.
+  if (failed.stage === WORKFLOW_STAGE.VALIDATION && workStageBefore(events, index) !== WORKFLOW_STAGE.COURSE_PLANNING) return null;
+  return failed;
 }
 
 // ---- Tindakan yang ditunggu saat WAITING_FOR_REVIEW (DL-012)
@@ -404,32 +408,66 @@ export const AWAITED_ACTION = {
   REVISE_PLAN: 'REVISE_PLAN',
   EXECUTE_STRUCTURE: 'EXECUTE_STRUCTURE',
   GENERATE_CONTENT: 'GENERATE_CONTENT',
+  REVIEW_CONTENT: 'REVIEW_CONTENT',
+  REVISE_CONTENT: 'REVISE_CONTENT',
+  EXECUTE_FULL: 'EXECUTE_FULL',
 };
 
-/** title/description untuk pengguna; page: tab Generator AI tujuan tautan cepat. */
+/** title/description untuk pengguna; page: tab Generator AI tujuan tautan cepat; secondary: tautan tambahan. */
 export const AWAITED_ACTION_META = {
   [AWAITED_ACTION.START_PLANNING]: { title: 'Mulai course planning', description: 'Analisis RPS selesai. Mulai penyusunan course plan dari hasil analisis.', page: 'plan', linkLabel: 'Buka halaman Rencana' },
   [AWAITED_ACTION.REVIEW_PLAN]: { title: 'Review course plan', description: 'Course plan selesai disusun. Periksa, lalu setujui atau tolak dengan catatan revisi.', page: 'plan', linkLabel: 'Buka Plan Review' },
   [AWAITED_ACTION.REVISE_PLAN]: { title: 'Regenerasi course plan', description: 'Course plan ditolak. Susun ulang rencana berdasarkan catatan revisi.', page: 'plan', linkLabel: 'Buka Plan Review' },
   [AWAITED_ACTION.EXECUTE_STRUCTURE]: { title: 'Eksekusi struktur', description: 'Course plan disetujui. Buat struktur mingguan di kursus Moodle target.', page: 'publish', linkLabel: 'Buka halaman eksekusi' },
-  [AWAITED_ACTION.GENERATE_CONTENT]: { title: 'Generate konten', description: 'Struktur kursus sudah dibuat di Moodle. Lanjutkan dengan generate konten mingguan.', page: 'content', linkLabel: 'Buka halaman Konten' },
+  [AWAITED_ACTION.GENERATE_CONTENT]: { title: 'Generate konten', description: 'Struktur kursus sudah dibuat di Moodle. Lanjutkan dengan generate konten mingguan.', page: 'review', linkLabel: 'Buka halaman Review' },
+  [AWAITED_ACTION.REVIEW_CONTENT]: { title: 'Review konten', description: 'Konten mingguan selesai dibuat dan divalidasi. Periksa, lalu setujui, tolak, atau regenerasi konten.', page: 'review', linkLabel: 'Buka halaman Review' },
+  [AWAITED_ACTION.REVISE_CONTENT]: { title: 'Regenerasi konten', description: 'Sebagian konten ditolak. Regenerasi konten tersebut berdasarkan catatan revisi.', page: 'review', linkLabel: 'Buka halaman Review' },
+  [AWAITED_ACTION.EXECUTE_FULL]: {
+    title: 'Eksekusi FULL',
+    description: 'Konten telah disetujui. Pastikan seluruh konten disetujui, lalu kirim struktur dan konten ke Moodle.',
+    page: 'publish',
+    linkLabel: 'Buka halaman eksekusi FULL',
+    secondary: { page: 'review', label: 'Buka halaman Review' },
+  },
 };
 
 const completedStage = (event, stages) => event.event === WORKFLOW_EVENT.STAGE_COMPLETED && stages.includes(event.stage);
+const CONTENT_RESULT_EVENTS = [WORKFLOW_EVENT.CONTENT_VALIDATED, WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED, WORKFLOW_EVENT.CONTENT_FAILED, WORKFLOW_EVENT.WEEK_COMPLETED];
+// Operasi activity eksekusi FULL berpesan "Minggu N - Jenis ..."; operasi section hanya "Minggu N ...".
+const isActivityOperation = (event) => / - (Learning Material|Learning Resource|Assignment|Quiz) /.test(event.message ?? '');
+
+/** Tahap kerja (bukan validasi) yang terakhir dimulai sebelum indeks tertentu: validasi milik rencana atau konten. */
+function workStageBefore(events, index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event.event === WORKFLOW_EVENT.STAGE_STARTED && event.stage && event.stage !== WORKFLOW_STAGE.VALIDATION) return event.stage;
+  }
+  return null;
+}
 
 /**
- * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap M03:
- * eksekusi selesai -> generate konten; rencana disetujui -> eksekusi struktur; rencana ditolak -> regenerasi;
- * rencana tersusun -> review course plan; analisis RPS selesai -> mulai course planning. null bila workflow tidak
- * sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
+ * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap:
+ * - M04: konten disetujui -> eksekusi FULL; konten ditolak -> regenerasi konten; konten selesai dibuat/divalidasi
+ *   -> review konten; eksekusi FULL selesai -> verifikasi (belum tersedia, null);
+ * - M03: eksekusi struktur selesai -> generate konten; rencana disetujui -> eksekusi struktur; rencana ditolak ->
+ *   regenerasi; rencana tersusun -> review course plan; analisis RPS selesai -> mulai course planning.
+ * null bila workflow tidak sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
  */
 export function awaitedActionOf(workflow, events = []) {
   if (!needsInstructorAction(workflow)) return null;
-  for (const event of [...events].reverse()) {
-    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION || completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return AWAITED_ACTION.GENERATE_CONTENT;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION) return isActivityOperation(event) ? null : AWAITED_ACTION.GENERATE_CONTENT;
+    if (completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return AWAITED_ACTION.GENERATE_CONTENT;
+    if (event.event === WORKFLOW_EVENT.CONTENTS_APPROVED) return AWAITED_ACTION.EXECUTE_FULL;
+    if (event.event === WORKFLOW_EVENT.CONTENTS_REJECTED) return AWAITED_ACTION.REVISE_CONTENT;
+    if (CONTENT_RESULT_EVENTS.includes(event.event) || completedStage(event, [WORKFLOW_STAGE.CONTENT_GENERATION])) return AWAITED_ACTION.REVIEW_CONTENT;
+    if (completedStage(event, [WORKFLOW_STAGE.VALIDATION])) {
+      return workStageBefore(events, index) === WORKFLOW_STAGE.CONTENT_GENERATION ? AWAITED_ACTION.REVIEW_CONTENT : AWAITED_ACTION.REVIEW_PLAN;
+    }
     if (event.event === WORKFLOW_EVENT.PLAN_APPROVED) return AWAITED_ACTION.EXECUTE_STRUCTURE;
     if (event.event === WORKFLOW_EVENT.PLAN_REJECTED) return AWAITED_ACTION.REVISE_PLAN;
-    if (event.event === WORKFLOW_EVENT.PLAN_GENERATED || completedStage(event, COURSE_PLAN_STAGES)) return AWAITED_ACTION.REVIEW_PLAN;
+    if (event.event === WORKFLOW_EVENT.PLAN_GENERATED || completedStage(event, [WORKFLOW_STAGE.COURSE_PLANNING])) return AWAITED_ACTION.REVIEW_PLAN;
     if (completedStage(event, [WORKFLOW_STAGE.RPS_ANALYSIS])) return AWAITED_ACTION.START_PLANNING;
   }
   return null;

@@ -37,9 +37,10 @@ const executed = () => [...executing(), ev('WORKFLOW_STAGE_COMPLETED', 'moodle_e
 
 describe('FE-10.4 tahap M03 pada monitoring', () => {
   it('urutan tahap mencakup PLANNING_COURSE, VALIDATING, WAITING_FOR_REVIEW, dan EXECUTING_TO_MOODLE', () => {
-    expect(WORKFLOW_PIPELINE).toEqual(['rps_processing', 'rps_analysis', 'course_planning', 'validation', 'instructor_review', 'moodle_execution']);
+    // M04 menambahkan pembuatan konten sebelum eksekusi (FE-19.1).
+    expect(WORKFLOW_PIPELINE).toEqual(['rps_processing', 'rps_analysis', 'course_planning', 'validation', 'instructor_review', 'content_generation', 'moodle_execution']);
     const labels = deriveStages(wf(), []).map((s) => s.label);
-    expect(labels).toEqual(['Pemrosesan RPS', 'Analisis RPS', 'Penyusunan rencana', 'Validasi rencana', 'Review dosen', 'Eksekusi ke Moodle']);
+    expect(labels).toEqual(['Pemrosesan RPS', 'Analisis RPS', 'Penyusunan rencana', 'Validasi', 'Review dosen', 'Pembuatan konten', 'Eksekusi ke Moodle']);
   });
 
   it('menandai keadaan tiap tahap M03 dari status dan event', () => {
@@ -110,10 +111,10 @@ describe('FE-10.4 tampilan monitoring', () => {
     expect(quickLink().getAttribute('href')).toBe('/course/2/ai/publish');
   });
 
-  it('eksekusi selesai: menunggu generate konten dengan tautan ke halaman Konten', async () => {
+  it('eksekusi struktur selesai: menunggu generate konten dengan tautan ke halaman Review (FE-17)', async () => {
     await showPanel(wf(), executed());
     expect(node.textContent).toContain('Menunggu tindakan Anda: Generate konten');
-    expect(quickLink().getAttribute('href')).toBe('/course/2/ai/content');
+    expect(quickLink().getAttribute('href')).toBe('/course/2/ai/review');
   });
 
   it('tanpa linkBase keterangan tetap tampil tanpa tautan', async () => {
