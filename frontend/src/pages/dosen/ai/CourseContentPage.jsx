@@ -1,28 +1,114 @@
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
-import { getContent } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
+import { useOnChange } from '../../../hooks/useOnChange';
+import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
+import { getContent } from '../../../services/courseService';
+import { PLAN_STATUS, getWorkflowPlan } from '../../../services/coursePlanService';
+import { listWorkflowContents } from '../../../services/contentService';
+import { contentGenerationProgressOf, isWorkflowFinished } from '../../../utils/workflowStatus';
 import { Badge, Card, EmptyState, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import ContentGeneratePanel from '../../../components/ai/course/ContentGeneratePanel';
 import WeekContentDetail from '../../../components/ai/course/WeekContentDetail';
-import PendingFeatureNote from '../../../components/ai/PendingFeatureNote';
+import WorkflowContentTriggerCard from '../../../components/ai/course/WorkflowContentTriggerCard';
 
 const CAN_GENERATE = ['PLAN_APPROVED', 'WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 const CAN_REGENERATE = ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 const BEFORE_PLAN_APPROVED = ['CREATED', 'PLANNING', 'WAITING_PLAN_REVIEW'];
 
-/** Konten mingguan project kursus; kursus tanpa project belum dapat membuat konten (endpoint generate belum ada). */
+/**
+ * Halaman Generate Weekly Content (FE-16):
+ * - Bila `workflowId` tersedia (backend nyata / alur berbasis workflow), memakai API
+ *   `/workflows/{id}/plan` dan `/workflows/{id}/contents/...` (FE-16.1).
+ * - Bila hanya ada project kursus legacy tanpa workflow (mode mock E2E), memakai `<ProjectContent />`.
+ */
 export default function CourseContentPage() {
-  const { course } = useCourse();
-  if (!course.id) {
+  const { course, workflow: projectWorkflow, workflowId: projectWorkflowId, events: projectEvents = [], refresh } = useCourse();
+  const [params] = useSearchParams();
+  const workflowParam = params.get('workflow');
+  const ownWorkflowId = workflowParam && workflowParam !== projectWorkflowId ? workflowParam : null;
+  const own = useWorkflowMonitor(ownWorkflowId);
+
+  const workflowId = workflowParam || projectWorkflowId;
+  const workflow = ownWorkflowId ? own.workflow : projectWorkflow;
+  const events = ownWorkflowId ? own.events : projectEvents;
+
+  if (workflowId) {
     return (
-      <Card title="Konten mingguan">
-        <p>Konten mingguan disusun dari course plan yang sudah disetujui.</p>
-        <PendingFeatureNote>Generate konten mingguan belum tersedia.</PendingFeatureNote>
-      </Card>
+      <WorkflowContent
+        key={workflowId}
+        workflowId={workflowId}
+        workflow={workflow}
+        events={events}
+        onWorkflowUpdated={() => {
+          own.reload?.();
+          return refresh?.();
+        }}
+      />
     );
   }
-  return <ProjectContent />;
+
+  if (course?.id) {
+    return <ProjectContent />;
+  }
+
+  return (
+    <Card title="Konten mingguan">
+      <EmptyState title="Belum ada workflow untuk kursus ini.">
+        Unggah dan proses RPS terlebih dahulu di tab <Link to="../rps" relative="path">RPS</Link>.
+      </EmptyState>
+    </Card>
+  );
+}
+
+function WorkflowContent({ workflowId, workflow, events = [], onWorkflowUpdated }) {
+  const plan = useApi(() => getWorkflowPlan(workflowId), [workflowId]);
+  const contents = useApi(() => listWorkflowContents(workflowId).catch(() => []), [workflowId]);
+
+  const signature = workflow ? `${workflow.status}|${workflow.stage ?? ''}|${workflow.updated_at ?? ''}` : null;
+  useOnChange(signature, () => {
+    contents.reload({ silent: true });
+    if (!plan.data || plan.data.status !== PLAN_STATUS.APPROVED || isWorkflowFinished(workflow)) {
+      plan.reload({ silent: true });
+    }
+  }, 300);
+
+  const existingItems = contents.data ?? [];
+  const generating = Boolean(contentGenerationProgressOf(workflow, events));
+
+  return (
+    <div className="stack">
+      <WorkflowContentTriggerCard
+        workflowId={workflowId}
+        workflow={workflow}
+        events={events}
+        plan={plan.data}
+        planLoading={plan.loading}
+        planError={plan.error}
+        onRetryPlan={() => plan.reload()}
+        hasExistingContents={existingItems.length > 0}
+        onStarted={() => {
+          onWorkflowUpdated?.();
+          contents.reload({ silent: true });
+        }}
+      />
+
+      {!generating && existingItems.length > 0 && (
+        <Card
+          title="Status Konten Tersimpan"
+          actions={
+            <Link to="../review" relative="path" className="btn btn--secondary btn--sm">
+              Buka Tab Review →
+            </Link>
+          }
+        >
+          <p className="text-sm text-muted">
+            Saat ini tersedia <strong>{existingItems.length}</strong> item konten mingguan yang telah dihasilkan untuk workflow ini.
+          </p>
+        </Card>
+      )}
+    </div>
+  );
 }
 
 function ProjectContent() {

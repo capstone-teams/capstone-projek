@@ -144,6 +144,11 @@ export const WORKFLOW_EVENT = {
   PLAN_REJECTED: 'WORKFLOW_PLAN_REJECTED',
   // Satu operasi eksekusi ke Moodle (BE-17.1), mis. satu section mingguan.
   MOODLE_OPERATION: 'WORKFLOW_MOODLE_OPERATION',
+  // Hasil validasi dan penyelesaian per konten/minggu (BE-19.3).
+  CONTENT_VALIDATED: 'WORKFLOW_CONTENT_VALIDATED',
+  CONTENT_VALIDATION_FAILED: 'WORKFLOW_CONTENT_VALIDATION_FAILED',
+  CONTENT_FAILED: 'WORKFLOW_CONTENT_FAILED',
+  WEEK_COMPLETED: 'WORKFLOW_WEEK_COMPLETED',
   COMPLETED: 'WORKFLOW_COMPLETED',
   FAILED: 'WORKFLOW_FAILED',
 };
@@ -159,6 +164,10 @@ export const WORKFLOW_EVENT_LABELS = {
   [WORKFLOW_EVENT.PLAN_APPROVED]: 'Rencana disetujui',
   [WORKFLOW_EVENT.PLAN_REJECTED]: 'Rencana ditolak',
   [WORKFLOW_EVENT.MOODLE_OPERATION]: 'Operasi Moodle',
+  [WORKFLOW_EVENT.CONTENT_VALIDATED]: 'Konten tervalidasi',
+  [WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED]: 'Validasi konten gagal',
+  [WORKFLOW_EVENT.CONTENT_FAILED]: 'Konten gagal dihasilkan',
+  [WORKFLOW_EVENT.WEEK_COMPLETED]: 'Minggu konten selesai',
   [WORKFLOW_EVENT.COMPLETED]: 'Workflow selesai',
   [WORKFLOW_EVENT.FAILED]: 'Workflow gagal',
 };
@@ -169,8 +178,12 @@ export function eventTypeOf(event) {
     case WORKFLOW_EVENT.RETRY:
       return EVENT_TYPE.RETRY_FIX;
     case WORKFLOW_EVENT.FAILED:
+    case WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED:
+    case WORKFLOW_EVENT.CONTENT_FAILED:
       return EVENT_TYPE.ERROR_FAILURE;
     case WORKFLOW_EVENT.PLAN_GENERATED:
+    case WORKFLOW_EVENT.CONTENT_VALIDATED:
+    case WORKFLOW_EVENT.WEEK_COMPLETED:
       return EVENT_TYPE.AKTIVITAS_AGENT;
     case WORKFLOW_EVENT.MOODLE_OPERATION:
       return EVENT_TYPE.OPERASI_MOODLE;
@@ -228,6 +241,10 @@ export function applyWorkflowEvent(workflow, event) {
     case WORKFLOW_EVENT.STAGE_STARTED:
     case WORKFLOW_EVENT.STAGE_PROGRESS:
     case WORKFLOW_EVENT.MOODLE_OPERATION:
+    case WORKFLOW_EVENT.CONTENT_VALIDATED:
+    case WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED:
+    case WORKFLOW_EVENT.CONTENT_FAILED:
+    case WORKFLOW_EVENT.WEEK_COMPLETED:
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING, stage: event.stage ?? workflow.stage };
     case WORKFLOW_EVENT.STAGE_COMPLETED:
       return { ...next, status: WORKFLOW_API_STATUS.RUNNING };
@@ -406,5 +423,63 @@ export function awaitedActionOf(workflow, events = []) {
     if (event.event === WORKFLOW_EVENT.PLAN_GENERATED || completedStage(event, COURSE_PLAN_STAGES)) return AWAITED_ACTION.REVIEW_PLAN;
     if (completedStage(event, [WORKFLOW_STAGE.RPS_ANALYSIS])) return AWAITED_ACTION.START_PLANNING;
   }
+  return null;
+}
+
+// ---- Content generation (BE-19.3, FE-16)
+
+/** Tahap backend yang dijalankan saat konten disusun: GENERATING_CONTENT lalu VALIDATING. */
+export const CONTENT_GENERATION_STAGES = [WORKFLOW_STAGE.CONTENT_GENERATION, WORKFLOW_STAGE.VALIDATION];
+
+/** Workflow sedang menjalankan proses background di luar tahap tunggu review dosen. */
+export function isWorkflowBusy(workflow) {
+  if (!workflow) return false;
+  if (workflow.status === WORKFLOW_API_STATUS.QUEUED) return true;
+  return workflow.status === WORKFLOW_API_STATUS.RUNNING && workflow.stage !== WORKFLOW_STAGE.INSTRUCTOR_REVIEW;
+}
+
+const CONTENT_STAGE_EVENTS = [
+  WORKFLOW_EVENT.CONTENT_VALIDATED,
+  WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED,
+  WORKFLOW_EVENT.CONTENT_FAILED,
+  WORKFLOW_EVENT.WEEK_COMPLETED,
+];
+
+function isContentGenerationActiveContext(events = []) {
+  for (const event of [...events].reverse()) {
+    if (CONTENT_STAGE_EVENTS.includes(event.event)) return true;
+    if (event.event === WORKFLOW_EVENT.STAGE_STARTED) {
+      if (event.stage === WORKFLOW_STAGE.CONTENT_GENERATION) return true;
+      if (event.stage === WORKFLOW_STAGE.COURSE_PLANNING) return false;
+    }
+    if (event.stage === WORKFLOW_STAGE.CONTENT_GENERATION) return true;
+  }
+  return false;
+}
+
+/**
+ * Tahap content generation yang sedang berjalan: GENERATING_CONTENT, VALIDATING, atau RETRYING
+ * pada tahap content_generation; null bila workflow tidak sedang membuat konten.
+ */
+export function contentGenerationProgressOf(workflow, events = []) {
+  const status = workflowStatusOf(workflow);
+  if (status === WORKFLOW_STATUS.GENERATING_CONTENT) return status;
+  if (status === WORKFLOW_STATUS.RETRYING) {
+    const retry = lastEvent(events, WORKFLOW_EVENT.RETRY);
+    return retry?.stage === WORKFLOW_STAGE.CONTENT_GENERATION ? WORKFLOW_STATUS.RETRYING : null;
+  }
+  if (status === WORKFLOW_STATUS.VALIDATING) {
+    return isContentGenerationActiveContext(events) ? WORKFLOW_STATUS.VALIDATING : null;
+  }
+  return null;
+}
+
+/** Event WORKFLOW_FAILED terakhir bila kegagalan workflow terjadi pada tahap content generation. */
+export function contentGenerationFailureOf(workflow, events = []) {
+  if (workflow?.status !== WORKFLOW_API_STATUS.FAILED) return null;
+  const failed = lastEvent(events, WORKFLOW_EVENT.FAILED);
+  if (!failed) return null;
+  if (failed.stage === WORKFLOW_STAGE.CONTENT_GENERATION) return failed;
+  if (failed.stage === WORKFLOW_STAGE.VALIDATION && isContentGenerationActiveContext(events)) return failed;
   return null;
 }
