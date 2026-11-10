@@ -6,9 +6,13 @@ import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
 import { getContent } from '../../../services/courseService';
 import { PLAN_STATUS, getWorkflowPlan } from '../../../services/coursePlanService';
 import { listWorkflowContents } from '../../../services/contentService';
-import { contentGenerationProgressOf, isWorkflowFinished } from '../../../utils/workflowStatus';
+import {
+  hasContentGenerationActivity,
+  isWorkflowFinished,
+} from '../../../utils/workflowStatus';
 import { Badge, Card, EmptyState, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import ContentGeneratePanel from '../../../components/ai/course/ContentGeneratePanel';
+import ContentGenerationMatrix from '../../../components/ai/course/ContentGenerationMatrix';
 import WeekContentDetail from '../../../components/ai/course/WeekContentDetail';
 import WorkflowContentTriggerCard from '../../../components/ai/course/WorkflowContentTriggerCard';
 
@@ -63,9 +67,11 @@ export default function CourseContentPage() {
 
 function WorkflowContent({ workflowId, workflow, events = [], onWorkflowUpdated }) {
   const plan = useApi(() => getWorkflowPlan(workflowId), [workflowId]);
-  const contents = useApi(() => listWorkflowContents(workflowId).catch(() => []), [workflowId]);
+  const contents = useApi(() => listWorkflowContents(workflowId), [workflowId]);
 
-  const signature = workflow ? `${workflow.status}|${workflow.stage ?? ''}|${workflow.updated_at ?? ''}` : null;
+  const signature = workflow
+    ? `${workflow.status}|${workflow.stage ?? ''}|${workflow.updated_at ?? ''}|${events.length}`
+    : null;
   useOnChange(signature, () => {
     contents.reload({ silent: true });
     if (!plan.data || plan.data.status !== PLAN_STATUS.APPROVED || isWorkflowFinished(workflow)) {
@@ -74,7 +80,7 @@ function WorkflowContent({ workflowId, workflow, events = [], onWorkflowUpdated 
   }, 300);
 
   const existingItems = contents.data ?? [];
-  const generating = Boolean(contentGenerationProgressOf(workflow, events));
+  const showMatrix = Boolean(contents.error) || hasContentGenerationActivity(workflow, events, existingItems);
 
   return (
     <div className="stack">
@@ -93,19 +99,21 @@ function WorkflowContent({ workflowId, workflow, events = [], onWorkflowUpdated 
         }}
       />
 
-      {!generating && existingItems.length > 0 && (
-        <Card
-          title="Status Konten Tersimpan"
-          actions={
-            <Link to="../review" relative="path" className="btn btn--secondary btn--sm">
-              Buka Tab Review →
-            </Link>
-          }
-        >
-          <p className="text-sm text-muted">
-            Saat ini tersedia <strong>{existingItems.length}</strong> item konten mingguan yang telah dihasilkan untuk workflow ini.
-          </p>
-        </Card>
+      {showMatrix && (
+        <ContentGenerationMatrix
+          workflowId={workflowId}
+          workflow={workflow}
+          events={events}
+          plan={plan.data}
+          contents={existingItems}
+          contentsLoading={contents.loading}
+          contentsError={contents.error}
+          onRetryContents={() => contents.reload()}
+          onRegenerated={() => {
+            onWorkflowUpdated?.();
+            contents.reload({ silent: true });
+          }}
+        />
       )}
     </div>
   );

@@ -1,3 +1,5 @@
+import { isExamWeek } from './coursePlan';
+
 // Status dan event workflow dari API monitoring (design-api §16-§17, BE-11.3). Dipakai tampilan status
 // workflow (FE-10.1) dan dashboard dosen (FE-11.1).
 //
@@ -395,6 +397,7 @@ export const AWAITED_ACTION = {
   REVISE_PLAN: 'REVISE_PLAN',
   EXECUTE_STRUCTURE: 'EXECUTE_STRUCTURE',
   GENERATE_CONTENT: 'GENERATE_CONTENT',
+  REVIEW_CONTENT: 'REVIEW_CONTENT',
 };
 
 /** title/description untuk pengguna; page: tab Generator AI tujuan tautan cepat. */
@@ -404,19 +407,24 @@ export const AWAITED_ACTION_META = {
   [AWAITED_ACTION.REVISE_PLAN]: { title: 'Regenerasi course plan', description: 'Course plan ditolak. Susun ulang rencana berdasarkan catatan revisi.', page: 'plan', linkLabel: 'Buka Plan Review' },
   [AWAITED_ACTION.EXECUTE_STRUCTURE]: { title: 'Eksekusi struktur', description: 'Course plan disetujui. Buat struktur mingguan di kursus Moodle target.', page: 'publish', linkLabel: 'Buka halaman eksekusi' },
   [AWAITED_ACTION.GENERATE_CONTENT]: { title: 'Generate konten', description: 'Struktur kursus sudah dibuat di Moodle. Lanjutkan dengan generate konten mingguan.', page: 'content', linkLabel: 'Buka halaman Konten' },
+  [AWAITED_ACTION.REVIEW_CONTENT]: { title: 'Review konten', description: 'Konten mingguan selesai dibuat. Tinjau, setujui, atau perbaiki item yang gagal.', page: 'review', linkLabel: 'Buka halaman Review' },
 };
 
 const completedStage = (event, stages) => event.event === WORKFLOW_EVENT.STAGE_COMPLETED && stages.includes(event.stage);
 
 /**
- * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap M03:
- * eksekusi selesai -> generate konten; rencana disetujui -> eksekusi struktur; rencana ditolak -> regenerasi;
- * rencana tersusun -> review course plan; analisis RPS selesai -> mulai course planning. null bila workflow tidak
- * sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
+ * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap M03/M04:
+ * konten selesai digenerate -> review konten; eksekusi selesai -> generate konten; rencana disetujui -> eksekusi
+ * struktur; rencana ditolak -> regenerasi; rencana tersusun -> review course plan; analisis RPS selesai -> mulai
+ * course planning. null bila workflow tidak sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
  */
 export function awaitedActionOf(workflow, events = []) {
   if (!needsInstructorAction(workflow)) return null;
   for (const event of [...events].reverse()) {
+    if (
+      CONTENT_STAGE_EVENTS.includes(event.event)
+      || event.stage === WORKFLOW_STAGE.CONTENT_GENERATION
+    ) return AWAITED_ACTION.REVIEW_CONTENT;
     if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION || completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return AWAITED_ACTION.GENERATE_CONTENT;
     if (event.event === WORKFLOW_EVENT.PLAN_APPROVED) return AWAITED_ACTION.EXECUTE_STRUCTURE;
     if (event.event === WORKFLOW_EVENT.PLAN_REJECTED) return AWAITED_ACTION.REVISE_PLAN;
@@ -482,4 +490,188 @@ export function contentGenerationFailureOf(workflow, events = []) {
   if (failed.stage === WORKFLOW_STAGE.CONTENT_GENERATION) return failed;
   if (failed.stage === WORKFLOW_STAGE.VALIDATION && isContentGenerationActiveContext(events)) return failed;
   return null;
+}
+
+// ---- Matriks progres generation per minggu × jenis konten (FE-16.2)
+
+export const CONTENT_CELL_STATUS = {
+  PENDING: 'pending',
+  PROCESSING: 'processing',
+  RETRYING: 'retrying',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  SKIPPED: 'skipped',
+  EXAM: 'exam',
+};
+
+const CONTENT_KIND_ORDER = ['LEARNING_MATERIAL', 'RESOURCE', 'ASSIGNMENT', 'QUIZ'];
+
+const CONTENT_LABEL_TO_KIND = {
+  'learning material': 'LEARNING_MATERIAL',
+  'learning resource': 'RESOURCE',
+  assignment: 'ASSIGNMENT',
+  quiz: 'QUIZ',
+};
+
+const ITEM_EVENT_PATTERN = /^Minggu\s+(\d+)\s*-\s*(Learning Material|Learning Resource|Assignment|Quiz)\s+(.+?)\.?$/i;
+const WEEK_COMPLETED_PATTERN = /^Minggu\s+(\d+)\s+selesai(?:\s*:|\.)?/i;
+
+function isKindApplicableToWeek(week, kind) {
+  const weekType = String(week?.week_type ?? 'regular').toLowerCase();
+  if (weekType === 'kuis' || weekType === 'quiz') return kind === 'QUIZ';
+  if (weekType === 'uts' || weekType === 'uas') return false;
+  return kind !== 'QUIZ';
+}
+
+/**
+ * Parse satu event BE-19.3 (format pesan dari orchestrator.py / generation.py) menjadi identitas sel matriks.
+ * Mengembalikan `{ weekNumber, kind, status }` untuk event item, `{ weekNumber, weekCompleted: true }` untuk
+ * WORKFLOW_WEEK_COMPLETED, atau null bila bukan event progres item/minggu konten.
+ */
+export function parseContentEventMessage(event) {
+  const message = String(event?.message ?? '').trim();
+  if (!message) return null;
+
+  if (event?.event === WORKFLOW_EVENT.WEEK_COMPLETED) {
+    const match = message.match(WEEK_COMPLETED_PATTERN);
+    return match ? { weekNumber: Number(match[1]), weekCompleted: true } : null;
+  }
+
+  const itemMatch = message.match(ITEM_EVENT_PATTERN);
+  if (!itemMatch) return null;
+
+  const weekNumber = Number(itemMatch[1]);
+  const kind = CONTENT_LABEL_TO_KIND[itemMatch[2].toLowerCase()];
+  const verb = itemMatch[3].toLowerCase();
+  if (!kind) return null;
+
+  if (event?.event === WORKFLOW_EVENT.RETRY || verb === 'diperbaiki') {
+    return { weekNumber, kind, status: CONTENT_CELL_STATUS.RETRYING };
+  }
+  if (
+    event?.event === WORKFLOW_EVENT.CONTENT_FAILED
+    || event?.event === WORKFLOW_EVENT.CONTENT_VALIDATION_FAILED
+    || verb.startsWith('gagal')
+  ) {
+    return { weekNumber, kind, status: CONTENT_CELL_STATUS.FAILED };
+  }
+  if (event?.event === WORKFLOW_EVENT.CONTENT_VALIDATED || verb === 'selesai') {
+    return { weekNumber, kind, status: CONTENT_CELL_STATUS.COMPLETED };
+  }
+  return { weekNumber, kind, status: CONTENT_CELL_STATUS.PROCESSING };
+}
+
+/** Mengambil slice event dari run content generation terbaru agar event run lama tidak menimpa status baru. */
+export function latestContentGenerationRunEvents(events = []) {
+  let startIndex = -1;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (events[i]?.event === WORKFLOW_EVENT.STAGE_STARTED && events[i]?.stage === WORKFLOW_STAGE.CONTENT_GENERATION) {
+      startIndex = i;
+      break;
+    }
+  }
+  if (startIndex >= 0) {
+    return {
+      runEvents: events.slice(startIndex),
+      runStartTime: timeOf(events[startIndex]?.timestamp),
+    };
+  }
+  return { runEvents: events, runStartTime: 0 };
+}
+
+/** Apakah workflow sudah punya data/riwayat aktivitas content generation sehingga matriks FE-16.2 perlu tampil. */
+export function hasContentGenerationActivity(workflow, events = [], contents = []) {
+  if (contents.length > 0) return true;
+  if (contentGenerationProgressOf(workflow, events) || contentGenerationFailureOf(workflow, events)) return true;
+  return events.some(
+    (event) => CONTENT_STAGE_EVENTS.includes(event?.event) || event?.stage === WORKFLOW_STAGE.CONTENT_GENERATION,
+  );
+}
+
+function recordCellStatus(record) {
+  const validationStatus = record?.validation?.status;
+  if (validationStatus === 'PASSED') return CONTENT_CELL_STATUS.COMPLETED;
+  if (validationStatus === 'FAILED') return CONTENT_CELL_STATUS.FAILED;
+  return CONTENT_CELL_STATUS.PROCESSING;
+}
+
+/**
+ * Membangun baris matriks (minggu × 4 jenis konten) dengan menggabungkan data awal GET .../contents
+ * dan overlay real-time event AKTIVITAS_AGENT / RETRY_FIX (FE-16.2).
+ */
+export function deriveContentMatrixRows(plan, contents = [], events = [], workflow = null) {
+  const weeks = [...(plan?.weeks ?? [])].sort((a, b) => a.week_number - b.week_number);
+  const byWeekAndKind = new Map();
+  const weeksWithStoredContent = new Set();
+
+  contents.forEach((item) => {
+    if (item?.week_number != null && item?.kind) {
+      byWeekAndKind.set(`${item.week_number}:${item.kind}`, item);
+      weeksWithStoredContent.add(item.week_number);
+    }
+  });
+
+  const { runEvents, runStartTime } = latestContentGenerationRunEvents(events);
+  const liveByCell = new Map();
+  const completedWeeksInRun = new Set();
+
+  runEvents.forEach((event) => {
+    const parsed = parseContentEventMessage(event);
+    if (!parsed) return;
+    if (parsed.weekCompleted) {
+      completedWeeksInRun.add(parsed.weekNumber);
+      return;
+    }
+    liveByCell.set(`${parsed.weekNumber}:${parsed.kind}`, {
+      status: parsed.status,
+      timestamp: event.timestamp,
+    });
+  });
+
+  const generating = Boolean(contentGenerationProgressOf(workflow, events));
+
+  return weeks.map((week) => {
+    const exam = isExamWeek(week);
+    const weekDone = completedWeeksInRun.has(week.week_number) || (!generating && weeksWithStoredContent.has(week.week_number));
+    const cells = {};
+
+    CONTENT_KIND_ORDER.forEach((kind) => {
+      if (exam) {
+        cells[kind] = { kind, status: CONTENT_CELL_STATUS.EXAM };
+        return;
+      }
+      if (!isKindApplicableToWeek(week, kind)) {
+        cells[kind] = { kind, status: CONTENT_CELL_STATUS.SKIPPED, reason: 'week_type' };
+        return;
+      }
+
+      const key = `${week.week_number}:${kind}`;
+      const record = byWeekAndKind.get(key) ?? null;
+      const live = liveByCell.get(key) ?? null;
+
+      // Overlay event run terbaru bila belum ada record, atau run baru dimulai sesudah updated_at record lama,
+      // atau saat sedang berjalan tanpa timestamp STAGE_STARTED dan event setara/lebih baru dari record.
+      const useLive = Boolean(live) && (
+        !record
+        || (runStartTime > 0 && runStartTime > timeOf(record.updated_at))
+        || (generating && runStartTime === 0 && timeOf(live.timestamp) >= timeOf(record.updated_at))
+      );
+
+      if (useLive) {
+        cells[kind] = { kind, status: live.status, record };
+        return;
+      }
+      if (record) {
+        cells[kind] = { kind, status: recordCellStatus(record), record };
+        return;
+      }
+      if (weekDone) {
+        cells[kind] = { kind, status: CONTENT_CELL_STATUS.SKIPPED, reason: 'not_scheduled' };
+        return;
+      }
+      cells[kind] = { kind, status: CONTENT_CELL_STATUS.PENDING };
+    });
+
+    return { week, exam, cells };
+  });
 }
