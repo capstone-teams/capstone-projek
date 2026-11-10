@@ -3,8 +3,7 @@
 Dipakai oleh operasi Moodle (page dan assignment). Seluruh teks di-escape lebih
 dulu, sehingga HTML mentah dari hasil generation tidak pernah ikut dirender.
 Yang didukung: paragraf, baris baru, heading, list bertitik dan bernomor, blok
-kode (```), serta bold, italic, dan inline code. Konversi Markdown lengkap
-menjadi bagian BE-21.1.
+kode (```), tautan ``http(s)``, serta bold, italic, dan inline code.
 """
 
 from __future__ import annotations
@@ -18,6 +17,8 @@ _BULLET = re.compile(r"^[-*]\s+(.*)$")
 _NUMBERED = re.compile(r"^\d+[.)]\s+(.*)$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 _FENCE = re.compile(r"^```")
+#: Tautan Markdown; hanya ``http(s)`` supaya skema lain tidak pernah dirender.
+_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 
 
 def markdown_to_html(text: str, *, heading_tag: str | None = None) -> str:
@@ -90,9 +91,10 @@ def markdown_to_html(text: str, *, heading_tag: str | None = None) -> str:
 
 
 def inline_markdown(text: str) -> str:
-    """Escape satu baris teks lalu terapkan inline code, bold, dan italic."""
+    """Escape satu baris teks lalu terapkan inline code, tautan, bold, italic."""
     escaped = html.escape(text.strip())
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = _LINK.sub(r'<a href="\2">\1</a>', escaped)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
     escaped = re.sub(r"(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])", r"<em>\1</em>", escaped)
     return escaped

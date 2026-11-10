@@ -14,9 +14,12 @@ import shortuuid
 
 from src.models.course_plan import CoursePlanStatus
 from src.services.auth import hash_password
+from src.services.content.domain import ApprovalStatus, ContentDraft, ContentKind
+from src.services.content.repository import ContentRepository
 from src.services.course_plan.domain import CoursePlanDraft, CoursePlanRecord, CoursePlanWeekRecord
 from src.services.course_plan.repository import CoursePlanRepository
 from src.services.execution.service import ExecutionService
+from src.services.instructor.service import InstructorSetupService
 from src.services.rps.converter import DocumentConversion, DocumentConverter
 from src.services.rps.service import RPSService
 from src.services.rps.storage import LocalDocumentStorage
@@ -154,3 +157,118 @@ async def retry_structure(session, moodle, workflow_id: str, owner_id: str, exec
     await run_execution_workflow(
         workflow_id=workflow_id, owner_id=owner_id, execution_id=execution_id, moodle=moodle
     )
+
+# --- Cakupan FULL (BE-21.1): konten APPROVED dan eksekusinya -----------------
+
+
+def traceability(week: int) -> dict:
+    return {
+        "week_number": week,
+        "sub_cpmk_codes": ["Sub-CPMK-1"],
+        "weekly_plan_ref": f"week-{week}",
+    }
+
+
+def material_data(week: int) -> dict:
+    return {
+        "learning_objectives": ["Mahasiswa memahami topik minggu ini"],
+        "sections": [{"heading": "Pengantar", "body_markdown": "Isi **materi**."}],
+        "references": [
+            {"title": "MDN", "url": "https://developer.mozilla.org"},
+            {"title": "Tidak aman", "url": "javascript:alert(1)"},
+        ],
+        "traceability": traceability(week),
+    }
+
+
+def resource_data(week: int, *, url: str | None = "https://example.com/artikel") -> dict:
+    return {
+        "url": url,
+        "description": "Artikel pengantar",
+        "resource_kind": "ARTICLE",
+        "relevance_reason": "Mendukung topik minggu ini",
+        "traceability": traceability(week),
+    }
+
+
+def assignment_data(week: int) -> dict:
+    return {
+        "instructions_markdown": "Kerjakan latihan pada modul.",
+        "expected_outputs": ["Laporan"],
+        "rubric": [
+            {"criterion": "Ketepatan", "description": "Sesuai instruksi", "weight_percent": 100}
+        ],
+        "traceability": traceability(week),
+    }
+
+
+def quiz_data(week: int) -> dict:
+    return {
+        "description": "Kuis minggu ini",
+        "config": {
+            "time_limit_minutes": 10,
+            "max_attempts": 1,
+            "shuffle_questions": False,
+            "passing_score_percent": 70,
+        },
+        "questions": [
+            {
+                "question_text": "Apa itu HTML?",
+                "options": [
+                    {"key": "A", "text": "Bahasa markup"},
+                    {"key": "B", "text": "Basis data"},
+                ],
+                "correct_option_key": "A",
+                "explanation": "HTML adalah bahasa markup.",
+            }
+        ],
+        "traceability": traceability(week),
+    }
+
+
+async def approve_content(
+    session,
+    workflow_id: str,
+    plan: CoursePlanRecord,
+    kind: ContentKind,
+    week_number: int,
+    data: dict,
+):
+    """Simpan satu versi konten lalu langsung setujui (jalur review disederhanakan)."""
+    week = next(item for item in plan.weeks if item.week_number == week_number)
+    return await ContentRepository(session).create(
+        ContentDraft(
+            kind=kind,
+            workflow_id=workflow_id,
+            course_plan_id=plan.id,
+            course_plan_week_id=week.id or "",
+            week_number=week_number,
+            title=f"{kind.value} minggu {week_number}",
+            content_data=data,
+            status=ApprovalStatus.APPROVED,
+        )
+    )
+
+
+async def enable_all_activities(session, owner_id: str) -> None:
+    """Aktifkan keempat jenis konten pada Activity Configuration dosen."""
+    await InstructorSetupService.from_session(session).update_setup(
+        owner_id,
+        activity_changes={
+            "learning_material": True,
+            "learning_resource": True,
+            "assignment": True,
+            "quiz": True,
+        },
+    )
+
+
+async def execute_full(session, moodle, workflow_id: str, owner_id: str) -> str:
+    """Mulai eksekusi ``FULL`` lalu jalankan di orkestrator seperti endpoint."""
+    execution = await ExecutionService.from_session(session, moodle=moodle).start_full(
+        workflow_id=workflow_id, owner_id=owner_id
+    )
+    await run_execution_workflow(
+        workflow_id=workflow_id, owner_id=owner_id, execution_id=execution.id or "", moodle=moodle
+    )
+    return execution.id or ""

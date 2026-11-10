@@ -37,6 +37,9 @@ class PlannedOperation:
     idempotency_key: str
     course_plan_week_id: str | None = None
     content_id: str | None = None
+    #: ``SKIPPED`` untuk jenis konten nonaktif / belum disetujui (cakupan FULL).
+    status: OperationStatus = OperationStatus.PENDING
+    error_message: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
