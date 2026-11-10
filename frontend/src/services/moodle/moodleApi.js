@@ -61,6 +61,7 @@ function fromMoodleSection(section) {
       name: module.name,
       modname: module.modname,
       description: module.description ?? '',
+      url: module.url ?? null,
       content: module.content ?? null,
       visible: module.visible === false ? 0 : 1,
       uservisible: true,

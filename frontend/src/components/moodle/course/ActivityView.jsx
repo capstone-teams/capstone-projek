@@ -14,10 +14,12 @@ function PageContent({ course, mod }) {
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
   const page = data.find((p) => String(p.coursemodule) === String(mod.id));
-  if (!page) return <EmptyState title="Halaman tidak ditemukan." />;
+  // Lewat Backend Gateway isi Page sudah ikut di modul (GET /integrations/moodle/courses/{id}/contents).
+  const html = page?.content ?? mod.content;
+  if (!html) return <EmptyState title="Halaman tidak ditemukan." />;
   return (
     <Card>
-      <MoodleHtml html={page.content} />
+      <MoodleHtml html={html} />
     </Card>
   );
 }
@@ -27,6 +29,14 @@ function AssignContent({ course, mod, renderAssign }) {
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
   const assign = data.find((a) => String(a.cmid) === String(mod.id));
+  // Tanpa sesi Moodle di browser: tampilkan instruksi tugas dari Backend Gateway.
+  if (!assign && mod.description) {
+    return (
+      <Card>
+        <MoodleHtml html={mod.description} />
+      </Card>
+    );
+  }
   if (!assign) return <EmptyState title="Tugas tidak ditemukan." />;
 
   return (
