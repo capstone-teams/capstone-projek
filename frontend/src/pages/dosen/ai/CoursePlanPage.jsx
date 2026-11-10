@@ -162,7 +162,8 @@ export default function CoursePlanPage() {
   if (workflowId && plan.loading && latest === null && !plan.error) return <Spinner label="Memuat rencana…" />;
 
   if (!latest) {
-    const readOnly = projectPlan.data;
+    const showReadOnly = Boolean(projectPlan.data && (!workflowId || !rpsReady));
+    const readOnly = showReadOnly ? projectPlan.data : null;
     const readOnlyMeta = statusMeta(readOnly?.status);
     return (
       <Card
@@ -204,10 +205,15 @@ export default function CoursePlanPage() {
             <p className="mb-3 text-sm text-muted">Rencana tersimpan pada project kursus (hanya dibaca).</p>
             <CoursePlanDetails plan={readOnly} course={course ?? {}} />
           </>
-        ) : projectPlan.loading ? (
+        ) : projectPlan.loading && !workflowId ? (
           <Spinner label="Memuat rencana…" />
         ) : (
-          !inProgress && <EmptyState title="Rencana belum dibuat." />
+          !inProgress && (
+            <EmptyState
+              title="Rencana belum dibuat."
+              description={rpsReady ? 'Klik tombol "Generate rencana" di atas untuk menyusun rencana mingguan dari hasil analisis RPS.' : undefined}
+            />
+          )
         )}
       </Card>
     );

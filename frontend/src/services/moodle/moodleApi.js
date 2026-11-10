@@ -9,30 +9,41 @@ import { api } from '../apiClient';
 import { MoodleError, callWs, uploadDraftFiles } from './moodleClient';
 import { isMoodleCourseId } from '../../utils/courseId';
 
-// Daftar kursus dari Backend Gateway: project kursus backend (/courses); bila kosong, kursus Moodle yang dapat
-// diakses lewat integrasi (/integrations/moodle/courses). Kegagalan integrasi Moodle diteruskan (pesannya sudah
-// ramah pengguna dari apiClient) agar halaman menampilkan gangguan, bukan "belum ada kursus".
+// Daftar kursus dari Backend Gateway: kursus Moodle lewat integrasi (/integrations/moodle/courses) lebih dulu, lalu
+// project kursus backend (/courses). Bila integrasi Moodle gagal dan tidak ada project, galatnya diteruskan (pesannya
+// sudah ramah pengguna dari apiClient) agar halaman menampilkan gangguan, bukan "belum ada kursus".
 async function loadGatewayCourses() {
-  const projects = await api.get('/courses').catch(() => null);
-  const items = projects?.items ?? projects?.courses ?? [];
-  if (items.length) return items;
-  const moodle = await api.get('/integrations/moodle/courses');
-  return moodle?.courses ?? moodle?.items ?? [];
+  let moodleError = null;
+  const moodleRes = await api.get('/integrations/moodle/courses').catch((error) => {
+    moodleError = error;
+    return null;
+  });
+  if (moodleRes?.courses?.length) {
+    return moodleRes.courses.map((c) => ({
+      ...c,
+      id: c.moodle_course_id ?? c.id,
+      summary: c.summary ?? '',
+      category: c.category ?? null,
+    }));
+  }
+  const legacyRes = await api.get('/courses').catch(() => null);
+  const items = legacyRes?.items ?? legacyRes?.courses ?? [];
+  if (!items.length && moodleError) throw moodleError;
+  return items;
 }
 
-// Beberapa bagian halaman (dasbor, kursus berjalan, kursus terakhir) meminta daftar yang sama hampir bersamaan:
-// satu permintaan dipakai bersama selama sebentar. Hasil gagal tidak disimpan agar "Coba lagi" memanggil ulang.
-const GATEWAY_CACHE_MS = 3000;
-let gatewayCourses = null;
+// Beberapa bagian halaman (dasbor, kursus berjalan, kursus terakhir) meminta daftar yang sama bersamaan: selama
+// permintaan masih berjalan, permintaan itu dipakai bersama. Hasilnya tidak disimpan, jadi pemanggilan berikutnya
+// (termasuk "Coba lagi") selalu mengambil data terbaru.
+let pendingGatewayCourses = null;
 
 function fetchGatewayCourses() {
-  if (gatewayCourses && Date.now() - gatewayCourses.at < GATEWAY_CACHE_MS) return gatewayCourses.promise;
-  const promise = loadGatewayCourses();
-  gatewayCourses = { promise, at: Date.now() };
-  promise.catch(() => {
-    if (gatewayCourses?.promise === promise) gatewayCourses = null;
-  });
-  return promise;
+  if (!pendingGatewayCourses) {
+    pendingGatewayCourses = loadGatewayCourses().finally(() => {
+      pendingGatewayCourses = null;
+    });
+  }
+  return pendingGatewayCourses;
 }
 
 /** Section dari GET /integrations/moodle/courses/{id}/contents dalam bentuk core_course_get_contents. */
@@ -50,6 +61,7 @@ function fromMoodleSection(section) {
       name: module.name,
       modname: module.modname,
       description: module.description ?? '',
+      content: module.content ?? null,
       visible: module.visible === false ? 0 : 1,
       uservisible: true,
     })),
@@ -103,8 +115,9 @@ export async function getCourse(courseId) {
     const res = await callWs('core_course_get_courses_by_field', { field: 'id', value: courseId });
     return res.courses[0] ?? null;
   } catch (err) {
+    // Kursus Moodle (ID angka) lewat integrasi; /courses/{id} hanya menerima ID project backend.
     const byId = isMoodleCourseId(courseId)
-      ? await api.get(`/integrations/moodle/courses/${courseId}`).catch(() => null)
+      ? await api.get(`/integrations/moodle/courses/${courseId}`).then((c) => ({ ...c, id: c.moodle_course_id ?? c.id }), () => null)
       : await api.get(`/courses/${courseId}`).catch(() => null);
     if (byId) {
       return {
@@ -113,7 +126,7 @@ export async function getCourse(courseId) {
       };
     }
     const courses = await fetchGatewayCourses();
-    const found = courses.find((c) => String(c.id) === String(courseId) || String(c.moodle_course_id) === String(courseId));
+    const found = courses.find((c) => String(c.id) === String(courseId) || String(c.moodle_course_id) === String(courseId) || String(c.shortname).toLowerCase() === String(courseId).toLowerCase());
     if (found) {
       return {
         ...found,

@@ -802,6 +802,18 @@ const handlers = {
   getMoodleStatus: () => ok(db.moodleStatus),
 
   getMoodleCourses: () => ok({ courses: db.moodleCourses }),
+
+  getMoodleCourse({ moodleCourseId }) {
+    const found = db.moodleCourses.find((c) => String(c.id) === String(moodleCourseId) || String(c.moodle_course_id) === String(moodleCourseId));
+    return found ? ok(found) : notFound('Course Moodle tidak ditemukan.');
+  },
+
+  getMoodleCourseContents({ moodleCourseId }) {
+    return ok({
+      moodle_course_id: Number(moodleCourseId),
+      sections: [],
+    });
+  },
 };
 
 // ---------------------------------------------------------------- routing
@@ -811,6 +823,8 @@ const ROUTES = [
   ['GET', '/auth/me', 'me', { anyRole: true }],
   ['GET', '/integrations/moodle/status', 'getMoodleStatus', { anyRole: true }],
   ['GET', '/integrations/moodle/courses', 'getMoodleCourses', { anyRole: true }],
+  ['GET', '/integrations/moodle/courses/:moodleCourseId', 'getMoodleCourse', { anyRole: true }],
+  ['GET', '/integrations/moodle/courses/:moodleCourseId/contents', 'getMoodleCourseContents', { anyRole: true }],
   ['GET', '/rps', 'listRps'],
   ['POST', '/rps', 'uploadRps'],
   ['GET', '/rps/:rpsId', 'getRps'],

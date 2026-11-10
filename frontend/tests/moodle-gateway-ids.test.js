@@ -38,7 +38,7 @@ describe('ID kursus Moodle lewat Backend Gateway', () => {
     expect(await getCourse(48)).toMatchObject({ id: 48, shortname: 'SBD-2223', summary: 'Course uji.' });
     const sections = await getCourseContents(48);
     expect(sections).toEqual([
-      { id: 87, section: 0, name: 'General', summary: '', summaryformat: 1, visible: 1, uservisible: true, modules: [{ id: 84, name: 'Announcements', modname: 'forum', description: '', visible: 1, uservisible: true }] },
+      { id: 87, section: 0, name: 'General', summary: '', summaryformat: 1, visible: 1, uservisible: true, modules: [{ id: 84, name: 'Announcements', modname: 'forum', description: '', content: null, visible: 1, uservisible: true }] },
       { id: 88, section: 1, name: 'Pertemuan 1', summary: '<p>Pengantar</p>', summaryformat: 1, visible: 0, uservisible: true, modules: [] },
     ]);
     expect(paths(get).some((path) => path.startsWith('/courses'))).toBe(false);

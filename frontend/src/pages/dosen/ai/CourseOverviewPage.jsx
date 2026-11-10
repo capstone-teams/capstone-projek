@@ -7,7 +7,6 @@ import { useAction, useApi } from '../../../hooks/useApi';
 import { Alert, Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import EventLog from '../../../components/ai/EventLog';
 import ActivityConfigForm from '../../../components/ai/course/ActivityConfigForm';
-import WorkflowCourseOverview from '../../../components/ai/course/WorkflowCourseOverview';
 import { RUN_TYPE_LABELS, isBusy } from '../../../utils/workflow';
 import { formatDateTime } from '../../../utils/format';
 
@@ -24,19 +23,20 @@ const NEXT_STEP = {
   COMPLETED: { text: 'Course selesai dibuat dan terverifikasi di Moodle.', to: 'publish', cta: 'Lihat hasil' },
 };
 
-/** Ringkasan Generator AI: project kursus (/courses), atau ringkasan berbasis workflow bila kursus tanpa project. */
 export default function CourseOverviewPage() {
-  const { course } = useCourse();
-  return course.id ? <ProjectOverview /> : <WorkflowCourseOverview />;
-}
-
-function ProjectOverview() {
   const { course, workflow, workflowId, events, version, refresh } = useCourse();
   // GET /courses/{id}/agent-runs belum ada di backend; riwayat run hanya dimuat bila tersedia.
-  const runs = useApi(() => (COURSE_ACTIONS_AVAILABLE ? getAgentRuns(course.id) : null), [course.id, version]);
+  const runs = useApi(() => (COURSE_ACTIONS_AVAILABLE && course?.id ? getAgentRuns(course.id) : null), [course?.id, version]);
   const plan = useAction(() => generateWorkflowPlan(workflowId));
-  const busy = isBusy(course.status) || workflow?.status === 'RUNNING';
-  const next = NEXT_STEP[course.status];
+  const busy = isBusy(course?.status) || workflow?.status === 'RUNNING';
+  const hasRps = Boolean(course?.rps_id);
+  const next = !hasRps
+    ? {
+        text: 'Kursus ini belum memiliki dokumen RPS. Silakan unggah dokumen RPS untuk memulai penyusunan rencana pembelajaran.',
+        to: 'rps',
+        cta: 'Unggah RPS',
+      }
+    : NEXT_STEP[course?.status];
   const progress = workflow?.progress || course?.progress;
   const stage = workflow?.stage || course?.stage;
 
@@ -69,7 +69,7 @@ function ProjectOverview() {
           ) : next ? (
             <div className="next-step">
               <p>{next.text}</p>
-              {course.status === 'CREATED' ? (
+              {course?.status === 'CREATED' && hasRps ? (
                 <button
                   type="button"
                   className="btn btn--primary"
@@ -90,8 +90,14 @@ function ProjectOverview() {
         </Card>
 
         <Card title="Konfigurasi">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle pb-3 text-xs">
+            <span className="text-muted">Target Moodle:</span>
+            <span className="font-semibold text-ink" aria-label="Target Moodle">
+              {course?.code ?? course?.shortname} — {course?.name ?? course?.fullname} (ID: {course?.moodle_course_id ?? course?.id})
+            </span>
+          </div>
           <ActivityConfigForm course={course} onSaved={refresh} />
-          {course.additional_prompt && (
+          {course?.additional_prompt && (
             <div className="quote">
               <span className="field__label">Prompt tambahan</span>
               <p>{course.additional_prompt}</p>

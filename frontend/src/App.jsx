@@ -25,7 +25,6 @@ import CourseOverviewPage from './pages/dosen/ai/CourseOverviewPage';
 import WorkflowOverviewPage from './pages/dosen/ai/WorkflowOverviewPage';
 import WorkflowStatusPage from './pages/dosen/ai/WorkflowStatusPage';
 import CourseRpsPage from './pages/dosen/ai/CourseRpsPage';
-import CourseTargetSelectionPage from './pages/dosen/ai/CourseTargetSelectionPage';
 import CoursePlanPage from './pages/dosen/ai/CoursePlanPage';
 import CourseContentPage from './pages/dosen/ai/CourseContentPage';
 import CourseReviewPage from './pages/dosen/ai/CourseReviewPage';
@@ -73,12 +72,12 @@ export default function App() {
             <Route path="mod/:cmid" element={<ByCourseRole dosen={<DosenActivityPage />} mahasiswa={<MahasiswaActivityPage />} />} />
             <Route path="mod/:cmid/editsubmission" element={<ByCourseRole dosen={<ForbiddenPage />} mahasiswa={<EditSubmissionPage />} />} />
             <Route path="modedit" element={<ByCourseRole dosen={<ModEditPage />} mahasiswa={<ForbiddenPage />} />} />
-            {/* RPS, Course Target, dan Monitoring berada di tab Generator AI (khusus DOSEN). */}
+            {/* RPS, Rencana, dan Monitoring berada di tab Generator AI (khusus DOSEN). */}
             <Route element={<RequireAuth roles={[ROLE.DOSEN]} />}>
               <Route path="ai" element={<AiCourseLayout />}>
                 <Route index element={COURSE_API_AVAILABLE ? <CourseOverviewPage /> : <WorkflowOverviewPage />} />
                 <Route path="rps" element={<CourseRpsPage />} />
-                <Route path="target" element={<CourseTargetSelectionPage />} />
+                <Route path="target" element={<Navigate to="../ai" replace />} />
                 <Route path="workflows" element={<WorkflowStatusPage />} />
                 {/* Tahap berikut butuh API /courses, yang belum ada di backend. */}
                 {COURSE_API_AVAILABLE && (
