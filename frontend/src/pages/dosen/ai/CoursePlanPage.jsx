@@ -1,6 +1,7 @@
-import { useContext, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useContext, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
+import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
 import { getPlan } from '../../../services/courseService';
 import {
   MAX_PLAN_NOTE_LENGTH,
@@ -19,62 +20,104 @@ import { nullOn404 } from '../../../services/apiClient';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { useOnChange } from '../../../hooks/useOnChange';
 import { AppStateContext } from '../../../context/appStateContext';
-import { Alert, Badge, Card, EmptyState, ErrorAlert, Spinner } from '../../../components/ui';
+import { Alert, Badge, Card, EmptyState, ErrorAlert, Modal, Spinner } from '../../../components/ui';
 import InstructionModal from '../../../components/ai/InstructionModal';
 import CoursePlanDetails from '../../../components/ai/course/CoursePlanDetails';
+import CoursePlanProgress from '../../../components/ai/course/CoursePlanProgress';
+import CoursePlanValidation from '../../../components/ai/course/CoursePlanValidation';
 import { RPS_STATUS } from '../../../utils/rpsStatus';
-import { WORKFLOW_API_STATUS, WORKFLOW_STAGE, needsInstructorAction } from '../../../utils/workflowStatus';
+import { groupValidationIssues } from '../../../utils/coursePlan';
+import { WORKFLOW_API_STATUS, coursePlanFailureOf, coursePlanProgressOf, needsInstructorAction } from '../../../utils/workflowStatus';
 import { formatDateTime } from '../../../utils/format';
 
 const statusMeta = (status) => PLAN_STATUS_META[status] ?? { label: status || 'Status belum tersedia', tone: 'neutral' };
+const PLAN_FAILED_MESSAGE = 'Penyusunan rencana gagal. Silakan coba lagi.';
 
-/** Daftar versi course plan (GET /plan/versions); memilih versi lama menampilkannya tanpa aksi review. */
-function PlanVersions({ versions, selected, latest, onSelect }) {
-  if (versions.length < 2) return null;
+/**
+ * Riwayat versi course plan (GET /plan/versions, terbaru di atas) dengan penanda status approval per versi.
+ * Membuka versi lama menampilkannya tanpa aksi review (GET /plan/versions/{version}).
+ */
+function PlanHistory({ versions, selected, latest, onSelect }) {
+  if (!versions.length) return null;
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Versi rencana">
-      <span className="text-muted">Versi:</span>
-      {[...versions].sort((a, b) => b.version - a.version).map((item) => {
-        const active = (selected ?? latest) === item.version;
-        return (
-          <button
-            key={item.version}
-            type="button"
-            aria-pressed={active}
-            className={`btn btn--sm ${active ? 'btn--primary' : 'btn--ghost'}`}
-            title={`${statusMeta(item.status).label}${item.created_at ? ` · ${formatDateTime(item.created_at)}` : ''}`}
-            onClick={() => onSelect(item.version === latest ? null : item.version)}
-          >
-            v{item.version}{item.version === latest ? ' (terbaru)' : ''}
-          </button>
-        );
-      })}
-    </div>
+    <section className="mb-4 rounded-lg border border-line" aria-label="Riwayat versi">
+      <h3 className="border-b border-line px-4 py-2.5 text-[15px] font-semibold">Riwayat versi</h3>
+      <ol className="m-0 list-none divide-y divide-line p-0">
+        {[...versions].sort((a, b) => b.version - a.version).map((item) => {
+          const active = (selected ?? latest) === item.version;
+          const meta = statusMeta(item.status);
+          return (
+            <li key={item.version} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 ${active ? 'bg-primary-light/50' : ''}`} aria-label={`Versi ${item.version}`}>
+              <span className="font-semibold">Versi {item.version}</span>
+              {item.version === latest && <span className="text-xs text-muted">(terbaru)</span>}
+              <Badge tone={meta.tone}>{meta.label}</Badge>
+              <span className="text-sm text-muted">
+                {item.created_at && `Dibuat ${formatDateTime(item.created_at)}`}
+                {item.approved_at && ` · Disetujui ${formatDateTime(item.approved_at)}`}
+              </span>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm ml-auto"
+                aria-pressed={active}
+                disabled={active}
+                onClick={() => onSelect(item.version === latest ? null : item.version)}
+              >
+                {active ? 'Sedang ditampilkan' : `Lihat versi ${item.version}`}
+              </button>
+              {item.revision_notes && <p className="w-full text-sm text-ink-subtle">Catatan revisi: {item.revision_notes}</p>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+/** Kegagalan course planning (workflow FAILED) beserta jalan keluarnya: generate ulang atau regenerasi. */
+function PlanFailure({ message, children }) {
+  return (
+    <Alert tone="danger" title="Penyusunan rencana gagal">
+      <p>{message}</p>
+      {children && <div className="mt-2 flex flex-wrap items-center gap-2">{children}</div>}
+    </Alert>
   );
 }
 
 /**
- * Rencana course (FE-05) lewat API course plan per workflow (BE-14): generate, approve, reject dengan catatan,
- * regenerate dengan prompt tambahan, dan riwayat versi. Tanpa course plan di workflow, rencana project kursus
- * (GET /courses/{id}/plan) ditampilkan sebagai bacaan.
+ * Rencana course (FE-05, FE-12.1) lewat API course plan per workflow (BE-14):
+ * - generate (POST /workflows/{id}/plan) lalu progres PLANNING_COURSE → VALIDATING (RETRYING bila dicoba ulang)
+ *   dari event workflow real-time (FE-10.2); rencana dimuat ulang otomatis begitu workflow menunggu review;
+ * - kegagalan (workflow FAILED) menampilkan pesannya dengan opsi generate ulang;
+ * - approve, reject dengan catatan, regenerate dengan prompt tambahan, riwayat versi, dan hasil validasi.
+ * Workflow berasal dari project kursus, atau dari ?workflow=<id> (dari halaman Hasil Analisis RPS). Tanpa course
+ * plan di workflow, rencana project kursus (GET /courses/{id}/plan) ditampilkan sebagai bacaan.
  */
 export default function CoursePlanPage() {
-  const { course, workflow, workflowId, refresh } = useCourse();
+  const { course, workflow: projectWorkflow, workflowId: projectWorkflowId, events: projectEvents = [], refresh } = useCourse();
   const notify = useContext(AppStateContext)?.notify;
-  const [dialog, setDialog] = useState(null); // 'reject' | 'regenerate'
+  const [dialog, setDialog] = useState(null); // 'approve' | 'reject' | 'regenerate'
   const [selectedVersion, setSelectedVersion] = useState(null);
+
+  // Workflow lain lewat ?workflow= dipantau sendiri; workflow project sudah dipantau AiCourseLayout.
+  const [params] = useSearchParams();
+  const workflowParam = params.get('workflow');
+  const ownWorkflowId = workflowParam && workflowParam !== projectWorkflowId ? workflowParam : null;
+  const own = useWorkflowMonitor(ownWorkflowId);
+  const workflowId = workflowParam || projectWorkflowId;
+  const workflow = ownWorkflowId ? own.workflow : projectWorkflow;
+  const events = ownWorkflowId ? own.events : projectEvents;
 
   const plan = useApi(() => (workflowId ? getWorkflowPlan(workflowId) : null), [workflowId]);
   const versions = useApi(() => (workflowId ? listWorkflowPlanVersions(workflowId).catch(() => []) : []), [workflowId]);
   const older = useApi(() => (workflowId && selectedVersion ? getWorkflowPlanVersion(workflowId, selectedVersion) : null), [workflowId, selectedVersion]);
-  // Tanpa course plan workflow: rencana project kursus (bacaan) dan status RPS untuk syarat generate.
   // Tanpa workflow, atau workflow belum punya course plan: rencana project kursus tampil sebagai bacaan.
   const planMissing = !workflowId || (!plan.loading && !plan.error && plan.data === null);
-  const projectPlan = useApi(() => (planMissing && course.id ? getPlan(course.id).catch(nullOn404) : null), [planMissing, course.id]);
-  const rpsId = workflow?.rps_id ?? course.rps_id;
+  const projectPlan = useApi(() => (planMissing && course?.id ? getPlan(course.id).catch(nullOn404) : null), [planMissing, course?.id]);
+  const rpsId = workflow?.rps_id ?? course?.rps_id;
   const rps = useApi(() => (rpsId ? getRps(rpsId).catch(() => null) : null), [rpsId]);
 
-  // Workflow diperbarui real-time (FE-10.2): rencana dimuat ulang setiap status atau tahapnya berubah.
+  // Workflow diperbarui real-time (FE-10.2): rencana dimuat ulang setiap status atau tahapnya berubah, termasuk
+  // saat versi baru tersimpan dan saat workflow masuk WAITING_FOR_REVIEW.
   const workflowChange = workflow ? `${workflow.status}|${workflow.stage}|${workflow.updated_at}` : null;
   const { reload: reloadPlan } = plan;
   const { reload: reloadVersions } = versions;
@@ -89,23 +132,38 @@ export default function CoursePlanPage() {
     reloadPlan({ silent: true });
     reloadVersions({ silent: true });
     refresh?.();
+    own.reload();
   };
   const generate = useAction(() => generateWorkflowPlan(workflowId), { loadingLabel: 'Meminta penyusunan rencana…' });
   const approve = useAction(() => approveWorkflowPlan(workflowId), { loadingLabel: 'Menyetujui rencana…' });
+  const startGenerate = () => generate.run().then(after('Penyusunan rencana dimulai.')).catch(() => {});
+  // Approve setelah dikonfirmasi; galat ditampilkan di dialog agar dosen dapat mencoba lagi.
+  const confirmApprove = () => approve.run().then(() => {
+    setDialog(null);
+    after('Rencana course disetujui.')();
+  }).catch(() => {});
 
-  const planning = workflow?.status === WORKFLOW_API_STATUS.RUNNING && workflow?.stage === WORKFLOW_STAGE.COURSE_PLANNING;
   const latest = plan.data;
+  const progress = coursePlanProgressOf(workflow, events);
+  const inProgress = !!progress;
+  const rpsReady = rps.data?.status === RPS_STATUS.ANALYZED;
+  // Kegagalan pada tahap course planning/validasi; tanpa riwayat event, workflow gagal setelah RPS selesai
+  // dianalisis dan sebelum rencana pertama tersimpan juga berarti penyusunan rencana gagal.
+  const failureEvent = coursePlanFailureOf(workflow, events);
+  const planFailed = !inProgress && (!!failureEvent || (!latest && rpsReady && workflow?.status === WORKFLOW_API_STATUS.FAILED));
+  const failureMessage = failureEvent?.message || PLAN_FAILED_MESSAGE;
   const shown = selectedVersion ? older.data : latest;
   const viewingOld = !!selectedVersion;
-  const rpsReady = rps.data?.status === RPS_STATUS.ANALYZED;
   const reviewable = !viewingOld && latest?.status === PLAN_STATUS.DRAFT;
   const waitingReview = needsInstructorAction(workflow);
-  const actionError = generate.error || approve.error;
+  const validationPassed = latest?.validation?.passed === true;
+  const issuesByWeek = useMemo(() => groupValidationIssues(shown?.validation?.issues ?? []).byWeek, [shown]);
 
   if (workflowId && plan.loading && latest === null && !plan.error) return <Spinner label="Memuat rencana…" />;
 
   if (!latest) {
-    const readOnly = projectPlan.data;
+    const showReadOnly = Boolean(projectPlan.data && (!workflowId || !rpsReady));
+    const readOnly = showReadOnly ? projectPlan.data : null;
     const readOnlyMeta = statusMeta(readOnly?.status);
     return (
       <Card
@@ -120,17 +178,18 @@ export default function CoursePlanPage() {
         )}
         {!workflowId ? (
           <p className="mb-4 text-sm text-muted">Generate rencana tersedia setelah RPS kursus ini diproses dan dianalisis di tab RPS.</p>
-        ) : planning ? (
-          <Alert tone="info" title="Agent sedang menyusun rencana…">Rencana tampil otomatis setelah selesai disusun.</Alert>
+        ) : inProgress ? (
+          <CoursePlanProgress progress={progress} events={events} />
+        ) : planFailed && !plan.error ? (
+          <PlanFailure message={failureMessage}>
+            <button type="button" className="btn btn--primary" disabled={!rpsReady || generate.pending} onClick={startGenerate}>
+              {generate.pending ? 'Meminta…' : 'Generate ulang'}
+            </button>
+          </PlanFailure>
         ) : (
           !plan.error && (
             <div className="mb-4 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                className="btn btn--primary"
-                disabled={!rpsReady || generate.pending}
-                onClick={() => generate.run().then(after('Penyusunan rencana dimulai.')).catch(() => {})}
-              >
+              <button type="button" className="btn btn--primary" disabled={!rpsReady || generate.pending} onClick={startGenerate}>
                 {generate.pending ? 'Meminta…' : 'Generate rencana'}
               </button>
               <span className="text-sm text-muted">
@@ -144,12 +203,17 @@ export default function CoursePlanPage() {
         {readOnly ? (
           <>
             <p className="mb-3 text-sm text-muted">Rencana tersimpan pada project kursus (hanya dibaca).</p>
-            <CoursePlanDetails plan={readOnly} course={course} />
+            <CoursePlanDetails plan={readOnly} course={course ?? {}} />
           </>
-        ) : projectPlan.loading ? (
+        ) : projectPlan.loading && !workflowId ? (
           <Spinner label="Memuat rencana…" />
         ) : (
-          !planning && <EmptyState title="Rencana belum dibuat." />
+          !inProgress && (
+            <EmptyState
+              title="Rencana belum dibuat."
+              description={rpsReady ? 'Klik tombol "Generate rencana" di atas untuk menyusun rencana mingguan dari hasil analisis RPS.' : undefined}
+            />
+          )
         )}
       </Card>
     );
@@ -171,15 +235,18 @@ export default function CoursePlanPage() {
                 <button
                   type="button"
                   className="btn btn--primary"
-                  disabled={!waitingReview || approve.pending || latest.validation?.passed === false}
-                  onClick={() => approve.run().then(after('Rencana course disetujui.')).catch(() => {})}
+                  disabled={!waitingReview || approve.pending || !validationPassed}
+                  onClick={() => {
+                    approve.clearError();
+                    setDialog('approve');
+                  }}
                 >
-                  {approve.pending ? 'Menyimpan…' : 'Setujui rencana'}
+                  Setujui rencana
                 </button>
               </>
             )}
             {!viewingOld && latest.status === PLAN_STATUS.REJECTED && (
-              <button type="button" className="btn btn--primary" disabled={planning} onClick={() => setDialog('regenerate')}>
+              <button type="button" className="btn btn--primary" disabled={inProgress} onClick={() => setDialog('regenerate')}>
                 Regenerasi rencana
               </button>
             )}
@@ -187,40 +254,67 @@ export default function CoursePlanPage() {
         )
       }
     >
-      <ErrorAlert error={actionError} onClose={() => { generate.clearError(); approve.clearError(); }} />
+      <ErrorAlert error={generate.error} onClose={generate.clearError} />
       <ErrorAlert error={plan.error} />
-      <PlanVersions versions={versions.data ?? []} selected={selectedVersion} latest={latest.version} onSelect={setSelectedVersion} />
+      {inProgress && <CoursePlanProgress progress={progress} events={events} replacing />}
+      {planFailed && (
+        <PlanFailure message={failureMessage}>
+          {latest.status === PLAN_STATUS.REJECTED ? (
+            <button type="button" className="btn btn--primary" onClick={() => setDialog('regenerate')}>Generate ulang</button>
+          ) : (
+            <span className="text-sm">Tolak versi ini dengan catatan untuk menyusun ulang rencana.</span>
+          )}
+        </PlanFailure>
+      )}
+      <PlanHistory versions={versions.data ?? []} selected={selectedVersion} latest={latest.version} onSelect={setSelectedVersion} />
       {viewingOld && (
         <Alert tone="info" title={`Menampilkan versi ${selectedVersion}`}>
           Versi lama hanya untuk ditinjau.{' '}
           <button type="button" className="font-semibold underline" onClick={() => setSelectedVersion(null)}>Kembali ke versi terbaru</button>
         </Alert>
       )}
-      {planning && <Alert tone="info" title="Agent sedang menyusun versi baru…">Rencana di bawah akan diganti otomatis setelah versi baru siap.</Alert>}
-      {reviewable && !waitingReview && !planning && (
+      {reviewable && !waitingReview && (
         <p className="mb-4 text-sm text-muted">Setujui atau tolak tersedia ketika workflow menunggu peninjauan Anda.</p>
       )}
-      {reviewable && latest.validation?.passed === false && (
-        <Alert tone="warning" title="Rencana belum lolos validasi">
-          <ul className="m-0 list-disc pl-5">
-            {(latest.validation.issues ?? []).map((issue, index) => (
-              <li key={index}>{issue.message ?? JSON.stringify(issue)}</li>
-            ))}
-          </ul>
-        </Alert>
-      )}
+      {shown?.validation && <CoursePlanValidation validation={shown.validation} />}
       {latest.status === PLAN_STATUS.APPROVED && !viewingOld && (
         <Alert tone="success" title="Rencana course telah disetujui">
-          Lanjutkan dengan konten mingguan berdasarkan rencana ini.{' '}
-          <Link to="../content" relative="path" className="font-semibold underline">Buka tab konten</Link>
+          {latest.approved_at && <p>Disetujui {formatDateTime(latest.approved_at)}.</p>}
+          <p>
+            Langkah berikutnya: buat struktur mingguan rencana ini di kursus Moodle target.
+            {course?.id && (
+              <>
+                {' '}<Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke eksekusi struktur</Link>
+              </>
+            )}
+          </p>
         </Alert>
       )}
       {shown?.revision_notes && <Alert tone="warning" title="Catatan revisi">{shown.revision_notes}</Alert>}
       {shown?.regeneration_instruction && <Alert tone="info" title="Prompt tambahan saat regenerasi">{shown.regeneration_instruction}</Alert>}
 
-      {viewingOld && older.loading ? <Spinner /> : shown ? <CoursePlanDetails plan={shown} course={course} /> : null}
+      {viewingOld && older.loading ? <Spinner /> : shown ? <CoursePlanDetails plan={shown} course={course ?? {}} issuesByWeek={issuesByWeek} /> : null}
       <ErrorAlert error={older.error} />
 
+      <Modal
+        open={dialog === 'approve'}
+        title="Setujui rencana"
+        onClose={() => !approve.pending && setDialog(null)}
+        footer={(
+          <>
+            <button type="button" className="btn btn--ghost" disabled={approve.pending} onClick={() => setDialog(null)}>Batal</button>
+            <button type="button" className="btn btn--primary" disabled={approve.pending} onClick={confirmApprove}>
+              {approve.pending ? 'Menyimpan…' : 'Ya, setujui'}
+            </button>
+          </>
+        )}
+      >
+        <ErrorAlert error={approve.error} onClose={approve.clearError} />
+        <p>
+          Versi {latest.version} akan disetujui sebagai rencana course. Rencana yang sudah disetujui tidak dapat ditolak
+          maupun disetujui ulang, dan menjadi dasar struktur mingguan di kursus Moodle.
+        </p>
+      </Modal>
       <InstructionModal
         open={dialog === 'reject'}
         title="Tolak rencana"

@@ -4,6 +4,8 @@ import { ApiError, onUnauthorized } from '../services/apiClient';
 import * as backendAuth from '../services/authService';
 import { AUTH_STATUS, ROLE, SESSION_NOTICE } from '../types/auth';
 
+const MOCK_SESSION = import.meta.env.VITE_USE_MOCK === 'true';
+
 function isTransient(error) {
   return error instanceof ApiError && (error.status === 0 || error.status >= 500);
 }
@@ -29,7 +31,9 @@ function buildSession(me) {
       avatar: null,
       role,
       isAdmin: me.role === 'ADMIN',
-      teacherCourseIds: isDosen ? [2, 3, 4] : [],
+      // Kursus ajar hanya diketahui pada data mock (kursus 2-4). Lewat Backend Gateway tidak ada data pendaftaran
+      // Moodle, jadi dibiarkan kosong (undefined) dan peran pengajar mengikuti role dosen dari backend.
+      teacherCourseIds: MOCK_SESSION ? (isDosen ? [2, 3, 4] : []) : undefined,
     },
   };
 }

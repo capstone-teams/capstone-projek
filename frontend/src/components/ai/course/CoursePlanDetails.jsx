@@ -1,13 +1,15 @@
 import { Badge, EmptyState } from '../../ui';
+import { WEEK_TYPE_LABELS } from '../../../utils/coursePlan';
 
-const ACTIVITY_LABELS = { learning_material: 'Materi', assignment: 'Tugas', quiz: 'Kuis' };
+// Jenis aktivitas yang boleh direncanakan (CoursePlanActivityType backend, content-schema §10).
+const ACTIVITY_LABELS = { learning_material: 'Materi', learning_resource: 'Sumber belajar', assignment: 'Tugas', quiz: 'Kuis' };
 const COLUMNS = [
   { label: 'Minggu', className: 'w-[88px]' },
   { label: 'Topik', className: 'w-[22%]' },
-  { label: 'Capaian pembelajaran', className: 'w-[23%]' },
+  { label: 'Sub-CPMK', className: 'w-[23%]' },
   { label: 'Tujuan pembelajaran', className: 'w-[23%]' },
   { label: 'Metode mengajar' },
-  { label: 'Aktivitas' },
+  { label: 'Rencana aktivitas' },
 ];
 
 function TextList({ items }) {
@@ -34,8 +36,30 @@ function Activities({ items }) {
   ) : <span className="muted">Belum tersedia.</span>;
 }
 
-/** Presentasi rencana saja; aksi approve/regenerasi tetap di CoursePlanPage. */
-export default function CoursePlanDetails({ plan, course }) {
+/** Penanda UTS/UAS/Kuis untuk minggu khusus. */
+function WeekType({ type }) {
+  const label = WEEK_TYPE_LABELS[type];
+  return label ? <Badge tone={type === 'kuis' ? 'info' : 'warning'}>{label}</Badge> : null;
+}
+
+/** Temuan validasi untuk satu minggu (BE-14.2), di bawah judul minggu. */
+function WeekIssues({ issues }) {
+  if (!issues?.length) return null;
+  return (
+    <div className="mt-2 rounded border border-warning/40 bg-warning-light px-2 py-1.5 text-[13px] text-warning" aria-label="Temuan validasi minggu ini">
+      <p className="font-semibold">Temuan validasi:</p>
+      <ul className="m-0 list-disc pl-4">
+        {issues.map((issue, index) => <li key={index}>{issue.message || 'Temuan validasi tanpa keterangan.'}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Presentasi rencana saja; aksi approve/regenerasi tetap di CoursePlanPage. Per minggu: judul, Sub-CPMK, tujuan
+ * pembelajaran, topik, metode, rencana aktivitas, penanda UTS/UAS, dan temuan validasi (`issuesByWeek`).
+ */
+export default function CoursePlanDetails({ plan, course, issuesByWeek }) {
   const info = plan.course ?? {};
   const outcomes = Array.isArray(plan.learning_outcomes) ? plan.learning_outcomes : [];
   const descriptions = new Map(outcomes.filter((item) => item?.code).map((item) => [item.code, item.description]));
@@ -69,12 +93,18 @@ export default function CoursePlanDetails({ plan, course }) {
               </thead>
               <tbody>
                 {plan.weeks.map((week) => (
-                  <tr key={week.week_number}>
-                    <th scope="row" className="w-[88px] border-b align-top">{week.week_number}</th>
+                  <tr key={week.week_number} className={WEEK_TYPE_LABELS[week.week_type] && week.week_type !== 'kuis' ? 'bg-warning-light/40' : undefined}>
+                    <th scope="row" className="w-[88px] border-b align-top">
+                      <span className="flex flex-col items-start gap-1">
+                        {week.week_number}
+                        <WeekType type={week.week_type} />
+                      </span>
+                    </th>
                     <td>
                       <strong>{week.title || 'Topik belum tersedia.'}</strong>
                       <TextList items={week.topics} />
                       {week.note && <p className="note">{week.note}</p>}
+                      <WeekIssues issues={issuesByWeek?.get(week.week_number)} />
                     </td>
                     <td><TextList items={week.learning_outcomes.map(outcomeText)} /></td>
                     <td><TextList items={week.objectives} /></td>
@@ -89,15 +119,19 @@ export default function CoursePlanDetails({ plan, course }) {
             {plan.weeks.map((week) => (
               <li key={week.week_number} className="min-w-0">
                 <article className="rounded-lg border border-line p-4" aria-label={`Minggu ${week.week_number}`}>
-                  <h3 className="mb-4 text-[17px] leading-[1.5]">Minggu {week.week_number}: {week.title || 'Topik belum tersedia.'}</h3>
+                  <h3 className="mb-4 flex flex-wrap items-center gap-2 text-[17px] leading-[1.5]">
+                    Minggu {week.week_number}: {week.title || 'Topik belum tersedia.'}
+                    <WeekType type={week.week_type} />
+                  </h3>
                   <dl className="m-0 grid gap-4">
                     <WeekField label="Topik"><TextList items={week.topics} /></WeekField>
-                    <WeekField label="Capaian pembelajaran"><TextList items={week.learning_outcomes.map(outcomeText)} /></WeekField>
+                    <WeekField label="Sub-CPMK"><TextList items={week.learning_outcomes.map(outcomeText)} /></WeekField>
                     <WeekField label="Tujuan pembelajaran"><TextList items={week.objectives} /></WeekField>
                     <WeekField label="Metode mengajar"><TextList items={week.teaching_methods} /></WeekField>
-                    <WeekField label="Aktivitas"><Activities items={week.planned_activities} /></WeekField>
+                    <WeekField label="Rencana aktivitas"><Activities items={week.planned_activities} /></WeekField>
                   </dl>
                   {week.note && <p className="note">{week.note}</p>}
+                  <WeekIssues issues={issuesByWeek?.get(week.week_number)} />
                 </article>
               </li>
             ))}

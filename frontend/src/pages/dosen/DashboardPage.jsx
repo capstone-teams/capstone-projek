@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useApi } from '../../hooks/useApi';
 import { getActionEvents, getRecentCourses, getCoursesByClassification } from '../../services/moodle/moodleApi';
-import { getMoodleCourses } from '../../services/moodleIntegrationService';
 import { PageContainer } from '../../components/layout/MoodleLayout';
 import { Card, EmptyState, ErrorAlert, Spinner } from '../../components/ui';
 import ActivityIcon from '../../components/moodle/ActivityIcon';
@@ -40,20 +39,10 @@ function Timeline() {
                 <li key={ev.id} className="flex flex-wrap items-center gap-3">
                   <span className="w-12 text-sm text-muted tabular-nums">{formatUnixTime(ev.timesort)}</span>
                   <ActivityIcon modname={ev.modulename} src={ev.icon?.iconurl} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <Link to={to} className="block truncate">
-                      {ev.activityname || ev.name}
-                    </Link>
-                    <span className="block truncate text-sm text-muted">
-                      {ev.name} · {ev.course.fullnamedisplay ?? ev.course.fullname}
-                    </span>
-                  </div>
-                  {ev.overdue && <span className="text-xs font-bold text-danger">Terlambat</span>}
-                  {ev.action?.actionable && (
-                    <Link to={to} className="btn btn--secondary btn--sm">
-                      {ev.action.name}
-                    </Link>
-                  )}
+                  <Link to={to} className="min-w-0 flex-1 truncate font-medium text-sm">
+                    {ev.name}
+                  </Link>
+                  <span className="text-xs text-muted">{ev.course?.shortname}</span>
                 </li>
               );
             })}
@@ -66,20 +55,13 @@ function Timeline() {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen';
-  const recent = useApi(() => getRecentCourses(user?.id, 4).catch(() => []), [user?.id]);
-  const coursesQuery = useApi(async () => {
-    // 1. Coba ambil kursus via Backend API Gateway (Single Gateway)
-    const gateway = await getMoodleCourses().catch(() => null);
-    if (gateway?.courses?.length) return gateway.courses;
+  const isDosen = user?.role === ROLE.DOSEN || user?.role === 'dosen' || user?.role === 'INSTRUCTOR';
 
-    // 2. Fallback direct WS hanya jika tersedia (mis. mode mock di pengujian)
-    try {
-      return await getCoursesByClassification('inprogress');
-    } catch {
-      return gateway?.courses ?? [];
-    }
-  });
+  const recent = useApi(() => getRecentCourses(user?.id, 4).catch(() => []), [user?.id]);
+  // Kursus lewat Backend Gateway bila tidak ada sesi Moodle di browser: kursus Moodle dari integrasi lebih dulu, lalu
+  // project kursus (lihat getCoursesByClassification). Galatnya ditampilkan agar gangguan layanan tidak terbaca
+  // sebagai "belum terdaftar di kursus mana pun".
+  const coursesQuery = useApi(() => getCoursesByClassification('all'));
   const teacherIds = new Set(user?.teacherCourseIds ?? []);
 
   const coursesList = coursesQuery.data ?? [];
@@ -89,7 +71,7 @@ export default function DashboardPage() {
 
   return (
     <PageContainer>
-      <h1 className="moodle-h1 mb-6">Halo, {user.firstname}! 👋</h1>
+      <h1 className="moodle-h1 mb-6">Halo, {user?.firstname || user?.username}! 👋</h1>
 
       <div className="grid items-start gap-5 ">
         <div className="flex min-w-0 flex-col gap-5">
@@ -106,9 +88,12 @@ export default function DashboardPage() {
             }
           >
             <ErrorAlert error={recent.error || coursesQuery.error} />
+            {coursesQuery.error && !courses.length && (
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => coursesQuery.reload()}>Coba lagi</button>
+            )}
             {(recent.loading || coursesQuery.loading) && !courses.length ? (
               <Spinner />
-            ) : courses.length ? (
+            ) : coursesQuery.error && !courses.length ? null : courses.length ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 {courses.map((c) => (
                   <CourseCard key={c.id} course={c} isTeacher={isTeacherCourse(c.id)} />
@@ -121,23 +106,23 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-5">
-          {user.role === ROLE.DOSEN ? (
-            <>
-              <Card title="Kursus yang Anda ajar">
-                {teaching.length ? (
-                  <ul className="list">
-                    {teaching.map((c) => (
-                      <li key={c.id}>
-                        <Link to={`/course/${c.id}`}>{c.fullname}</Link>
-                        <div className="text-xs text-muted">{c.shortname}</div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted">{user.isAdmin ? 'Anda admin situs.' : 'Belum ada.'}</p>
-                )}
-              </Card>
-            </>
+          {isDosen ? (
+            <Card title="Kursus yang Anda ajar">
+              {teaching.length ? (
+                <ul className="list">
+                  {teaching.map((c) => (
+                    <li key={c.id}>
+                      <Link to={`/course/${c.id}`}>{c.fullname}</Link>
+                      <div className="text-xs text-muted">{c.shortname}</div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted">
+                  {coursesQuery.error ? 'Daftar kursus belum dapat dimuat.' : user?.isAdmin ? 'Anda admin situs.' : 'Belum ada.'}
+                </p>
+              )}
+            </Card>
           ) : (
             <Card title="Ringkasan belajar">
               {coursesQuery.loading && !coursesQuery.data ? (
@@ -149,12 +134,12 @@ export default function DashboardPage() {
                       <Link to={`/course/${c.id}`} className="min-w-0 truncate">
                         {c.shortname}
                       </Link>
-                      <span className="text-sm text-muted">{c.progress != null ? `${Math.round(c.progress)}%` : '-'}</span>
+                      <span className="text-xs text-muted">{c.fullname}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted">Belum ada.</p>
+                <EmptyState title="Belum ada kursus." />
               )}
             </Card>
           )}
