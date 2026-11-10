@@ -24,6 +24,8 @@ class IMoodleMappingRepository(Protocol):
 
     async def exists(self, entity_type: str, internal_id: str) -> bool: ...
 
+    async def delete(self, entity_type: str, internal_id: str) -> bool: ...
+
 
 class InMemoryMoodleMappingRepository:
     def __init__(self) -> None:
@@ -49,3 +51,10 @@ class InMemoryMoodleMappingRepository:
 
     async def exists(self, entity_type: str, internal_id: str) -> bool:
         return (entity_type, internal_id) in self._by_internal
+
+    async def delete(self, entity_type: str, internal_id: str) -> bool:
+        moodle_id = self._by_internal.pop((entity_type, internal_id), None)
+        if moodle_id is None:
+            return False
+        self._by_moodle.pop((entity_type, moodle_id), None)
+        return True

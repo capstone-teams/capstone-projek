@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from src.models.moodle_entity_mapping import MoodleEntityMapping
 from src.services.moodle_adapter import MoodleAdapter
 from src.services.moodle_client import MoodleClient
-from src.services.moodle_mapping import DuplicateMappingError, MoodleMapping
+from src.services.moodle_mapping import DuplicateMappingError, InMemoryMoodleMappingRepository, MoodleMapping
 from src.services.moodle_mapping_sql import SqlMoodleMappingRepository
 
 
@@ -77,6 +77,33 @@ async def test_same_internal_id_is_allowed_for_different_entity_types(db_session
 
     assert await repo.get_moodle_id("course", "item_1") == 10
     assert await repo.get_moodle_id("section", "item_1") == 10
+
+
+@pytest.mark.asyncio
+async def test_stale_mapping_can_be_deleted_and_saved_again(db_session):
+    repo = SqlMoodleMappingRepository(db_session)
+    await repo.save(MoodleMapping("quiz", "quiz-1", 900))
+
+    deleted = await repo.delete("quiz", "quiz-1")
+    deleted_again = await repo.delete("quiz", "quiz-1")
+    await repo.save(MoodleMapping("quiz", "quiz-1", 950))
+
+    assert (deleted, deleted_again) == (True, False)
+    assert await repo.get_moodle_id("quiz", "quiz-1") == 950
+    assert await repo.get_internal_id("quiz", 900) is None
+    assert await count_rows(db_session) == 1
+
+
+@pytest.mark.asyncio
+async def test_in_memory_mapping_can_be_deleted_too():
+    repo = InMemoryMoodleMappingRepository()
+    await repo.save(MoodleMapping("quiz", "quiz-1", 900))
+
+    assert await repo.delete("quiz", "quiz-1") is True
+    assert await repo.delete("quiz", "quiz-1") is False
+    assert await repo.get_internal_id("quiz", 900) is None
+    await repo.save(MoodleMapping("quiz", "quiz-1", 950))
+    assert await repo.get_moodle_id("quiz", "quiz-1") == 950
 
 
 @pytest.mark.asyncio

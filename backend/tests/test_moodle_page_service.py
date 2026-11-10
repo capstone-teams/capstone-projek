@@ -199,6 +199,10 @@ def test_page_is_built_from_learning_material_data():
             {"heading": "Pengantar", "body_markdown": "Basis data menyimpan **data terstruktur**."},
             {"heading": "Contoh <SQL>", "body_markdown": "```\nSELECT * FROM mahasiswa;\n```"},
         ],
+        "references": [
+            {"title": "Dokumentasi PostgreSQL", "url": "https://www.postgresql.org/docs/"},
+            {"title": "Buku ajar Basis Data", "url": None},
+        ],
         "traceability": {
             "week_number": 1,
             "sub_cpmk_codes": ["Sub-CPMK-1.1"],
@@ -213,6 +217,8 @@ def test_page_is_built_from_learning_material_data():
         "<h3>Tujuan Pembelajaran</h3><ul><li>Menjelaskan konsep basis data</li></ul>"
         "<h3>Pengantar</h3><p>Basis data menyimpan <strong>data terstruktur</strong>.</p>"
         "<h3>Contoh &lt;SQL&gt;</h3><pre><code>SELECT * FROM mahasiswa;</code></pre>"
+        '<h3>Referensi</h3><ul><li><a href="https://www.postgresql.org/docs/">Dokumentasi PostgreSQL</a></li>'
+        "<li>Buku ajar Basis Data</li></ul>"
     )
 
 

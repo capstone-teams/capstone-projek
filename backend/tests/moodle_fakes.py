@@ -290,3 +290,111 @@ class StudentMoodle(FakeMoodle):
 
     def enrol(self, user_id: int) -> None:
         self.enrolments.setdefault(STUDENT_COURSE_ID, {}).setdefault(user_id, set()).add(STUDENT_ROLE_ID)
+
+
+# --- Activity hasil eksekusi FULL (BE-21.2) ------------------------------------
+
+ACTIVITY_COURSE_ID = 3
+ACTIVITY_CREATE_FUNCTIONS = {
+    "local_capstonebridge_create_page": "page",
+    "local_capstonebridge_create_url": "url",
+    "local_capstonebridge_create_assign": "assign",
+    "local_capstonebridge_create_quiz": "quiz",
+}
+ACTIVITY_UPDATE_FUNCTIONS = {
+    "local_capstonebridge_update_page": "page",
+    "local_capstonebridge_update_url": "url",
+    "local_capstonebridge_update_assign": "assign",
+    "local_capstonebridge_update_quiz": "quiz",
+}
+
+
+class ActivityMoodle(FakeMoodle):
+    """Course kosong + plugin activity; module tampil pada ``core_course_get_contents``.
+
+    Module disimpan di dalam section, sehingga perubahan manual (hapus, ganti
+    nama, pindah section) terlihat saat course dibaca ulang seperti di Moodle.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.courses[ACTIVITY_COURSE_ID] = {
+            "id": ACTIVITY_COURSE_ID, "fullname": "Basis Data", "shortname": "IF123", "format": "topics",
+            "visible": 1, "categoryid": 1, "summary": "",
+        }
+        self.sections[ACTIVITY_COURSE_ID] = [
+            {"id": 300, "section": 0, "name": "General", "summary": "", "visible": 1, "modules": []}
+        ]
+        self.idnumbers: dict[int, str] = {}
+        self._next_cmid = 900
+
+    # Perubahan manual dosen/admin langsung di Moodle -------------------------
+
+    def module(self, cmid: int) -> dict | None:
+        for section in self.sections[ACTIVITY_COURSE_ID]:
+            for module in section["modules"]:
+                if module["id"] == cmid:
+                    return module
+        return None
+
+    def section_of(self, cmid: int) -> int | None:
+        for section in self.sections[ACTIVITY_COURSE_ID]:
+            if any(module["id"] == cmid for module in section["modules"]):
+                return section["section"]
+        return None
+
+    def weekly_modules(self) -> list[dict]:
+        return [m for s in self.sections[ACTIVITY_COURSE_ID] if s["section"] > 0 for m in s["modules"]]
+
+    def delete_module(self, cmid: int) -> None:
+        for section in self.sections[ACTIVITY_COURSE_ID]:
+            section["modules"] = [module for module in section["modules"] if module["id"] != cmid]
+        self.idnumbers.pop(cmid, None)
+
+    def move_module(self, cmid: int, section_number: int) -> None:
+        module = self.module(cmid)
+        self.delete_module(cmid)
+        self._section(section_number)["modules"].append(module)
+
+    def add_manual_module(self, section_number: int, name: str, modname: str = "forum") -> int:
+        cmid = self._next_cmid
+        self._next_cmid += 1
+        self._section(section_number)["modules"].append(
+            {"id": cmid, "name": name, "modname": modname, "visible": 1}
+        )
+        return cmid
+
+    def _section(self, number: int) -> dict:
+        return next(item for item in self.sections[ACTIVITY_COURSE_ID] if item["section"] == number)
+
+    # Plugin local_capstonebridge ---------------------------------------------
+
+    def _dispatch(self, wsfunction, params):
+        if wsfunction in ACTIVITY_CREATE_FUNCTIONS:
+            idnumber = params.get("idnumber", "")
+            existing = next((cmid for cmid, value in self.idnumbers.items() if value and value == idnumber), None)
+            if existing is not None:
+                return self._response(existing, created=0)
+            cmid = self._next_cmid
+            self._next_cmid += 1
+            self._section(int(params["section"]))["modules"].append(
+                {"id": cmid, "name": params["name"], "modname": ACTIVITY_CREATE_FUNCTIONS[wsfunction], "visible": 1}
+            )
+            self.idnumbers[cmid] = idnumber
+            return self._response(cmid, created=1)
+        if wsfunction in ACTIVITY_UPDATE_FUNCTIONS:
+            cmid = int(params["cmid"])
+            module = self.module(cmid)
+            if module is None or module["modname"] != ACTIVITY_UPDATE_FUNCTIONS[wsfunction]:
+                return moodle_exception("invalidcoursemodule", "Invalid course module ID")
+            module["name"] = params["name"]
+            if self.section_of(cmid) != int(params["section"]):
+                self.move_module(cmid, int(params["section"]))
+            return self._response(cmid, created=0)
+        return super()._dispatch(wsfunction, params)
+
+    def _response(self, cmid: int, *, created: int) -> dict:
+        return {
+            "cmid": cmid, "instanceid": cmid + 1000, "created": created, "updated": 1,
+            "section": self.section_of(cmid), "questioncount": 1, "questionsreplaced": 0, "hasattempts": 0,
+        }

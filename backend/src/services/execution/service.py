@@ -40,7 +40,7 @@ from __future__ import annotations
 import html
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -440,6 +440,51 @@ class ExecutionService:
             final.summary.total if final is not None else 0,
         )
         return final
+
+    async def rerun_operations(
+        self,
+        *,
+        execution_id: str,
+        operation_ids: Collection[str],
+        emit_event: EmitEvent | None = None,
+    ) -> ExecutionRecord:
+        """Jalankan ulang operasi tertentu untuk perbaikan verifikasi (BE-21.2).
+
+        Berbeda dengan :meth:`retry_failed`, operasi yang sudah ``SUCCESS`` pun
+        dijalankan ulang (mis. activity dihapus manual dari Moodle). Operasi
+        ``SKIPPED`` tidak disentuh. Status dan read-back eksekusi tidak diubah;
+        hasil perbaikan dinilai oleh Verification Service lewat read-back ulang.
+        """
+        execution = await self._repository.get(execution_id)
+        if execution is None:
+            raise ExecutionNotFoundError(execution_id)
+        plan = await self._plans.get_by_id(execution.course_plan_id)
+        weeks_by_id = {week.id: week for week in plan.weeks} if plan else {}
+        wanted = set(operation_ids)
+        selected = [
+            operation
+            for operation in execution.operations
+            if operation.id in wanted and operation.status is not OperationStatus.SKIPPED
+        ]
+
+        for operation in selected:
+            if operation.operation_type is not OperationType.SECTION:
+                continue
+            week = weeks_by_id.get(operation.course_plan_week_id)
+            if week is not None:
+                await self._run_section_operation(
+                    execution, operation, week, emit_event=emit_event
+                )
+        for operation in selected:
+            if operation.operation_type is OperationType.SECTION:
+                continue
+            await self._run_content_operation(
+                execution,
+                operation,
+                weeks_by_id.get(operation.course_plan_week_id),
+                emit_event=emit_event,
+            )
+        return await self._repository.get(execution_id) or execution
 
     # --- Prasyarat --------------------------------------------------------
 
