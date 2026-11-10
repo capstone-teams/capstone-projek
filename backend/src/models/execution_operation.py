@@ -74,9 +74,10 @@ class ExecutionOperation(BaseModel):
         index=True,
     )
 
-    #: Konten yang dieksekusi (dipakai cakupan FULL pada M04).
+    #: Konten yang dieksekusi (dipakai cakupan FULL pada M04). Referensi
+    #: polimorfik: learning material/resource ada di ``contents``, assignment/quiz
+    #: di ``activities`` — jadi sengaja tidak memakai foreign key satu tabel.
     content_id: Mapped[str | None] = mapped_column(
-        ForeignKey("contents.id"),
         nullable=True,
     )
 

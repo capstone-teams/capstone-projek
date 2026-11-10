@@ -143,6 +143,11 @@ class MoodleIntegrationService:
     def __init__(self, client: MoodleClient) -> None:
         self._client = client
 
+    @property
+    def client(self) -> MoodleClient:
+        """Client dasar untuk operasi activity (BE-12) pada cakupan FULL."""
+        return self._client
+
     async def get_status(self) -> MoodleStatus:
         # Probe status harus cepat dan jujur: tidak di-retry.
         info = _expect_dict(await self._client.call(SITE_INFO_FUNCTION, retry=False), SITE_INFO_FUNCTION)
