@@ -198,6 +198,8 @@ function CourseProjectLayout() {
           version,
           refresh,
           initialRpsId: dbCourse?.rps_id ?? null,
+          // Pencarian workflow kursus (course target) masih berjalan: halaman anak menunggu, bukan menganggap kosong.
+          workflowLoading: activeWfQuery.loading && !workflowId,
         }} />
       </ErrorBoundary>
     </>

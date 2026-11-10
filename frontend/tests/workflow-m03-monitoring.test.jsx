@@ -111,10 +111,10 @@ describe('FE-10.4 tampilan monitoring', () => {
     expect(quickLink().getAttribute('href')).toBe('/course/2/ai/publish');
   });
 
-  it('eksekusi struktur selesai: menunggu generate konten dengan tautan ke halaman Review (FE-17)', async () => {
+  it('eksekusi struktur selesai: menunggu generate konten dengan tautan ke halaman Konten (FE-16)', async () => {
     await showPanel(wf(), executed());
     expect(node.textContent).toContain('Menunggu tindakan Anda: Generate konten');
-    expect(quickLink().getAttribute('href')).toBe('/course/2/ai/review');
+    expect(quickLink().getAttribute('href')).toBe('/course/2/ai/content');
   });
 
   it('tanpa linkBase keterangan tetap tampil tanpa tautan', async () => {

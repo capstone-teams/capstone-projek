@@ -410,6 +410,8 @@ export const AWAITED_ACTION = {
   EXECUTE_STRUCTURE: 'EXECUTE_STRUCTURE',
   GENERATE_CONTENT: 'GENERATE_CONTENT',
   REVIEW_CONTENT: 'REVIEW_CONTENT',
+  REVISE_CONTENT: 'REVISE_CONTENT',
+  EXECUTE_FULL: 'EXECUTE_FULL',
 };
 
 /** title/description untuk pengguna; page: tab Generator AI tujuan tautan cepat; secondary: tautan tambahan. */
@@ -420,6 +422,14 @@ export const AWAITED_ACTION_META = {
   [AWAITED_ACTION.EXECUTE_STRUCTURE]: { title: 'Eksekusi struktur', description: 'Course plan disetujui. Buat struktur mingguan di kursus Moodle target.', page: 'publish', linkLabel: 'Buka halaman eksekusi' },
   [AWAITED_ACTION.GENERATE_CONTENT]: { title: 'Generate konten', description: 'Struktur kursus sudah dibuat di Moodle. Lanjutkan dengan generate konten mingguan.', page: 'content', linkLabel: 'Buka halaman Konten' },
   [AWAITED_ACTION.REVIEW_CONTENT]: { title: 'Review konten', description: 'Konten mingguan selesai dibuat. Tinjau, setujui, atau perbaiki item yang gagal.', page: 'review', linkLabel: 'Buka halaman Review' },
+  [AWAITED_ACTION.REVISE_CONTENT]: { title: 'Regenerasi konten', description: 'Sebagian konten ditolak. Regenerasi konten tersebut berdasarkan catatan revisi.', page: 'review', linkLabel: 'Buka halaman Review' },
+  [AWAITED_ACTION.EXECUTE_FULL]: {
+    title: 'Eksekusi FULL',
+    description: 'Konten telah disetujui. Pastikan seluruh konten disetujui, lalu kirim struktur dan konten ke Moodle.',
+    page: 'publish',
+    linkLabel: 'Buka halaman eksekusi FULL',
+    secondary: { page: 'review', label: 'Buka halaman Review' },
+  },
 };
 
 const completedStage = (event, stages) => event.event === WORKFLOW_EVENT.STAGE_COMPLETED && stages.includes(event.stage);
@@ -438,13 +448,19 @@ function workStageBefore(events, index) {
 
 /**
  * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap M03/M04:
- * konten selesai digenerate -> review konten; eksekusi selesai -> generate konten; rencana disetujui -> eksekusi
+ * konten disetujui -> eksekusi FULL; konten ditolak -> regenerasi konten; eksekusi FULL selesai -> verifikasi (belum
+ * tersedia, null); konten selesai digenerate -> review konten; eksekusi selesai -> generate konten; rencana disetujui -> eksekusi
  * struktur; rencana ditolak -> regenerasi; rencana tersusun -> review course plan; analisis RPS selesai -> mulai
  * course planning. null bila workflow tidak sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
  */
 export function awaitedActionOf(workflow, events = []) {
   if (!needsInstructorAction(workflow)) return null;
   for (const event of [...events].reverse()) {
+    // FE-19.1: keputusan dosen atas konten dan operasi eksekusi FULL (activity) lebih baru daripada hasil generation.
+    if (event.event === WORKFLOW_EVENT.CONTENTS_APPROVED) return AWAITED_ACTION.EXECUTE_FULL;
+    if (event.event === WORKFLOW_EVENT.CONTENTS_REJECTED) return AWAITED_ACTION.REVISE_CONTENT;
+    // Setelah eksekusi FULL, yang ditunggu adalah verifikasi (BE-22.1, belum tersedia).
+    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(event)) return null;
     if (
       CONTENT_STAGE_EVENTS.includes(event.event)
       || event.stage === WORKFLOW_STAGE.CONTENT_GENERATION
