@@ -1,0 +1,198 @@
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import WorkflowStepper from '../src/components/ai/WorkflowStepper';
+import AiCourseLayout from '../src/pages/dosen/ai/AiCourseLayout';
+import CourseOverviewPage from '../src/pages/dosen/ai/CourseOverviewPage';
+import MyCoursesPage from '../src/pages/moodle/MyCoursesPage';
+import ProfilePage from '../src/pages/moodle/ProfilePage';
+import { AuthContext } from '../src/context/authContext';
+import { AppStateProvider } from '../src/context/AppStateProvider';
+import * as courseService from '../src/services/courseService';
+import * as workflowService from '../src/services/workflowService';
+import * as rpsService from '../src/services/rpsService';
+import * as moodleApi from '../src/services/moodle/moodleApi';
+import { ROLE } from '../src/types/auth';
+import { deriveStepperState } from '../src/utils/workflowStatus';
+
+const moodleCourseHook = vi.hoisted(() => ({
+  course: { id: 48, shortname: 'SBD-2223', fullname: 'Sistem Basis Data' },
+  isTeacher: true,
+}));
+const monitorState = vi.hoisted(() => ({
+  workflow: null,
+  events: [],
+  connection: 'connected',
+  reload: vi.fn(),
+}));
+
+vi.mock('../src/hooks/useMoodleCourse', () => ({ useMoodleCourse: () => moodleCourseHook }));
+vi.mock('../src/hooks/useWorkflowMonitor', () => ({ useWorkflowMonitor: () => monitorState }));
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const ev = (event, stage = null, message = '') => ({
+  event,
+  stage,
+  message,
+  workflow_id: 'wf-1',
+  timestamp: '2026-11-11T08:00:00Z',
+});
+const wf = (overrides = {}) => ({
+  id: 'wf-1',
+  rps_id: 'rps-1',
+  moodle_course_id: 48,
+  status: 'RUNNING',
+  stage: 'instructor_review',
+  updated_at: '2026-11-11T08:00:00Z',
+  ...overrides,
+});
+
+const analyzed = () => [
+  ev('WORKFLOW_STAGE_STARTED', 'rps_analysis'),
+  ev('WORKFLOW_STAGE_COMPLETED', 'rps_analysis'),
+  ev('WORKFLOW_WAITING_FOR_REVIEW', 'instructor_review'),
+];
+const planned = () => [
+  ...analyzed(),
+  ev('WORKFLOW_STAGE_STARTED', 'course_planning'),
+  ev('WORKFLOW_STAGE_COMPLETED', 'course_planning'),
+  ev('WORKFLOW_STAGE_STARTED', 'validation'),
+  ev('WORKFLOW_PLAN_GENERATED', 'validation'),
+  ev('WORKFLOW_STAGE_COMPLETED', 'validation'),
+  ev('WORKFLOW_WAITING_FOR_REVIEW', 'instructor_review'),
+];
+const approved = () => [...planned(), ev('WORKFLOW_PLAN_APPROVED', 'instructor_review')];
+const contentGen = () => [
+  ...approved(),
+  ev('WORKFLOW_STAGE_STARTED', 'content_generation'),
+];
+const contentReview = () => [
+  ...contentGen(),
+  ev('WORKFLOW_STAGE_COMPLETED', 'content_generation'),
+  ev('WORKFLOW_STAGE_STARTED', 'validation'),
+  ev('WORKFLOW_CONTENT_VALIDATED', 'validation', 'Minggu 1 - Learning Material selesai.'),
+  ev('WORKFLOW_STAGE_COMPLETED', 'validation'),
+  ev('WORKFLOW_WAITING_FOR_REVIEW', 'instructor_review'),
+];
+const contentApproved = () => [...contentReview(), ev('WORKFLOW_CONTENTS_APPROVED', 'instructor_review')];
+const fullExecuted = () => [
+  ...contentApproved(),
+  ev('WORKFLOW_STAGE_STARTED', 'moodle_execution'),
+  ev('WORKFLOW_MOODLE_OPERATION', 'moodle_execution', 'Minggu 1 - Quiz diterapkan ke Moodle.'),
+  ev('WORKFLOW_STAGE_COMPLETED', 'moodle_execution'),
+  ev('WORKFLOW_WAITING_FOR_REVIEW', 'instructor_review'),
+];
+
+describe('WorkflowStepper & deriveStepperState (data workflow backend)', () => {
+  it('memetakan seluruh tahapan workflow nyata dari Rencana hingga Selesai', () => {
+    expect(deriveStepperState(null, [])).toEqual({ current: 0, finished: false });
+    expect(deriveStepperState(wf({ stage: 'rps_analysis' }), [])).toEqual({ current: 0, finished: false });
+    expect(deriveStepperState(wf(), planned())).toEqual({ current: 0, finished: false });
+    expect(deriveStepperState(wf(), approved())).toEqual({ current: 1, finished: false });
+    expect(deriveStepperState(wf({ stage: 'content_generation' }), contentGen())).toEqual({ current: 1, finished: false });
+    expect(deriveStepperState(wf({ stage: 'validation' }), contentGen())).toEqual({ current: 1, finished: false });
+    expect(deriveStepperState(wf(), contentReview())).toEqual({ current: 2, finished: false });
+    expect(deriveStepperState(wf(), contentApproved())).toEqual({ current: 3, finished: false });
+    expect(deriveStepperState(wf({ stage: 'moodle_execution' }), contentApproved())).toEqual({ current: 3, finished: false });
+    expect(deriveStepperState(wf(), fullExecuted())).toEqual({ current: 4, finished: false });
+    expect(deriveStepperState(wf({ status: 'COMPLETED', stage: null }), fullExecuted())).toEqual({ current: 5, finished: true });
+  });
+
+  it('menandai langkah yang selesai dengan ✓ pada komponen WorkflowStepper', async () => {
+    const node = document.createElement('div');
+    const root = createRoot(node);
+    await act(async () => root.render(<WorkflowStepper workflow={wf()} events={contentReview()} />));
+    const items = [...node.querySelectorAll('.stepper__item')];
+    expect(items[0].className).toContain('stepper__item--done');
+    expect(items[1].className).toContain('stepper__item--done');
+    expect(items[2].className).toContain('stepper__item--current');
+    expect(items[2].getAttribute('aria-current')).toBe('step');
+    expect(items[3].className).toContain('stepper__item--todo');
+    await act(async () => root.unmount());
+  });
+});
+
+describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => {
+  let node;
+  let root;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    node = document.createElement('div');
+    document.body.appendChild(node);
+    root = createRoot(node);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    node.remove();
+  });
+
+  it('AiCourseLayout menampilkan status workflow nyata & stepper maju saat rencana disetujui', async () => {
+    vi.spyOn(courseService, 'findCourseByMoodleId').mockResolvedValue(null);
+    vi.spyOn(workflowService, 'getActiveCourseBinding').mockReturnValue({ workflowId: 'wf-1', rpsId: 'rps-1' });
+    vi.spyOn(workflowService, 'findWorkflowForCourse').mockResolvedValue(wf());
+    vi.spyOn(rpsService, 'getRps').mockResolvedValue({ id: 'rps-1', filename: 'RPS SBD.pdf', status: 'ANALYZED' });
+
+    monitorState.workflow = wf();
+    monitorState.events = approved();
+
+    await act(async () => root.render(
+      <MemoryRouter initialEntries={['/course/48/ai']}>
+        <Routes>
+          <Route path="/course/:courseId/ai" element={<AiCourseLayout />}>
+            <Route index element={<CourseOverviewPage />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    ));
+
+    // Tidak lagi menampakkan badge Draft hardcoded
+    expect(node.textContent).toContain('Menunggu review Anda');
+    expect(node.textContent).not.toMatch(/\bDraft\b/);
+
+    // Step 1 (Rencana) done (✓), Step 2 (Konten) current
+    const items = [...node.querySelectorAll('.stepper__item')];
+    expect(items[0].className).toContain('stepper__item--done');
+    expect(items[1].className).toContain('stepper__item--current');
+
+    // Overview menampilkan langkah berikutnya dan timeline event nyata
+    expect(node.textContent).toContain('Eksekusi struktur');
+    expect(node.textContent).toContain('RPS SBD.pdf');
+  });
+
+  it('Mahasiswa (STUDENT) menerima kursus terdaftarnya tanpa error 403 /courses fallback atau ProfilePage error', async () => {
+    const gatewaySpy = vi.spyOn(moodleApi, 'getCoursesByClassification').mockResolvedValue([
+      { id: 48, shortname: 'SBD-2223', fullname: 'Sistem Basis Data' },
+    ]);
+    const studentAuth = {
+      user: {
+        id: 'u-stu-1',
+        username: '11231023',
+        fullname: 'Mahasiswa Demo',
+        email: '11231023@student.itk.ac.id',
+        role: ROLE.MAHASISWA,
+        isAdmin: false,
+      },
+      site: { name: 'Moodle ITK' },
+    };
+
+    await act(async () => root.render(
+      <MemoryRouter>
+        <AuthContext.Provider value={studentAuth}>
+          <AppStateProvider>
+            <MyCoursesPage />
+            <ProfilePage />
+          </AppStateProvider>
+        </AuthContext.Provider>
+      </MemoryRouter>,
+    ));
+
+    expect(gatewaySpy).toHaveBeenCalled();
+    expect(node.textContent).toContain('Mahasiswa Demo');
+    expect(node.textContent).toContain('11231023@student.itk.ac.id');
+    expect(node.textContent).toContain('Sistem Basis Data');
+  });
+});

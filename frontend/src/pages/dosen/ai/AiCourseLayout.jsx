@@ -13,7 +13,8 @@ import {
   saveActiveCourseBinding,
 } from '../../../services/workflowService';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
-import { Alert, ErrorAlert, ErrorBoundary, Spinner, StatusBadge } from '../../../components/ui';
+import { Alert, Badge, ErrorAlert, ErrorBoundary, Spinner } from '../../../components/ui';
+import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 import { ForbiddenPage } from '../../StatusPage';
 import WorkflowLayout from './WorkflowLayout';
@@ -83,16 +84,13 @@ function CourseProjectLayout() {
     }
   }, [moodleId, courseIdParam, serverWorkflow?.id, serverWorkflow?.rps_id, activeBinding?.workflowId, courseKeysKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fallback course dari data Moodle jika belum tercatat di database internal
-  // Tanpa `id`: id project hanya milik kursus backend (/courses/{id}); kursus Moodle tanpa project memakai alur
-  // workflow, sehingga halaman tidak memanggil /courses/{id Moodle}/... yang pasti 404.
+  // Fallback metadata kursus dari Moodle jika belum tercatat di database internal /courses
   const baseCourse = dbCourse ?? (moodleCourse ? {
     moodle_course_id: moodleCourse.id,
     shortname: moodleCourse.shortname,
     fullname: moodleCourse.fullname,
     name: moodleCourse.fullname,
     code: moodleCourse.shortname,
-    status: 'DRAFT',
   } : null);
 
   const effectiveWorkflowId = workflowParam
@@ -128,6 +126,7 @@ function CourseProjectLayout() {
 
   const monitor = useWorkflowMonitor(workflowId);
   const { reload: reloadWorkflow, workflow, events } = monitor;
+  const effectiveWorkflow = workflow ?? activeWorkflow ?? null;
 
   const refresh = useCallback(() => {
     setVersion((v) => v + 1);
@@ -160,9 +159,9 @@ function CourseProjectLayout() {
         <p className="text-muted">
           Generator konten AI · RPS {course.code ?? course.shortname} — {course.name ?? course.fullname}
         </p>
-        <StatusBadge status={course.status} />
+        {effectiveWorkflow ? <WorkflowStatusBadge workflow={effectiveWorkflow} /> : <Badge>Belum dimulai</Badge>}
       </div>
-      <WorkflowStepper status={course.status} />
+      <WorkflowStepper workflow={effectiveWorkflow} events={events} />
 
       {localOnly && (
         <Alert tone="warning" title="RPS belum tersimpan untuk kursus ini">
@@ -191,7 +190,7 @@ function CourseProjectLayout() {
         <Outlet context={{
           course,
           moodleCourse,
-          workflow: workflow ?? activeWorkflow,
+          workflow: effectiveWorkflow,
           workflowId,
           events,
           connection: monitor.connection,

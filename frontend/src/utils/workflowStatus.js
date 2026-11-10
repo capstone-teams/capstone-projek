@@ -421,7 +421,7 @@ export const AWAITED_ACTION_META = {
   [AWAITED_ACTION.REVISE_PLAN]: { title: 'Regenerasi course plan', description: 'Course plan ditolak. Susun ulang rencana berdasarkan catatan revisi.', page: 'plan', linkLabel: 'Buka Plan Review' },
   [AWAITED_ACTION.EXECUTE_STRUCTURE]: { title: 'Eksekusi struktur', description: 'Course plan disetujui. Buat struktur mingguan di kursus Moodle target.', page: 'publish', linkLabel: 'Buka halaman eksekusi' },
   [AWAITED_ACTION.GENERATE_CONTENT]: { title: 'Generate konten', description: 'Struktur kursus sudah dibuat di Moodle. Lanjutkan dengan generate konten mingguan.', page: 'content', linkLabel: 'Buka halaman Konten' },
-  [AWAITED_ACTION.REVIEW_CONTENT]: { title: 'Review konten', description: 'Konten mingguan selesai dibuat. Tinjau, setujui, atau perbaiki item yang gagal.', page: 'review', linkLabel: 'Buka halaman Review' },
+  [AWAITED_ACTION.REVIEW_CONTENT]: { title: 'Review konten', description: 'Konten mingguan selesai dibuat dan divalidasi. Periksa, lalu setujui, tolak, atau regenerasi konten.', page: 'review', linkLabel: 'Buka halaman Review' },
   [AWAITED_ACTION.REVISE_CONTENT]: { title: 'Regenerasi konten', description: 'Sebagian konten ditolak. Regenerasi konten tersebut berdasarkan catatan revisi.', page: 'review', linkLabel: 'Buka halaman Review' },
   [AWAITED_ACTION.EXECUTE_FULL]: {
     title: 'Eksekusi FULL',
@@ -446,32 +446,122 @@ function workStageBefore(events, index) {
   return null;
 }
 
+/** Cek apakah run eksekusi Moodle berakhir pada operasi activity (FULL) dan bukan struktur saja. */
+function isFullExecutionRunBefore(events, index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const prev = events[i];
+    if (prev.event === WORKFLOW_EVENT.MOODLE_OPERATION) {
+      if (isActivityOperation(prev)) return true;
+    } else if (
+      (prev.event === WORKFLOW_EVENT.STAGE_STARTED && prev.stage === WORKFLOW_STAGE.MOODLE_EXECUTION)
+      || prev.event === WORKFLOW_EVENT.CONTENTS_APPROVED
+      || prev.event === WORKFLOW_EVENT.PLAN_APPROVED
+    ) {
+      return false;
+    }
+  }
+  return false;
+}
+
 /**
- * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap M03/M04:
- * konten disetujui -> eksekusi FULL; konten ditolak -> regenerasi konten; eksekusi FULL selesai -> verifikasi (belum
- * tersedia, null); konten selesai digenerate -> review konten; eksekusi selesai -> generate konten; rencana disetujui -> eksekusi
- * struktur; rencana ditolak -> regenerasi; rencana tersusun -> review course plan; analisis RPS selesai -> mulai
- * course planning. null bila workflow tidak sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
+ * Tindakan yang ditunggu workflow WAITING_FOR_REVIEW, dari event terakhir yang menandai sebuah tahap:
+ * - M04: konten disetujui -> eksekusi FULL; konten ditolak -> regenerasi konten; konten selesai dibuat/divalidasi
+ *   -> review konten; eksekusi FULL selesai -> verifikasi (belum tersedia, null);
+ * - M03: eksekusi struktur selesai -> generate konten; rencana disetujui -> eksekusi struktur; rencana ditolak ->
+ *   regenerasi; rencana tersusun -> review course plan; analisis RPS selesai -> mulai course planning.
+ * null bila workflow tidak sedang menunggu dosen atau tindakannya tidak dapat ditentukan.
  */
 export function awaitedActionOf(workflow, events = []) {
   if (!needsInstructorAction(workflow)) return null;
-  for (const event of [...events].reverse()) {
-    // FE-19.1: keputusan dosen atas konten dan operasi eksekusi FULL (activity) lebih baru daripada hasil generation.
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION) return isActivityOperation(event) ? null : AWAITED_ACTION.GENERATE_CONTENT;
+    if (completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return isFullExecutionRunBefore(events, index) ? null : AWAITED_ACTION.GENERATE_CONTENT;
     if (event.event === WORKFLOW_EVENT.CONTENTS_APPROVED) return AWAITED_ACTION.EXECUTE_FULL;
     if (event.event === WORKFLOW_EVENT.CONTENTS_REJECTED) return AWAITED_ACTION.REVISE_CONTENT;
-    // Setelah eksekusi FULL, yang ditunggu adalah verifikasi (BE-22.1, belum tersedia).
-    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(event)) return null;
-    if (
-      CONTENT_STAGE_EVENTS.includes(event.event)
-      || event.stage === WORKFLOW_STAGE.CONTENT_GENERATION
-    ) return AWAITED_ACTION.REVIEW_CONTENT;
-    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION || completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return AWAITED_ACTION.GENERATE_CONTENT;
+    if (CONTENT_RESULT_EVENTS.includes(event.event) || completedStage(event, [WORKFLOW_STAGE.CONTENT_GENERATION])) return AWAITED_ACTION.REVIEW_CONTENT;
+    if (completedStage(event, [WORKFLOW_STAGE.VALIDATION])) {
+      return workStageBefore(events, index) === WORKFLOW_STAGE.CONTENT_GENERATION ? AWAITED_ACTION.REVIEW_CONTENT : AWAITED_ACTION.REVIEW_PLAN;
+    }
     if (event.event === WORKFLOW_EVENT.PLAN_APPROVED) return AWAITED_ACTION.EXECUTE_STRUCTURE;
     if (event.event === WORKFLOW_EVENT.PLAN_REJECTED) return AWAITED_ACTION.REVISE_PLAN;
     if (event.event === WORKFLOW_EVENT.PLAN_GENERATED || completedStage(event, [WORKFLOW_STAGE.COURSE_PLANNING])) return AWAITED_ACTION.REVIEW_PLAN;
     if (completedStage(event, [WORKFLOW_STAGE.RPS_ANALYSIS])) return AWAITED_ACTION.START_PLANNING;
   }
   return null;
+}
+
+// ---- Stepper generator AI (header 6 langkah pada AiCourseLayout)
+
+export const WORKFLOW_STEPPER_STEPS = [
+  { key: 'plan', label: 'Rencana' },
+  { key: 'content', label: 'Konten' },
+  { key: 'review', label: 'Review' },
+  { key: 'execution', label: 'Eksekusi Moodle' },
+  { key: 'verification', label: 'Verifikasi' },
+  { key: 'done', label: 'Selesai' },
+];
+
+function stepperIndexForStage(stage, events = []) {
+  switch (stage) {
+    case WORKFLOW_STAGE.CONTENT_GENERATION:
+      return 1;
+    case WORKFLOW_STAGE.VALIDATION:
+      return isContentGenerationActiveContext(events) ? 1 : 0;
+    case WORKFLOW_STAGE.MOODLE_EXECUTION:
+      return 3;
+    case WORKFLOW_STAGE.VERIFICATION:
+      return 4;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Menurunkan langkah aktif (0..5) dan status selesai untuk 6-step WorkflowStepper dari snapshot
+ * workflow nyata (`status` + `stage`) dan riwayat event WebSocket/HTTP.
+ */
+export function deriveStepperState(workflow, events = []) {
+  if (!workflow) return { current: 0, finished: false };
+  if (workflow.status === WORKFLOW_API_STATUS.COMPLETED) return { current: 5, finished: true };
+
+  if (workflow.status === WORKFLOW_API_STATUS.FAILED) {
+    const failed = lastEvent(events, WORKFLOW_EVENT.FAILED);
+    const started = lastEvent(events, WORKFLOW_EVENT.STAGE_STARTED);
+    return { current: stepperIndexForStage(failed?.stage ?? started?.stage, events), finished: false };
+  }
+
+  if (workflow.status === WORKFLOW_API_STATUS.QUEUED) {
+    const started = lastEvent(events, WORKFLOW_EVENT.STAGE_STARTED);
+    return { current: started ? stepperIndexForStage(started.stage, events) : 0, finished: false };
+  }
+
+  if (workflow.stage === WORKFLOW_STAGE.RETRYING) {
+    const retry = lastEvent(events, WORKFLOW_EVENT.RETRY);
+    return { current: stepperIndexForStage(retry?.stage, events), finished: false };
+  }
+
+  if (workflow.stage === WORKFLOW_STAGE.INSTRUCTOR_REVIEW) {
+    const action = awaitedActionOf(workflow, events);
+    switch (action) {
+      case AWAITED_ACTION.EXECUTE_STRUCTURE:
+      case AWAITED_ACTION.GENERATE_CONTENT:
+        return { current: 1, finished: false };
+      case AWAITED_ACTION.REVIEW_CONTENT:
+      case AWAITED_ACTION.REVISE_CONTENT:
+        return { current: 2, finished: false };
+      case AWAITED_ACTION.EXECUTE_FULL:
+        return { current: 3, finished: false };
+      case null: {
+        const hadFullExecution = events.some((ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(ev));
+        return { current: hadFullExecution ? 4 : 0, finished: false };
+      }
+      default:
+        return { current: 0, finished: false };
+    }
+  }
+
+  return { current: stepperIndexForStage(workflow.stage, events), finished: false };
 }
 
 // ---- Content generation (BE-19.3, FE-16)
