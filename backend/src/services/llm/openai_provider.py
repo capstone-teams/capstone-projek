@@ -15,7 +15,8 @@ from src.services.llm.base import (
 # Provisional default model. The final model is NOT decided yet: PRD AIR-008
 # requires a model evaluation first, so this only keeps the provider usable out
 # of the box and stays overridable through OPENAI_MODEL / LLM_MODEL.
-DEFAULT_MODEL = "gpt-4o-mini"
+# DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-5"
 
 # Official OpenAI API. Overridable through OPENAI_BASE_URL so the same provider
 # can talk to any OpenAI-compatible endpoint, e.g. a local Ollama runtime
