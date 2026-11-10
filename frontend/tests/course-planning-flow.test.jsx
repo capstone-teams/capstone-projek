@@ -6,8 +6,17 @@ import CoursePlanPage from '../src/pages/dosen/ai/CoursePlanPage';
 import CourseRpsPage from '../src/pages/dosen/ai/CourseRpsPage';
 import { ApiError } from '../src/services/apiClient';
 import { normalizeCoursePlan } from '../src/services/coursePlanAdapter';
-import { buildRpsStructuredData } from '../src/services/mock/mockData';
 import { applyWorkflowEvent, coursePlanFailureOf, coursePlanProgressOf } from '../src/utils/workflowStatus';
+
+const sampleRpsStructuredData = () => ({
+  course: { name: 'Basis Data', code: 'IF2230', credits: 3, semester: 4, description: 'Perancangan basis data.' },
+  cpl: [{ code: 'CPL-1', description: 'Mampu merancang sistem basis data.' }],
+  cpmk: [{ code: 'CPMK-1', description: 'Memahami model data relasional.' }],
+  sub_cpmk: [{ code: 'SUB-1', description: 'Membuat diagram ERD.' }],
+  weeks: [{ week: 1, week_type: 'regular', topics: ['Model data'], cpmk: ['CPMK-1'], sub_cpmk: ['SUB-1'], teaching_method: ['Diskusi'], media: ['Slide'], assessment: null }],
+  references: ['Elmasri & Navathe'],
+  warnings: [],
+});
 
 // FE-12.1: memulai course planning dari Hasil Analisis RPS, progres lewat event workflow, rencana tampil
 // otomatis saat workflow menunggu review, hasil validasi, dan kegagalan yang dapat dicoba ulang.
@@ -231,7 +240,7 @@ async function renderRps() {
 
 describe('FE-12.1 tombol Lanjut ke Course Planning pada Hasil Analisis RPS', () => {
   beforeEach(() => {
-    rpsApi.getRpsAnalysis.mockResolvedValue({ rps_id: 'rps-1', analyzed_at: '2026-11-07T08:00:00Z', data: buildRpsStructuredData() });
+    rpsApi.getRpsAnalysis.mockResolvedValue({ rps_id: 'rps-1', analyzed_at: '2026-11-07T08:00:00Z', data: sampleRpsStructuredData() });
   });
 
   it('memanggil POST /workflows/{id}/plan lalu membuka tab Rencana', async () => {

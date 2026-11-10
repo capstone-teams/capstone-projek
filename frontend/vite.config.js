@@ -19,10 +19,6 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: 'jsdom',
       include: ['tests/**/*.test.{js,jsx}'],
-      // Tes UI memakai Moodle dummy agar tidak bergantung pada server Moodle.
-      env: { VITE_MOODLE_MOCK: 'true', VITE_USE_MOCK: 'true' },
-      // Permintaan ke backend API dijawab backend mock selama tes (lihat tests/setup/mockBackend.js).
-      setupFiles: ['tests/setup/mockBackend.js'],
     },
   };
 });

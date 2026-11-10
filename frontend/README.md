@@ -124,8 +124,7 @@ Backend tidak menyediakan endpoint logout maupun refresh token: logout menghapus
 kedua token dan data pengguna dari state, dan token kedaluwarsa setelah
 `ACCESS_TOKEN_EXPIRE_MINUTES` (default 30 menit). Guard generasi sesi
 mengabaikan respons login atau pemulihan lama setelah sesi berganti. Halaman
-login menyediakan tombol tampil/sembunyi kata sandi; tombol Google menampilkan
-pemberitahuan bahwa Google OAuth belum tersedia.
+login menyediakan tombol tampil/sembunyi kata sandi.
 
 Pada backend nyata, akun uji dibuat dengan
 `uv run python -m scripts.seed_test_accounts` (lihat
@@ -531,7 +530,7 @@ Mock mengambil CPMK/metode dari RPS.
   - layout/: kerangka aplikasi (MoodleLayout, ApplicationHeader, UserMenu,
     RequireAuth, AppStatus).
   - auth/: potongan halaman pages/auth (AuthLayout, AuthField, PasswordField,
-    AuthSubmitButton, GoogleLoginButton); import lewat `components/auth`.
+    AuthSubmitButton); import lewat `components/auth`.
   - moodle/: komponen tampilan Moodle (CourseCard, ActivityIcon, MoodleHtml,
     AssignSubmission); submission/ berisi MoodleEditor dan FileManager untuk
     halaman Edit submission;
