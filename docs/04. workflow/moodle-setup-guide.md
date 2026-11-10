@@ -31,6 +31,7 @@ Panduan ini ditulis supaya anggota tim bisa membuat Moodle yang **sama persis** 
 | BE-16.2 | Eksekusi struktur course: section mingguan beserta ringkasannya | 6, 10.1, 10.2 |
 | BE-16.3 | Akses mahasiswa pada course hasil eksekusi | 8.2, 10.1, 10.2, 10.4 |
 | BE-21.2 | Moodle verification: read-back, pembandingan, dan perbaikan otomatis | 7.1, 10.1, 10.2 |
+| BE-21.3 | Akses mahasiswa ke page, url, assignment, dan quiz hasil eksekusi FULL | 10.1, 10.2, 10.4 |
 
 ---
 
@@ -512,6 +513,7 @@ Test yang butuh PostgreSQL dilewati bila `db` tidak menyala; nyalakan dulu (`doc
 | `tests/test_moodle_student_access.py` | BE-16.3: enrolment mahasiswa uji, visibilitas course dan section, mahasiswa terdaftar melihat seluruh section, mahasiswa tidak terdaftar ditolak |
 | `tests/test_verify_student_access.py` | BE-16.3: script demo student access dan laporannya |
 | `tests/test_verification_service.py` | BE-21.2: verifikasi course hasil eksekusi FULL, activity dihapus/diganti nama/dipindah lalu diperbaiki, activity tidak terduga, batas perbaikan, hasil tersimpan per workflow |
+| `tests/test_student_activity_access.py` | BE-21.3: visibilitas activity, mahasiswa terdaftar membuka page/url/assignment/quiz dan memulai attempt quiz, mahasiswa tidak terdaftar ditolak di setiap activity, laporan script demo |
 
 Jalankan hanya test Moodle:
 
@@ -537,6 +539,7 @@ Test live memanggil Moodle yang sedang menyala dan **dilewati secara default**. 
 | `tests/test_moodle_execution_live.py` | Course plan 16 minggu dieksekusi ke course baru: 16 section berurutan dengan nama dan ringkasan, eksekusi kedua tidak menambah section, minggu gagal diulang tanpa mengulang yang berhasil (BE-16.2) | 2 |
 | `tests/test_moodle_student_access_live.py` | Course hasil eksekusi 16 minggu: mahasiswa terdaftar melihat 16 section, mahasiswa tidak terdaftar ditolak; section tersembunyi terdeteksi dan ditampilkan kembali (BE-16.3) | 2 |
 | `tests/test_moodle_verification_live.py` | Course hasil eksekusi FULL terverifikasi `PASS`; page yang dihapus manual terdeteksi, dibuat ulang, dan verifikasi berikutnya `PASS` (BE-21.2, butuh function 29) | 1 |
+| `tests/test_moodle_student_activity_live.py` | Course hasil eksekusi FULL: mahasiswa terdaftar membuka page, url, assignment, dan memulai attempt quiz; mahasiswa tidak terdaftar ditolak di 4/4 activity; activity tersembunyi terdeteksi dan ditampilkan kembali (BE-21.3) | 2 |
 
 Jalankan hanya file yang sudah ada di branch-mu.
 
@@ -574,11 +577,11 @@ set MOODLE_TEACHER_USERNAME=
 set MOODLE_TEACHER_PASSWORD=
 ```
 
-Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **38 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
+Ganti `password-...` dengan password dari bagian 8.2. Hasil yang diharapkan: **40 passed**. Test yang akun ujinya tidak diisi ditandai *skipped*, bukan gagal. Pada Moodle lokal yang lambat, run bisa beberapa menit; itu wajar.
 
 Baris terakhir (mengosongkan variabel) wajib dijalankan agar `pytest` biasa tidak ikut memanggil Moodle.
 
-Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`, `Structure Execution Test`, `Student Access Test`, `Verification Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
+Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment Test`, `Quiz Test`, `Core ... Test`, `Access Test`, `Structure Execution Test`, `Student Access Test`, `Verification Test`, `Student Activity Test`) di Moodle, karena service sengaja tidak punya function hapus course. Hapus lewat **Site administration → Courses → Manage courses and categories** bila mengganggu.
 
 ### 10.3 Cek mata sebagai mahasiswa (untuk bukti PR)
 
@@ -590,14 +593,14 @@ Setiap run meninggalkan course uji (`Plugin Test`, `Resource Test`, `Assignment 
    * quiz tampil di section minggu 4 dengan 3 soal dan bisa dikerjakan (**Attempt quiz**). Course quiz yang sudah dikerjakan test menampilkan attempt beserta kunci jawaban di halaman review.
 4. Ambil screenshot. Pastikan tidak ada token di layar.
 
-### 10.4 Demo student access pada course hasil eksekusi (BE-16.3)
+### 10.4 Demo student access pada course hasil eksekusi (BE-16.3, BE-21.3)
 
-Membuktikan alur *Mengakses Course* (Proposal §3.3.9 dan §3.4.9): course hasil eksekusi terlihat, mahasiswa terdaftar bisa membuka seluruh section mingguan, dan mahasiswa yang tidak terdaftar ditolak Moodle. Prosedur ini juga menjadi dasar verifikasi sisi mahasiswa pada M04.
+Membuktikan alur *Mengakses Course* (Proposal §3.3.9 dan §3.4.9): course hasil eksekusi terlihat, mahasiswa terdaftar bisa membuka seluruh section mingguan serta setiap activity (page, url, assignment, quiz), dan mahasiswa yang tidak terdaftar ditolak Moodle pada course maupun setiap activity. Prosedur ini juga menjadi dasar verifikasi sisi mahasiswa pada M04.
 
 **Syarat**
 
 * Akun `mhs.uji` dan `mhs.uji2` sudah ada (bagian 8.2), dan **Enable web services for mobile devices** aktif (bagian 5.2). Pengecekan memakai token milik mahasiswa itu sendiri, bukan token integrasi.
-* Struktur course sudah dieksekusi dari aplikasi (tahap eksekusi M03, BE-16.2) dan status eksekusinya `SUCCESS`.
+* Course sudah dieksekusi dari aplikasi, strukturnya saja (M03, BE-16.2) atau beserta konten (M04, BE-21.1), dan status eksekusinya `SUCCESS`.
 * `mhs.uji2` **tidak** terdaftar di course target. Script berhenti bila akun ini ternyata terdaftar.
 
 **Langkah**
@@ -620,15 +623,25 @@ Verifikasi akses mahasiswa pada course 42:
   [OK] 16 section mingguan, tidak ada yang tersembunyi
   [OK] mhs.uji didaftarkan sebagai student
   [OK] mhs.uji membuka course dan melihat 16/16 section mingguan
+  [OK] Minggu 1 - Learning material (page) 'Pengantar Basis Data' dibuka
+  [OK] Minggu 1 - Learning resource (url) 'Artikel ERD' dibuka
+  [OK] Minggu 1 - Assignment 'Tugas 1' dibuka
+  [OK] Minggu 1 - Quiz 'Kuis 1' dibuka, attempt dapat dimulai
+  [OK] mhs.uji2 (tidak terdaftar) ditolak pada 4/4 activity
   [OK] mhs.uji2 (tidak terdaftar) ditolak Moodle: errorcoursecontextnotvalid
 Hasil: student access TERBUKTI.
 ```
 
+Sejak BE-21.3 setiap activity hasil eksekusi FULL ikut diperiksa: page dan url dibuka (`mod_page_view_page`, `mod_url_view_url`), assignment dibuka (`mod_assign_view_assign`), dan quiz dibuka beserta izin memulai attempt (`mod_quiz_view_quiz`, `mod_quiz_get_quiz_access_information`), semuanya dengan token milik mahasiswa. Function ini tersedia pada service bawaan *Moodle mobile web service*, jadi tidak perlu ditambahkan ke service *Capstone Integration*. Course yang baru dieksekusi strukturnya saja (M03) tidak punya activity, sehingga baris activity tidak muncul.
+
+Untuk membuktikan quiz benar-benar bisa **dimulai**, tambahkan `--start-quiz`: script memulai satu attempt sebagai `mhs.uji` lalu langsung menyelesaikannya, dan barisnya menjadi `dibuka, attempt dimulai lalu diselesaikan`. Attempt itu tersimpan di Moodle dan membuat soal quiz tidak diganti lagi pada eksekusi ulang (BE-12.3), jadi pakai opsi ini **hanya pada course uji**, bukan course yang dipakai dosen.
+
 Baris log `Moodle call failed ... permission_error` sebelum laporan adalah penolakan `mhs.uji2` yang memang diharapkan. Kode penolakan bisa `errorcoursecontextnotvalid` atau `requireloginerror`, tergantung versi Moodle.
 
-3. Bila ada `[GAGAL]` karena course atau section tersembunyi, jalankan ulang dengan `--show-hidden` untuk menampilkannya. Opsi `--no-enrol` hanya memverifikasi tanpa mendaftarkan mahasiswa. Exit code `0` berarti terbukti, `1` berarti ada pemeriksaan yang gagal, dan `2` berarti akun atau password belum siap.
+3. Bila ada `[GAGAL]` karena course, section, atau activity tersembunyi, jalankan ulang dengan `--show-hidden` untuk menampilkannya. Opsi `--no-enrol` hanya memverifikasi tanpa mendaftarkan mahasiswa. Exit code `0` berarti terbukti, `1` berarti ada pemeriksaan yang gagal, dan `2` berarti akun atau password belum siap.
 4. Cek mata untuk bukti demo:
    * browser *incognito*, login sebagai `mhs.uji`, buka course target: seluruh section `Minggu 1` sampai `Minggu 16` tampil berurutan beserta ringkasannya;
+   * masih sebagai `mhs.uji`, buka setiap activity: page tampil isinya, url membuka tautan, assignment menampilkan instruksi dan tombol *Add submission*, quiz menampilkan tombol *Attempt quiz*;
    * logout, login sebagai `mhs.uji2`, buka URL course yang sama: Moodle menolak (halaman *enrolment options* atau pesan tidak bisa enrol);
    * ambil screenshot keduanya, tanpa token atau password di layar.
 
@@ -937,7 +950,7 @@ Kalau plugin lupa dipindah, core tetap ter-upgrade, tetapi plugin berstatus *Mis
 2. **Plugins overview**: Capstone Bridge berstatus normal (bukan *Missing from disk*).
 3. *Site administration → Development → Purge caches → Purge all caches*.
 4. Jalankan `curl.exe` bagian 7.3 dengan token lama. `release` harus `5.2.x+`.
-5. Jalankan test live bagian 10.2. Target sama: **38 passed**.
+5. Jalankan test live bagian 10.2. Target sama: **40 passed**.
 
 Token, service *Capstone Integration*, dan akun `mhs.uji` tidak perlu dibuat ulang.
 
@@ -975,9 +988,9 @@ Database Moodle tidak bisa diturunkan versinya tanpa backup, jadi langkah 15.1 w
 - [ ] Akun Moodle `mhs.uji` ada.
 - [ ] `MOODLE_BASE_URL` sama persis dengan alamat Moodle di browser; `.env` tidak muncul di `git status`.
 - [ ] `uv run pytest` tidak memiliki test Moodle yang gagal.
-- [ ] Test live (10.2): 38 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
+- [ ] Test live (10.2): 40 passed, lalu variabel `MOODLE_LIVE_TESTS` dikosongkan.
 - [ ] Skenario 1–15 (11.3) sesuai hasil yang diharapkan.
 - [ ] Cek mata (10.3 dan 11.4) sesuai.
-- [ ] Demo student access (10.4): `Hasil: student access TERBUKTI.` pada course hasil eksekusi.
+- [ ] Demo student access (10.4): `Hasil: student access TERBUKTI.` pada course hasil eksekusi, termasuk keempat jenis activity.
 - [ ] Uji keamanan A–G (11.5) sesuai.
 - [ ] Tidak ada token Moodle di response, log, dokumen, maupun screenshot.
