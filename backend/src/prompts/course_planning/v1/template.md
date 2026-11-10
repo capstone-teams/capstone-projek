@@ -29,6 +29,10 @@ untuk meninjau dan menyetujui rencana sebelum konten dibuat.
 - `planned_activities` hanya boleh berisi jenis yang bernilai `true` pada
   Activity Configuration: `learning_material`, `learning_resource`,
   `assignment`, `quiz`.
+- Jika terdapat beberapa minggu dalam RPS yang memiliki topik, Sub-CPMK, dan bahan kajian yang sama, AI Agent harus mengembangkan dan mendistribusikan materi pembelajaran secara bertahap untuk setiap minggu, sehingga tidak menghasilkan materi yang sama atau berulang. Sebagai contoh, apabila minggu ke-1 dan ke-2 memiliki bahan kajian A dan B, AI Agent harus membagi pengembangan materi ke dalam masing-masing minggu dengan memperhatikan kesinambungan dan urutan pembelajaran. Pembagian dapat dilakukan dengan menggabungkan bahan kajian dalam urutan pembahasan yang berbeda atau memisahkan cakupan materi menjadi bagian-bagian yang lebih spesifik.
+- Jika terdapat beberapa minggu dalam RPS yang memiliki topik, Sub-CPMK, dan bahan kajian yang sama, AI Agent harus mengembangkan dan mendistribusikan materi pembelajaran secara bertahap untuk setiap minggu, sehingga tidak menghasilkan materi yang sama atau berulang.
+
+Sebagai contoh, apabila minggu ke-1 dan ke-2 memiliki bahan kajian A dan B, AI Agent harus membagi pengembangan materi ke dalam masing-masing minggu dengan memperhatikan kesinambungan dan urutan pembelajaran. Pembagian dapat dilakukan dengan menggabungkan bahan kajian dalam urutan pembahasan yang berbeda atau memisahkan cakupan materi menjadi bagian-bagian yang lebih spesifik. 
 
 # 4. Mode regenerasi
 Bila tersedia rencana sebelumnya dan/atau catatan penolakan:
