@@ -1,6 +1,7 @@
 // Review konten mingguan (FE-17): pengelompokan, temuan validasi, progres review, dan progres generation.
 import { CONTENT_STATUS } from '../services/contentService';
-import { WORKFLOW_API_STATUS, WORKFLOW_EVENT, WORKFLOW_STAGE, WORKFLOW_STATUS, workflowStatusOf } from './workflowStatus';
+
+export { contentGenerationProgressOf } from './workflowStatus';
 
 /** Konten dikelompokkan per minggu, urut nomor minggu; konten tanpa minggu di akhir. */
 export function groupContentsByWeek(items = []) {
@@ -46,19 +47,3 @@ export function approvalBlocker(item) {
 }
 
 export const isApprovable = (item) => approvalBlocker(item) === null;
-
-/**
- * Tahap generation konten yang sedang berjalan: GENERATING_CONTENT, VALIDATING (validasi konten), atau RETRYING
- * pada tahap konten; null bila workflow tidak sedang membuat konten. VALIDATING juga dipakai course planning,
- * sehingga dibedakan dari tahap yang terakhir dimulai sebelumnya.
- */
-export function contentGenerationProgressOf(workflow, events = []) {
-  if (workflow?.status !== WORKFLOW_API_STATUS.RUNNING) return null;
-  const status = workflowStatusOf(workflow);
-  if (status === WORKFLOW_STATUS.GENERATING_CONTENT) return status;
-  const lastStage = [...events].reverse().find((event) => event.event === WORKFLOW_EVENT.STAGE_STARTED && event.stage !== WORKFLOW_STAGE.VALIDATION)?.stage;
-  if (lastStage !== WORKFLOW_STAGE.CONTENT_GENERATION) return null;
-  if (status === WORKFLOW_STATUS.VALIDATING) return status;
-  if (status === WORKFLOW_STATUS.RETRYING) return status;
-  return null;
-}

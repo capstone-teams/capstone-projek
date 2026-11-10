@@ -1,8 +1,6 @@
 import { Badge, EmptyState } from '../../ui';
-import { WEEK_TYPE_LABELS } from '../../../utils/coursePlan';
+import { COURSE_PLAN_ACTIVITY_LABELS, WEEK_TYPE_LABELS } from '../../../utils/coursePlan';
 
-// Jenis aktivitas yang boleh direncanakan (CoursePlanActivityType backend, content-schema §10).
-const ACTIVITY_LABELS = { learning_material: 'Materi', learning_resource: 'Sumber belajar', assignment: 'Tugas', quiz: 'Kuis' };
 const COLUMNS = [
   { label: 'Minggu', className: 'w-[88px]' },
   { label: 'Topik', className: 'w-[22%]' },
@@ -31,7 +29,7 @@ function WeekField({ label, children }) {
 function Activities({ items }) {
   return items.length ? (
     <div className="flex flex-wrap gap-1.5 [&>span]:wrap-anywhere [&>span]:whitespace-normal">
-      {items.map((activity, index) => <Badge key={index}>{ACTIVITY_LABELS[activity] ?? activity}</Badge>)}
+      {items.map((activity, index) => <Badge key={index}>{COURSE_PLAN_ACTIVITY_LABELS[activity] ?? activity}</Badge>)}
     </div>
   ) : <span className="muted">Belum tersedia.</span>;
 }

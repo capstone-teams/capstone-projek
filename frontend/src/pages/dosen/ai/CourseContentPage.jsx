@@ -1,28 +1,122 @@
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
-import { getContent } from '../../../services/courseService';
 import { useApi } from '../../../hooks/useApi';
+import { useOnChange } from '../../../hooks/useOnChange';
+import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
+import { getContent } from '../../../services/courseService';
+import { PLAN_STATUS, getWorkflowPlan } from '../../../services/coursePlanService';
+import { listWorkflowContents } from '../../../services/contentService';
+import {
+  hasContentGenerationActivity,
+  isWorkflowFinished,
+} from '../../../utils/workflowStatus';
 import { Badge, Card, EmptyState, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
 import ContentGeneratePanel from '../../../components/ai/course/ContentGeneratePanel';
+import ContentGenerationMatrix from '../../../components/ai/course/ContentGenerationMatrix';
 import WeekContentDetail from '../../../components/ai/course/WeekContentDetail';
-import PendingFeatureNote from '../../../components/ai/PendingFeatureNote';
+import WorkflowContentTriggerCard from '../../../components/ai/course/WorkflowContentTriggerCard';
 
 const CAN_GENERATE = ['PLAN_APPROVED', 'WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 const CAN_REGENERATE = ['WAITING_CONTENT_REVIEW', 'CONTENT_REJECTED'];
 const BEFORE_PLAN_APPROVED = ['CREATED', 'PLANNING', 'WAITING_PLAN_REVIEW'];
 
-/** Konten mingguan project kursus; kursus tanpa project belum dapat membuat konten (endpoint generate belum ada). */
+/**
+ * Halaman Generate Weekly Content (FE-16):
+ * - Bila `workflowId` tersedia (backend nyata / alur berbasis workflow), memakai API
+ *   `/workflows/{id}/plan` dan `/workflows/{id}/contents/...` (FE-16.1).
+ * - Bila hanya ada project kursus legacy tanpa workflow (mode mock E2E), memakai `<ProjectContent />`.
+ */
 export default function CourseContentPage() {
-  const { course } = useCourse();
-  if (!course.id) {
+  const { course, workflow: projectWorkflow, workflowId: projectWorkflowId, events: projectEvents = [], refresh } = useCourse();
+  const [params] = useSearchParams();
+  const workflowParam = params.get('workflow');
+  const ownWorkflowId = workflowParam && workflowParam !== projectWorkflowId ? workflowParam : null;
+  const own = useWorkflowMonitor(ownWorkflowId);
+
+  const workflowId = workflowParam || projectWorkflowId;
+  const workflow = ownWorkflowId ? own.workflow : projectWorkflow;
+  const events = ownWorkflowId ? own.events : projectEvents;
+
+  if (workflowId) {
     return (
-      <Card title="Konten mingguan">
-        <p>Konten mingguan disusun dari course plan yang sudah disetujui.</p>
-        <PendingFeatureNote>Generate konten mingguan belum tersedia.</PendingFeatureNote>
-      </Card>
+      <WorkflowContent
+        key={workflowId}
+        workflowId={workflowId}
+        workflow={workflow}
+        events={events}
+        onWorkflowUpdated={() => {
+          own.reload?.();
+          return refresh?.();
+        }}
+      />
     );
   }
-  return <ProjectContent />;
+
+  if (course?.id) {
+    return <ProjectContent />;
+  }
+
+  return (
+    <Card title="Konten mingguan">
+      <EmptyState title="Belum ada workflow untuk kursus ini.">
+        Unggah dan proses RPS terlebih dahulu di tab <Link to="../rps" relative="path">RPS</Link>.
+      </EmptyState>
+    </Card>
+  );
+}
+
+function WorkflowContent({ workflowId, workflow, events = [], onWorkflowUpdated }) {
+  const plan = useApi(() => getWorkflowPlan(workflowId), [workflowId]);
+  const contents = useApi(() => listWorkflowContents(workflowId), [workflowId]);
+
+  const signature = workflow
+    ? `${workflow.status}|${workflow.stage ?? ''}|${workflow.updated_at ?? ''}|${events.length}`
+    : null;
+  useOnChange(signature, () => {
+    contents.reload({ silent: true });
+    if (!plan.data || plan.data.status !== PLAN_STATUS.APPROVED || isWorkflowFinished(workflow)) {
+      plan.reload({ silent: true });
+    }
+  }, 300);
+
+  const existingItems = contents.data ?? [];
+  const showMatrix = Boolean(contents.error) || hasContentGenerationActivity(workflow, events, existingItems);
+
+  return (
+    <div className="stack">
+      <WorkflowContentTriggerCard
+        workflowId={workflowId}
+        workflow={workflow}
+        events={events}
+        plan={plan.data}
+        planLoading={plan.loading}
+        planError={plan.error}
+        onRetryPlan={() => plan.reload()}
+        hasExistingContents={existingItems.length > 0}
+        onStarted={() => {
+          onWorkflowUpdated?.();
+          contents.reload({ silent: true });
+        }}
+      />
+
+      {showMatrix && (
+        <ContentGenerationMatrix
+          workflowId={workflowId}
+          workflow={workflow}
+          events={events}
+          plan={plan.data}
+          contents={existingItems}
+          contentsLoading={contents.loading}
+          contentsError={contents.error}
+          onRetryContents={() => contents.reload()}
+          onRegenerated={() => {
+            onWorkflowUpdated?.();
+            contents.reload({ silent: true });
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 function ProjectContent() {

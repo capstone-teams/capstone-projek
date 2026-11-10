@@ -67,7 +67,8 @@ class ExecutionRepository:
                     content_id=planned.content_id,
                     operation_type=planned.operation_type,
                     idempotency_key=planned.idempotency_key,
-                    status=OperationStatus.PENDING,
+                    status=planned.status,
+                    error_message=planned.error_message,
                 )
             )
 
