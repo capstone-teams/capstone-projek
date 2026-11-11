@@ -305,10 +305,10 @@ describe('FE-17.3 approve, reject, dan regenerasi', () => {
     expect(contents.regenerateContents).toHaveBeenCalledWith('wf-1', { scope: 'COURSE', weekNumber: undefined, contentId: undefined, notes: 'Sesuaikan dengan RPS terbaru.' });
   });
 
-  it('seluruh konten disetujui menampilkan langkah berikutnya ke eksekusi FULL', async () => {
+  it('seluruh konten disetujui menampilkan langkah berikutnya ke Eksekusi Moodle', async () => {
     contents.listWorkflowContents.mockResolvedValue(listItems().map((i) => ({ ...i, status: 'APPROVED', validation: passed })));
     await render();
-    const next = byText('a', 'Lanjut ke eksekusi FULL');
+    const next = byText('a', 'Lanjut ke Eksekusi Moodle →');
     expect(next.getAttribute('href')).toBe('/course/48/ai/publish');
   });
 });
