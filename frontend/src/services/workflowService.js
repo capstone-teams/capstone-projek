@@ -1,10 +1,19 @@
 import { api } from './apiClient';
-import { isWorkflowBusy, isWorkflowFinished } from '../utils/workflowStatus';
+import { isWorkflowBusy } from '../utils/workflowStatus';
 
 // Monitoring workflow dan course target
 
+// Layout Generator AI, halaman aktivitas, dan sinkronisasi target sering meminta daftar yang sama bersamaan:
+// selama permintaan masih berjalan, permintaan itu dipakai bersama (hasilnya tidak disimpan).
+let pendingList = null;
+
 export function listWorkflows() {
-  return api.get('/workflows').then((data) => data.items);
+  if (!pendingList) {
+    pendingList = api.get('/workflows').then((data) => data.items).finally(() => {
+      pendingList = null;
+    });
+  }
+  return pendingList;
 }
 
 export function getWorkflow(workflowId) {
@@ -15,11 +24,11 @@ export function getWorkflowEvents(workflowId) {
   return api.get(`/workflows/${workflowId}/events`).then((data) => data.items);
 }
 
-// Course target tiap workflow yang sudah berhenti. Daftar GET /workflows tidak memuat moodle_course_id,
-// jadi mencari workflow suatu kursus butuh GET /workflows/{id} untuk setiap workflow. Workflow yang sudah
-// berhenti jarang berubah, sehingga hasilnya disimpan selama sesi, dengan kunci id + updated_at agar
-// workflow yang dijalankan ulang diambil lagi. Promise disimpan agar permintaan yang sama tidak ganda, dan
-// nilainya juga disimpan di sessionStorage supaya tidak hilang saat halaman dimuat ulang.
+// Course target tiap workflow. Daftar GET /workflows tidak memuat moodle_course_id, jadi mencari workflow suatu
+// kursus butuh GET /workflows/{id} untuk setiap workflow. Hasilnya disimpan selama sesi dengan kunci
+// id + updated_at (dikelola database), sehingga workflow yang berubah otomatis diambil lagi. Promise disimpan
+// agar permintaan yang sama tidak ganda, dan nilainya juga disimpan di sessionStorage supaya tidak hilang saat
+// halaman dimuat ulang.
 const STORAGE_KEY = 'agentic-lms.workflow-targets';
 const BINDING_STORAGE_KEY = 'agentic-lms.course-bindings';
 const targetCache = new Map();
@@ -132,15 +141,21 @@ export function clearWorkflowCache() {
 
 const cacheKey = (item) => `${item.id}:${item.updated_at}`;
 
+// Kunci id + updated_at berganti setiap workflow berubah (termasuk saat course target diganti), sehingga hasil
+// aman disimpan juga untuk workflow yang masih berjalan; tanpa ini setiap pencarian memanggil GET /workflows/{id}
+// untuk seluruh workflow yang sedang menunggu review.
 function courseTargetOf(item) {
-  if (!isWorkflowFinished(item)) return getWorkflow(item.id).then((workflow) => workflow.moodle_course_id ?? null);
   const key = cacheKey(item);
   const stored = readStored();
   if (key in stored) return Promise.resolve(stored[key]);
   if (!targetCache.has(key)) {
     targetCache.set(key, getWorkflow(item.id).then((workflow) => {
       const target = workflow.moodle_course_id ?? null;
-      writeStored((current) => ({ ...current, [key]: target }));
+      // Entri versi lama workflow yang sama dibuang agar simpanan tidak terus bertambah.
+      writeStored((current) => ({
+        ...Object.fromEntries(Object.entries(current).filter(([stored]) => !stored.startsWith(`${item.id}:`))),
+        [key]: target,
+      }));
       return target;
     }).catch((error) => {
       targetCache.delete(key);

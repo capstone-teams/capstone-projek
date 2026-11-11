@@ -228,12 +228,14 @@ export async function getAdministrationOptions(courseIds) {
     const res = await callWs('core_course_get_user_administration_options', { courseids: courseIds });
     return res.courses;
   } catch {
+    // Tanpa sesi Moodle di browser hak per kursus tidak diketahui. Jangan anggap tersedia: mahasiswa tidak boleh
+    // mendapat mode edit; dosen tetap dapat mengedit lewat role backend (lihat MoodleCourseLayout).
     return courseIds.map((id) => ({
       id,
       options: [
-        { name: 'update', available: true },
-        { name: 'reports', available: true },
-        { name: 'gradebook', available: true },
+        { name: 'update', available: false },
+        { name: 'reports', available: false },
+        { name: 'gradebook', available: false },
       ],
     }));
   }
