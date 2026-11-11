@@ -37,9 +37,13 @@ export function getRps(rpsId) {
   return api.get(`/rps/${rpsId}`);
 }
 
-/** POST /rps/{id}/process: 202 dijadwalkan, atau 200 + reused bila sudah pernah diproses. */
-export function processRps(rpsId) {
-  return api.post(`/rps/${rpsId}/process`);
+/**
+ * POST /rps/{id}/process: 202 dijadwalkan, atau 200 + reused bila sudah pernah diproses.
+ * `autopilot`: backend melanjutkan otomatis (course plan disetujui bila lolos validasi, lalu konten seluruh minggu)
+ * sampai konten siap direview; eksekusi ke Moodle tetap menunggu persetujuan dosen.
+ */
+export function processRps(rpsId, { autopilot = false } = {}) {
+  return api.post(`/rps/${rpsId}/process`, autopilot ? { autopilot: true } : undefined);
 }
 
 /** POST /rps/{id}/reanalyze (§6.6): analisis ulang dari source_document; mengembalikan workflow_id. */
