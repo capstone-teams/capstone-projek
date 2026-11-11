@@ -334,14 +334,13 @@ export default function CoursePlanPage() {
         <CoursePlanValidation key={shown?.version ?? 'latest'} validation={shown.validation} />
       )}
       {latest.status === PLAN_STATUS.APPROVED && !viewingOld && (
-        <Alert tone="success" title="Rencana course telah disetujui">
+        <Alert tone="success" title="Rencana sudah disetujui">
           <p>
             {cleanApproved && 'Lolos validasi akademik. '}
             {latest.approved_at && `Disetujui ${formatDateTime(latest.approved_at)}. `}
-            Langkah berikutnya: buat struktur mingguan rencana ini di kursus Moodle target.
             {course?.id && (
               <>
-                {' '}<Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke eksekusi struktur</Link>
+                Berikutnya: <Link to="../publish" relative="path" className="font-semibold underline">buat struktur mingguan di Moodle</Link>.
               </>
             )}
           </p>

@@ -231,7 +231,7 @@ describe('FE-05 halaman Rencana dengan API course plan per workflow', () => {
     await render();
     expect(node.querySelector('[aria-label="Riwayat versi"]')).toBeNull();
     expect(node.querySelectorAll('[role="status"]')).toHaveLength(1);
-    expect(node.textContent).toContain('Rencana course telah disetujui');
+    expect(node.textContent).toContain('Rencana sudah disetujui');
     expect(node.textContent).toContain('Lolos validasi akademik');
     expect(node.textContent).not.toContain('Rencana memenuhi seluruh pemeriksaan akademik.');
     expect(button('Setujui rencana')).toBeUndefined();
@@ -344,7 +344,7 @@ describe('FE-12.2 aksi review dan riwayat versi course plan', () => {
     expect(button('Setujui rencana')).toBeUndefined();
     expect(button('Tolak dengan catatan')).toBeUndefined();
     expect(button('Regenerasi rencana')).toBeUndefined();
-    const next = [...node.querySelectorAll('a')].find((a) => a.textContent === 'Lanjut ke eksekusi struktur');
+    const next = [...node.querySelectorAll('a')].find((a) => a.textContent === 'buat struktur mingguan di Moodle');
     expect(next.getAttribute('href')).toBe('/course/2/ai/publish');
   });
 });
