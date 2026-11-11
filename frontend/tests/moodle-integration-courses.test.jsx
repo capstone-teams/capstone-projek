@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ActivityRow from '../src/components/moodle/course/ActivityRow';
 import { api } from '../src/services/apiClient';
 import {
   getCoursesByClassification,
@@ -6,6 +10,8 @@ import {
   getCourseContents,
   getRecentCourses,
 } from '../src/services/moodle/moodleApi';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('Moodle Integrations API Courses Gateway', () => {
   beforeEach(() => {
@@ -161,5 +167,79 @@ describe('Moodle Integrations API Courses Gateway', () => {
     });
 
     await expect(getCoursesByClassification('all')).rejects.toThrow();
+  });
+});
+
+describe('ActivityRow pada tampilan kursus', () => {
+  let node;
+  let root;
+
+  beforeEach(() => {
+    node = document.createElement('div');
+    document.body.appendChild(node);
+    root = createRoot(node);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    node.remove();
+  });
+
+  it('tidak menampilkan isi teks panjang assign/quiz/page di card kursus, tetapi tetap menampilkan petunjuk folder/label', async () => {
+    await act(async () => root.render(
+      <MemoryRouter>
+        <ul>
+          <ActivityRow
+            courseId={2}
+            isTeacher
+            editMode={false}
+            mod={{
+              id: 101,
+              name: 'Tugas 1 — Dasar Web',
+              modname: 'assign',
+              description: '<p>Instruksi lengkap tugas Bagian A dan Bagian B</p>',
+              visible: 1,
+              uservisible: true,
+            }}
+          />
+          <ActivityRow
+            courseId={2}
+            isTeacher
+            editMode={false}
+            mod={{
+              id: 102,
+              name: 'Kuis 1',
+              modname: 'quiz',
+              description: '<p>Aturan pengerjaan kuis mingguan</p>',
+              visible: 1,
+              uservisible: true,
+            }}
+          />
+          <ActivityRow
+            courseId={2}
+            isTeacher
+            editMode={false}
+            mod={{
+              id: 103,
+              name: 'Referensi Folder',
+              modname: 'folder',
+              description: '<p>Kumpulan berkas slide pertemuan 1</p>',
+              visible: 1,
+              uservisible: true,
+            }}
+          />
+        </ul>
+      </MemoryRouter>,
+    ));
+
+    expect(node.textContent).toContain('Tugas 1 — Dasar Web');
+    expect(node.textContent).not.toContain('Instruksi lengkap tugas Bagian A dan Bagian B');
+    expect(node.textContent).toContain('Kuis 1');
+    expect(node.textContent).not.toContain('Aturan pengerjaan kuis mingguan');
+    expect(node.textContent).toContain('Referensi Folder');
+    expect(node.textContent).toContain('Kumpulan berkas slide pertemuan 1');
+
+    const assignLink = [...node.querySelectorAll('a')].find((a) => a.textContent.includes('Tugas 1'));
+    expect(assignLink?.getAttribute('href')).toBe('/course/2/mod/101');
   });
 });
