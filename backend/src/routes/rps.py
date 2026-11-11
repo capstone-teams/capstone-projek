@@ -63,6 +63,7 @@ from src.services.dependencies import (
     RPSAnalysisRunner,
     RPSProcessingRunner,
     get_rps_analysis_runner,
+    get_rps_autopilot_runner,
     get_rps_processing_runner,
     get_rps_service,
     get_workflow_service,
@@ -236,6 +237,7 @@ async def process_rps(
     service: RPSService = Depends(get_rps_service),
     workflow_service: WorkflowService = Depends(get_workflow_service),
     runner: RPSProcessingRunner = Depends(get_rps_processing_runner),
+    autopilot_runner: RPSProcessingRunner = Depends(get_rps_autopilot_runner),
     payload: RPSProcessRequest | None = None,
 ) -> RPSProcessResponse:
     """Jadwalkan pemrosesan RPS dan buat workflow orkestrasinya (BE-11.2).
@@ -269,8 +271,9 @@ async def process_rps(
         workflow_id=workflow_id,
     )
 
+    # ``autopilot``: rangkaian yang sama lalu dilanjutkan sampai konten siap direview.
     background.add_task(
-        runner,
+        autopilot_runner if payload is not None and payload.autopilot else runner,
         rps_id=start.document.id or "",
         owner_id=current_user.id,
     )
