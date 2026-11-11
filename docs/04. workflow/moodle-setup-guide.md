@@ -463,10 +463,12 @@ Hanya service `db` yang dinyalakan (`up -d db`), karena service `backend` di com
 
 | Role | Username | Dipakai untuk |
 | :--- | :--- | :--- |
-| `INSTRUCTOR` (= dosen) | `dosen.demo` | Satu-satunya role yang boleh memanggil `/integrations/moodle` |
-| `STUDENT` (= mahasiswa) | `11231023` | Membuktikan akses ditolak (403) |
+| `INSTRUCTOR` (= dosen) | `dosen.demo` | Seluruh endpoint `/integrations/moodle`, termasuk `status` dan endpoint write |
+| `STUDENT` (= mahasiswa) | `11231023` | Membaca course Moodle tempat ia terdaftar (design-api §13.5); `status` dan endpoint write ditolak (403) |
 
 Akun ini adalah akun **aplikasi**, berbeda dari akun Moodle `mhs.uji` di bagian 8.2.
+
+Mahasiswa yang login ke web hanya melihat course Moodle yang terdaftar atas **username yang sama**. Agar akun `11231023` dapat dipakai untuk demo halaman mahasiswa, buat juga user Moodle dengan username `11231023` lalu daftarkan sebagai student di course hasil eksekusi. Tanpa itu, halaman *Kursus saya* untuk akun tersebut kosong walaupun course sudah dieksekusi.
 
 ### 9.2 Jalankan backend
 
