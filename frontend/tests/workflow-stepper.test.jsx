@@ -208,6 +208,8 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
     // Overview menampilkan langkah berikutnya dan timeline event nyata
     expect(node.textContent).toContain('Eksekusi struktur');
     expect(node.textContent).toContain('RPS SBD.pdf');
+    const profileLink = [...node.querySelectorAll('a')].find((a) => a.textContent.includes('Profil dosen'));
+    expect(profileLink?.getAttribute('href')).toBe('/user/profile');
   });
 
   it('AiCourseLayout menjaga stepper di Review saat konten sudah ada & sebagian disetujui', async () => {

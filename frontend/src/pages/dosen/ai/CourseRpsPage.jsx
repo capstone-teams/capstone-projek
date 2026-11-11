@@ -10,6 +10,7 @@ import { useOnChange } from '../../../hooks/useOnChange';
 import { usePolling } from '../../../hooks/usePolling';
 import { Card, ErrorAlert, Spinner } from '../../../components/ui';
 import RpsStatusBadge from '../../../components/ai/RpsStatusBadge';
+import ActivityConfigPanel from '../../../components/ai/course/ActivityConfigPanel';
 import RpsAnalysisDetails from '../../../components/ai/course/RpsAnalysisDetails';
 import RpsUploadForm from '../../../components/ai/RpsUploadForm';
 import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
@@ -113,18 +114,17 @@ function RpsNotAnalyzed({ rps, events = [], onChanged, onUploaded }) {
  * tab Rencana, yang menampilkan progresnya. Bila workflow sudah punya course plan atau sedang menyusunnya,
  * tombol membuka tab Rencana saja.
  */
-function CoursePlanningAction({ analyzed, workflowId, planPath, planning }) {
+function CoursePlanningAction({ analyzed, workflowId, planPath, planning, existingPlan, planLoading }) {
   const navigate = useNavigate();
-  const existing = useApi(() => (analyzed && workflowId ? getWorkflowPlan(workflowId).catch(() => null) : null), [analyzed, workflowId]);
   const generate = useAction(() => generateWorkflowPlan(workflowId), { loadingLabel: 'Memulai course planning…' });
   // 409: workflow sudah punya rencana atau sedang menyusunnya; tab Rencana menampilkan keadaannya.
   const openPlan = () => navigate(planPath, { relative: 'path' });
   const start = () => generate.run().then(openPlan, (e) => e?.status === 409 && openPlan());
 
-  if (analyzed && workflowId && (existing.data || planning)) {
+  if (analyzed && workflowId && (existingPlan || planning)) {
     return <Link to={planPath} relative="path" className="btn btn--primary">{planning ? 'Lihat progres Course Planning' : 'Lihat Course Plan'}</Link>;
   }
-  const disabled = !analyzed || !workflowId || existing.loading || generate.pending;
+  const disabled = !analyzed || !workflowId || planLoading || generate.pending;
   const hint = !analyzed ? 'Tersedia setelah RPS selesai dianalisis.' : !workflowId ? 'Course planning belum dapat dimulai untuk RPS ini.' : null;
   return (
     <span className="flex flex-col items-end gap-1">
@@ -203,6 +203,7 @@ export default function CourseRpsPage() {
   const effectiveEvents = monitor.events.length > 0 ? monitor.events : events;
   // Workflow RPS dari GET /rps/{id}; project /courses di backend tidak memuat workflow_id.
   const workflowId = rps?.workflow_id ?? (COURSE_API_AVAILABLE ? course?.workflow_id : course?.id);
+  const existingPlanQuery = useApi(() => (analyzed && workflowId ? getWorkflowPlan(workflowId).catch(() => null) : null), [analyzed, workflowId]);
   const hasProject = Boolean(course?.id);
   // Tab Rencana memakai workflow project; workflow RPS lain diteruskan lewat ?workflow= (dan ?rps= tanpa project).
   const planSearch = workflowId && workflowId !== projectWorkflowId
@@ -286,7 +287,14 @@ export default function CourseRpsPage() {
           {workflowId && (
             <Link to={`../workflows?workflow=${workflowId}`} relative="path" className="btn btn--ghost btn--sm">Pantau workflow</Link>
           )}
-          <CoursePlanningAction analyzed={analyzed} workflowId={workflowId} planPath={`../plan${planSearch}`} planning={planning} />
+          <CoursePlanningAction
+            analyzed={analyzed}
+            workflowId={workflowId}
+            planPath={`../plan${planSearch}`}
+            planning={planning}
+            existingPlan={existingPlanQuery.data}
+            planLoading={existingPlanQuery.loading}
+          />
         </div>
       </div>
 
@@ -295,6 +303,10 @@ export default function CourseRpsPage() {
           <p className="text-xs text-muted mb-3">Mengunggah RPS baru akan menggantikan RPS aktif saat ini untuk kursus ini.</p>
           <RpsUploadForm onUploaded={handleRpsUploaded} />
         </Card>
+      )}
+
+      {analysis && workflowId && !existingPlanQuery.loading && !existingPlanQuery.data && !planning && !showReplace && (
+        <ActivityConfigPanel mode="edit" />
       )}
 
       {analysis ? (

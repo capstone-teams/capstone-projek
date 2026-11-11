@@ -13,6 +13,7 @@ import {
 import ExecutionReadinessCard from '../../../components/ai/course/ExecutionReadinessCard';
 import ExecutionProgressCard from '../../../components/ai/course/ExecutionProgressCard';
 import ExecutionHistoryCard from '../../../components/ai/course/ExecutionHistoryCard';
+import { Alert } from '../../../components/ui';
 
 export default function CoursePublishPage() {
   const { moodleCourse, workflow, workflowId, refresh } = useCourse();
@@ -122,6 +123,12 @@ export default function CoursePublishPage() {
         moodleStatusLoading={moodleStatusQuery.loading}
         onExecutionStarted={handleExecutionStarted}
       />
+
+      {currentExecution?.scope === 'STRUCTURE' && currentExecution?.status === 'SUCCESS' && (
+        <Alert tone="info" title="Cakupan eksekusi saat ini baru struktur section (STRUCTURE)">
+          Eksekusi struktur sudah membuat/memperbarui section mingguan beserta ringkasan topik di Moodle. Publikasi konten hasil generate menjadi activity Moodle (Page, URL, Assignment, Quiz — cakupan FULL) masih dinonaktifkan pada endpoint eksekusi backend saat ini.
+        </Alert>
+      )}
 
       {/* Kartu Pemantauan Progres, Detail 16 Minggu, dan Verifikasi Read-Back (FE-13.2) */}
       {currentExecution && (

@@ -159,7 +159,7 @@ export default function CourseOverviewPage() {
           </dl>
           <div className="mt-4 border-t border-line-subtle pt-3 text-sm text-muted">
             Preferensi pengajaran dan generator konten diatur di{' '}
-            <Link to="/profile" className="font-semibold text-primary underline">Profil dosen</Link>.
+            <Link to="/user/profile" className="font-semibold text-primary underline">Profil dosen</Link>.
           </div>
         </Card>
       </div>

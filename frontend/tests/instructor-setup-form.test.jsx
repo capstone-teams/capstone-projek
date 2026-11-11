@@ -1,7 +1,9 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import InstructorSetupForm from '../src/components/ai/InstructorSetupForm';
+import ActivityConfigPanel from '../src/components/ai/course/ActivityConfigPanel';
 import TeachingProfileForm from '../src/components/ai/TeachingProfileForm';
 import {
   DEFAULT_ACTIVITY_CONFIGURATION,
@@ -504,5 +506,96 @@ describe('FE-07.1 InstructorSetupForm', () => {
     expect(container.textContent).toContain('1. Profil Pengajar');
     expect(container.textContent).not.toContain('Prompt Tambahan');
     expect(container.textContent).toContain('2. Konfigurasi Aktivitas Pembelajaran');
+  });
+});
+
+describe('ActivityConfigPanel di alur Generator AI', () => {
+  it('mengizinkan toggle Tugas/Kuis pada mode edit dan mengirim PUT parsial activity_configuration', async () => {
+    mockInstructorService.getInstructorSetup.mockResolvedValue({
+      instructor_profile: {},
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: false,
+        quiz: false,
+      },
+      updated_at: '2026-11-11T08:00:00Z',
+    });
+    mockInstructorService.updateInstructorSetup.mockResolvedValue({
+      instructor_profile: {},
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: true,
+        quiz: false,
+      },
+      updated_at: '2026-11-11T08:01:00Z',
+    });
+
+    await renderComponent(
+      <MemoryRouter>
+        <ActivityConfigPanel mode="edit" />
+      </MemoryRouter>
+    );
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    const assignmentBox = container.querySelector('input[name="course_activity_assignment"]');
+    const materialBox = container.querySelector('input[name="course_activity_learning_material"]');
+    expect(assignmentBox).not.toBeNull();
+    expect(assignmentBox.checked).toBe(false);
+    expect(materialBox.checked).toBe(true);
+
+    // Mencegah menonaktifkan seluruh jenis aktivitas
+    await act(async () => {
+      materialBox.click();
+    });
+    expect(mockInstructorService.updateInstructorSetup).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Minimal satu jenis aktivitas pembelajaran harus diaktifkan.');
+
+    // Mengaktifkan Tugas menyimpan setup secara parsial
+    await act(async () => {
+      assignmentBox.click();
+    });
+    expect(mockInstructorService.updateInstructorSetup).toHaveBeenCalledWith({
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: true,
+        quiz: false,
+      },
+    });
+    expect(container.textContent).toContain('Tersimpan');
+    expect(container.querySelector('a[href="/user/profile"]')).not.toBeNull();
+  });
+
+  it('mode readonly menampilkan jenis aktivitas dari snapshot Course Plan dan tautan /user/profile bila belum lengkap', async () => {
+    mockInstructorService.getInstructorSetup.mockResolvedValue({
+      activity_configuration: {
+        learning_material: true,
+        learning_resource: false,
+        assignment: false,
+        quiz: false,
+      },
+    });
+
+    const plan = {
+      status: 'APPROVED',
+      weeks: [
+        { week_number: 1, week_type: 'regular', planned_activities: ['learning_material'] },
+        { week_number: 8, week_type: 'uts', planned_activities: [] },
+      ],
+    };
+
+    await renderComponent(
+      <MemoryRouter>
+        <ActivityConfigPanel mode="readonly" plan={plan} />
+      </MemoryRouter>
+    );
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    expect(container.textContent).toContain('Materi Pembelajaran');
+    expect(container.textContent).toContain('Jenis konten yang di-generate dikunci saat Course Plan disetujui');
+    expect(container.querySelector('a[href="/user/profile"]')).not.toBeNull();
   });
 });

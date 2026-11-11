@@ -326,5 +326,6 @@ describe('FE-13.2 Moodle Structure Execution Progress, Operations Detail & Read-
     // Detail beralih ke exec-success-1
     await waitFor(() => container.textContent.includes('16/16 (100%)'), 'Switched execution detail');
     expect(executionService.getExecution).toHaveBeenCalledWith('wf-1', 'exec-success-1');
+    expect(container.textContent).toContain('Cakupan eksekusi saat ini baru struktur section (STRUCTURE)');
   });
 });
