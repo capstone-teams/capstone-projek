@@ -412,6 +412,7 @@ export const AWAITED_ACTION = {
   REVIEW_CONTENT: 'REVIEW_CONTENT',
   REVISE_CONTENT: 'REVISE_CONTENT',
   EXECUTE_FULL: 'EXECUTE_FULL',
+  VERIFY_MOODLE: 'VERIFY_MOODLE',
 };
 
 /** title/description untuk pengguna; page: tab Generator AI tujuan tautan cepat; secondary: tautan tambahan. */
@@ -429,6 +430,12 @@ export const AWAITED_ACTION_META = {
     page: 'publish',
     linkLabel: 'Buka halaman eksekusi FULL',
     secondary: { page: 'review', label: 'Buka halaman Review' },
+  },
+  [AWAITED_ACTION.VERIFY_MOODLE]: {
+    title: 'Verifikasi di Moodle',
+    description: 'Struktur dan konten sudah dikirim ke Moodle. Periksa hasilnya, lalu jalankan verifikasi.',
+    page: 'verification',
+    linkLabel: 'Buka halaman Verifikasi',
   },
 };
 
@@ -475,8 +482,8 @@ export function awaitedActionOf(workflow, events = []) {
   if (!needsInstructorAction(workflow)) return null;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION) return isActivityOperation(event) ? null : AWAITED_ACTION.GENERATE_CONTENT;
-    if (completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return isFullExecutionRunBefore(events, index) ? null : AWAITED_ACTION.GENERATE_CONTENT;
+    if (event.event === WORKFLOW_EVENT.MOODLE_OPERATION) return isActivityOperation(event) ? AWAITED_ACTION.VERIFY_MOODLE : AWAITED_ACTION.GENERATE_CONTENT;
+    if (completedStage(event, [WORKFLOW_STAGE.MOODLE_EXECUTION])) return isFullExecutionRunBefore(events, index) ? AWAITED_ACTION.VERIFY_MOODLE : AWAITED_ACTION.GENERATE_CONTENT;
     if (event.event === WORKFLOW_EVENT.CONTENTS_APPROVED) return AWAITED_ACTION.EXECUTE_FULL;
     if (event.event === WORKFLOW_EVENT.CONTENTS_REJECTED) return AWAITED_ACTION.REVISE_CONTENT;
     if (CONTENT_RESULT_EVENTS.includes(event.event) || completedStage(event, [WORKFLOW_STAGE.CONTENT_GENERATION])) return AWAITED_ACTION.REVIEW_CONTENT;
@@ -563,6 +570,8 @@ function eventMilestoneIndex(workflow, events = []) {
       return 3;
     case AWAITED_ACTION.EXECUTE_FULL:
       return 4;
+    case AWAITED_ACTION.VERIFY_MOODLE:
+      return 5;
     default: {
       const hadFullExecution = events.some((ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(ev));
       if (hadFullExecution) return 5;

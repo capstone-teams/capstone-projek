@@ -81,7 +81,7 @@ describe('FE-19.1 event konten', () => {
     expect(awaitedActionOf(wf(), [...generated(), ev('WORKFLOW_CONTENTS_APPROVED', 'instructor_review')])).toBe(AWAITED_ACTION.EXECUTE_FULL);
     // Operasi section (eksekusi struktur) tetap menunggu generate konten; operasi activity (FULL) menunggu verifikasi.
     expect(awaitedActionOf(wf(), [ev('WORKFLOW_MOODLE_OPERATION', 'moodle_execution', 'Minggu 1 diterapkan ke Moodle.')])).toBe(AWAITED_ACTION.GENERATE_CONTENT);
-    expect(awaitedActionOf(wf(), [ev('WORKFLOW_MOODLE_OPERATION', 'moodle_execution', 'Minggu 1 - Quiz diterapkan ke Moodle.')])).toBeNull();
+    expect(awaitedActionOf(wf(), [ev('WORKFLOW_MOODLE_OPERATION', 'moodle_execution', 'Minggu 1 - Quiz diterapkan ke Moodle.')])).toBe(AWAITED_ACTION.VERIFY_MOODLE);
   });
 });
 
