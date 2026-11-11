@@ -19,6 +19,7 @@ from src.schemas.content import (
     WeekContext,
     WeeklyContentContext,
 )
+from src.services.content.illustrations import resolve_material_illustrations
 from src.services.content.pipeline import (
     MAX_ERROR_CHARS,
     EmitEvent,
@@ -448,6 +449,10 @@ async def _generate_week_content(
                 attempt=attempt,
                 content_type=spec.key,
             )
+
+            if spec.key == "LEARNING_MATERIAL":
+                # Diagram dan gambar berlisensi; kegagalan hanya menghapus ilustrasinya.
+                material = await resolve_material_illustrations(material)
 
             return material
 

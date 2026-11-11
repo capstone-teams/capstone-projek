@@ -14,9 +14,10 @@ Status koneksi dan endpoint write tetap khusus dosen.
 
 from __future__ import annotations
 
+import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Response, UploadFile, status
 
 from src.schemas.moodle import (
     ApiErrorResponse,
@@ -28,12 +29,33 @@ from src.schemas.moodle import (
     MoodleStatusResponse,
     SaveMoodleSectionRequest,
 )
+from src.schemas.course_activity import (
+    ActivityModname,
+    CreateActivityRequest,
+    CreateActivityResponse,
+    GenerateActivityResponse,
+)
+from src.services.course_activity_service import (
+    ActivityGenerationError,
+    CourseActivityService,
+    ReferenceFile,
+)
+from src.services.course_plan.errors import CoursePlanDomainError
+from src.services.course_plan.service import CoursePlanService
 from src.services.dependencies import (
+    get_course_plan_service,
     get_moodle_integration_service,
+    get_rps_service,
+    get_workflow_service,
     require_development_environment,
     require_roles,
 )
+from src.services.llm.base import LLMProviderError
+from src.services.llm.service import get_llm_service
 from src.services.moodle_integration_service import MoodleIntegrationService
+from src.services.rps.errors import RPSDomainError
+from src.services.rps.service import RPSService
+from src.services.workflow.service import WorkflowService
 from src.services.moodle_student_courses import StudentCourseService
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
@@ -192,3 +214,140 @@ async def save_section(
     if not result.created:
         response.status_code = status.HTTP_200_OK
     return MoodleSectionResponse.model_validate(result.section)
+
+# --- Aktivitas dari halaman kursus (Assignment, Quiz, Text and media area) -------------------
+
+
+async def _activity_references(
+    *,
+    moodle_course_id: int,
+    owner_id: str,
+    section: int,
+    workflows: WorkflowService,
+    plans: CoursePlanService,
+    rps: RPSService,
+) -> tuple[dict | None, str]:
+    """Rencana minggu ``section`` dan ringkasan RPS dari workflow terbaru yang menargetkan kursus ini."""
+    candidates = [
+        workflow
+        for workflow in await workflows.list_workflows(owner_id=owner_id)
+        if workflow.moodle_course_id == moodle_course_id
+    ]
+    if not candidates:
+        return None, ""
+    workflow = max(candidates, key=lambda item: item.updated_at or item.created_at)
+    plan_week: dict | None = None
+    try:
+        plan = await plans.get_latest(workflow_id=workflow.id or "", owner_id=owner_id)
+    except CoursePlanDomainError:
+        plan = None
+    if plan is not None:
+        week = next((item for item in plan.weeks if item.week_number == section), None)
+        if week is not None:
+            plan_week = {
+                "minggu": week.week_number,
+                "judul": week.title,
+                "jenis_minggu": week.week_type,
+                "capaian": list(week.learning_outcomes),
+                "tujuan": list(week.objectives),
+                "topik": list(week.topics),
+                "metode": list(week.teaching_methods),
+                "rencana_aktivitas": list(week.planned_activities),
+            }
+    rps_text = ""
+    if workflow.rps_id:
+        try:
+            document = await rps.get_rps(rps_id=workflow.rps_id, owner_id=owner_id)
+            if document.structured_data:
+                rps_text = json.dumps(document.structured_data, ensure_ascii=False)
+        except RPSDomainError:
+            rps_text = ""
+    return plan_week, rps_text
+
+
+def _activity_service(
+    moodle: MoodleIntegrationService,
+    workflows: WorkflowService,
+    plans: CoursePlanService,
+    rps: RPSService,
+    *,
+    with_llm: bool,
+) -> CourseActivityService:
+    async def references(moodle_course_id: int, owner_id: str, section: int):
+        return await _activity_references(
+            moodle_course_id=moodle_course_id,
+            owner_id=owner_id,
+            section=section,
+            workflows=workflows,
+            plans=plans,
+            rps=rps,
+        )
+
+    llm = None
+    if with_llm:
+        try:
+            llm = get_llm_service()
+        except LLMProviderError:
+            llm = None
+    return CourseActivityService(moodle, llm=llm, references=references)
+
+
+@router.post(
+    "/courses/{moodle_course_id}/activities",
+    response_model=CreateActivityResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Tambah Assignment, Quiz, atau Text and media area pada satu section",
+    dependencies=[Depends(instructor_only)],
+)
+async def create_activity(
+    moodle_course_id: MoodleCourseIdPath,
+    payload: CreateActivityRequest,
+    service: ServiceDependency,
+) -> CreateActivityResponse:
+    """Membuat activity lewat plugin ``local_capstonebridge`` (``create_assign``/``create_quiz``/``create_label``)."""
+    return await CourseActivityService(service).create(moodle_course_id, payload)
+
+
+@router.post(
+    "/courses/{moodle_course_id}/activities/generate",
+    response_model=GenerateActivityResponse,
+    summary="Draf isi activity dengan AI dari materi minggu, RPS, dan file referensi",
+)
+async def generate_activity(
+    moodle_course_id: MoodleCourseIdPath,
+    service: ServiceDependency,
+    modname: Annotated[ActivityModname, Form()],
+    section: Annotated[int, Form(ge=0)],
+    instruction: Annotated[str, Form(max_length=2000)] = "",
+    question_count: Annotated[int, Form(ge=1, le=30)] = 10,
+    difficulty: Annotated[str, Form(max_length=20)] = "sedang",
+    use_week: Annotated[bool, Form()] = True,
+    use_rps: Annotated[bool, Form()] = True,
+    reference_file: UploadFile | None = File(default=None),
+    current_user: User = Depends(instructor_only),
+    workflows: WorkflowService = Depends(get_workflow_service),
+    plans: CoursePlanService = Depends(get_course_plan_service),
+    rps: RPSService = Depends(get_rps_service),
+) -> GenerateActivityResponse:
+    """Draf hanya mengisi formulir; activity dibuat setelah dosen menyimpannya lewat ``POST .../activities``."""
+    activities = _activity_service(service, workflows, plans, rps, with_llm=True)
+    file = None
+    if reference_file is not None and reference_file.filename:
+        file = ReferenceFile(filename=reference_file.filename, content=await reference_file.read())
+    try:
+        return await activities.generate(
+            moodle_course_id,
+            owner_id=current_user.id,
+            modname=modname,
+            section=section,
+            instruction=instruction,
+            question_count=question_count,
+            difficulty=difficulty,
+            use_week=use_week,
+            use_rps=use_rps,
+            reference_file=file,
+        )
+    except ActivityGenerationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.public_message) from exc
+    except LLMProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.public_message) from exc

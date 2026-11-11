@@ -131,6 +131,13 @@ class RPSProcessRequest(BaseModel):
     """
 
     schema_version: str | None = Field(default=None, min_length=1, max_length=50)
+    autopilot: bool = Field(
+        default=False,
+        description=(
+            "Lanjutkan otomatis: susun dan setujui course plan (bila lolos validasi), lalu "
+            "generate konten seluruh minggu. Berhenti di review konten sebelum eksekusi Moodle."
+        ),
+    )
 
 
 class RPSProcessResponse(BaseModel):

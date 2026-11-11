@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCourseBreadcrumb, useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useCourseEditing } from '../../../hooks/useCourseEditing';
-import { CAN_CREATE_IN_APP } from '../../../services/moodle/courseEditing';
+import { CAN_CREATE_IN_APP, generateActivity } from '../../../services/moodle/courseEditing';
 import { EmptyState } from '../../../components/ui';
 import ActivityIcon from '../../../components/moodle/ActivityIcon';
 import { AssignModForm, LabelModForm, QuizModForm } from '../../../components/moodle/modedit/ModForms';
@@ -34,9 +34,10 @@ export default function ModEditPage() {
   }
 
   const sectionPath = `${coursePath}#section-${section.section}`;
-  // Argumen kedua dari formulir (prompt tambahan dan pilihan generate) sengaja tidak dipakai: backend belum punya
-  // endpoint generate konten aktivitas, dan prompt tidak boleh ikut terkirim sebagai isian aktivitas. Begitu
-  // endpoint tersedia, berikan `onGenerate` ke formulir agar tombol "Generate dengan AI" aktif.
+  // Argumen kedua dari formulir (prompt tambahan) sengaja tidak dipakai saat menyimpan: prompt tidak boleh ikut
+  // terkirim sebagai isian aktivitas. Generate AI hanya mengisi formulir lewat `onGenerate`; dosen menyunting
+  // drafnya lalu menyimpan.
+  const generate = (request) => generateActivity(course.id, { ...request, modname, section: section.section });
   const submit = async (fields) => {
     setError(null);
     const result = await editing.createActivity(section, modname, fields, type.successMessage, setError);
@@ -56,6 +57,7 @@ export default function ModEditPage() {
         pending={editing.pending === `create:${section.id}`}
         error={error}
         onSubmit={submit}
+        onGenerate={generate}
         onCancel={() => navigate(sectionPath)}
       />
     </div>

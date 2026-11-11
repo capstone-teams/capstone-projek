@@ -4,7 +4,7 @@ import MoodleEditor from '../submission/MoodleEditor';
 import { DateTimeSelector, FormRow, FormSection, FormSections } from './MoodleForm';
 import { dateValue, toUnix } from '../../../utils/dateSelector';
 import { AiGenerateSection, QuizQuestionsSection } from './AiGenerate';
-import { QUESTION_MODE, toQuestionFields, validateQuestions } from '../../../utils/quizQuestions';
+import { QUESTION_MODE, fromGeneratedQuestions, toQuestionFields, validateQuestions } from '../../../utils/quizQuestions';
 
 /*
  * Formulir "New <aktivitas>" seperti course/modedit.php: field, bagian, default, dan pesan validasi
@@ -13,8 +13,6 @@ import { QUESTION_MODE, toQuestionFields, validateQuestions } from '../../../uti
  */
 
 const REQUIRED = 'You must supply a value here.';
-const MB = 1024 * 1024;
-const MAX_SIZES = [1, 2, 5, 10, 20, 50].map((n) => n * MB);
 const MAX_GRADE = 100;
 const plain = (html) => new DOMParser().parseFromString(html, 'text/html').body.textContent.trim();
 
@@ -25,7 +23,29 @@ function useFormState(initial) {
     setForm((current) => ({ ...current, [key]: value }));
     if (errors[key]) setErrors((current) => ({ ...current, [key]: undefined }));
   };
-  return { form, set, errors, setErrors };
+  return { form, set, setForm, errors, setErrors };
+}
+
+/**
+ * Draf AI untuk form: `onGenerate(request)` dari halaman mengembalikan draf ({ name, intro, text, questions,
+ * references_used }) yang diterapkan `apply`. Referensi (materi minggu, RPS, file) dipilih di form.
+ */
+function useAiDraft(onGenerate) {
+  const [status, setStatus] = useState({ generating: false, error: null, used: null });
+  const [references, setReferences] = useState({ useWeek: true, useRps: true, file: null });
+  const run = onGenerate
+    ? async (request, apply) => {
+      setStatus({ generating: true, error: null, used: null });
+      try {
+        const draft = await onGenerate({ ...request, ...references });
+        if (draft) apply(draft);
+        setStatus({ generating: false, error: null, used: draft ? draft.references_used ?? [] : null });
+      } catch (error) {
+        setStatus({ generating: false, error, used: null });
+      }
+    }
+    : undefined;
+  return { status, references, setReferences, run };
 }
 
 function NameField({ id, label, value, onChange, error, required = true }) {
@@ -46,6 +66,7 @@ function NameField({ id, label, value, onChange, error, required = true }) {
 }
 
 function EditorField({ id, label, required, value, onChange, error }) {
+  // Editor membaca isi awal saat dipasang; pemanggil mengganti `key` agar draf AI tampil di editor.
   return (
     <FormRow label={label} labelId={`${id}-label`} required={required} error={error} errorId={`${id}-error`}>
       <MoodleEditor id={id} labelId={`${id}-label`} initialValue={value} onChange={onChange} invalid={!!error} describedBy={error ? `${id}-error` : undefined} />
@@ -106,21 +127,23 @@ export function AssignModForm(props) {
   const id = useId();
   const state = useFormState({
     name: '', intro: '',
-    opens: dateValue(0, true), due: dateValue(7, true), cutoff: dateValue(7, false),
-    onlinetext: false, wordlimit: '', wordlimitEnabled: false,
-    file: true, maxfiles: '20', maxbytes: String(MB),
+    due: dateValue(7, true),
+    onlinetext: false,
+    file: true, maxfiles: '1',
     grade: '100',
     aiPrompt: '',
   });
-  const { form, set, errors } = state;
+  const { form, set, setForm, errors } = state;
+  const ai = useAiDraft(props.onGenerate);
+  const [editorKey, setEditorKey] = useState(0);
+  const generate = ai.run && (() => ai.run({ aiPrompt: form.aiPrompt.trim() }, (draft) => {
+    setForm((current) => ({ ...current, name: current.name.trim() ? current.name : draft.name ?? '', intro: draft.intro ?? current.intro }));
+    setEditorKey((key) => key + 1);
+  }));
   const validate = (f) => {
     const found = {};
     if (!f.name.trim()) found.name = REQUIRED;
-    if (f.opens.enabled && f.due.enabled && toUnix(f.due) < toUnix(f.opens)) found.due = 'Due date cannot be earlier than the allow submissions from date.';
-    if (f.cutoff.enabled && f.due.enabled && toUnix(f.cutoff) < toUnix(f.due)) found.cutoff = 'Cut-off date cannot be earlier than the due date.';
-    else if (f.cutoff.enabled && f.opens.enabled && toUnix(f.cutoff) < toUnix(f.opens)) found.cutoff = 'Cut-off date cannot be earlier than the allow submissions from date.';
-    const limit = Number(f.wordlimit);
-    if (f.onlinetext && f.wordlimitEnabled && (!Number.isInteger(limit) || limit < 1 || f.wordlimit === '')) found.wordlimit = 'You must enter a number here.';
+    if (!f.onlinetext && !f.file) found.types = 'Select at least one submission type.';
     const grade = Number(f.grade);
     if (!Number.isInteger(grade) || grade < 1 || grade > MAX_GRADE) found.grade = `Invalid grade value. This must be an integer between 1 and ${MAX_GRADE}`;
     return found;
@@ -128,16 +151,12 @@ export function AssignModForm(props) {
   const toFields = (f) => ({
     name: f.name.trim(),
     intro: plain(f.intro) ? f.intro : '',
-    allowsubmissionsfromdate: toUnix(f.opens),
     duedate: toUnix(f.due),
-    cutoffdate: toUnix(f.cutoff),
     grade: Number(f.grade),
     // Nama setelan mengikuti plugin assignsubmission_onlinetext dan assignsubmission_file.
     onlinetext_enabled: f.onlinetext ? 1 : 0,
-    onlinetext_wordlimit: f.onlinetext && f.wordlimitEnabled ? Number(f.wordlimit) : 0,
     file_enabled: f.file ? 1 : 0,
     file_maxfiles: Number(f.maxfiles),
-    file_maxbytes: Number(f.maxbytes),
   });
 
   return (
@@ -146,15 +165,13 @@ export function AssignModForm(props) {
     >
       <FormSection id="general" title="General">
         <NameField id={`${id}-name`} label="Assignment name" value={form.name} onChange={set('name')} error={errors.name} />
-        <EditorField id={`${id}-intro`} label="Description" value={form.intro} onChange={set('intro')} />
+        <EditorField key={editorKey} id={`${id}-intro`} label="Description" value={form.intro} onChange={set('intro')} />
       </FormSection>
       <FormSection id="availability" title="Availability">
-        <DateTimeSelector label="Allow submissions from" value={form.opens} onChange={set('opens')} />
         <DateTimeSelector label="Due date" value={form.due} onChange={set('due')} error={errors.due} />
-        <DateTimeSelector label="Cut-off date" value={form.cutoff} onChange={set('cutoff')} error={errors.cutoff} />
       </FormSection>
       <FormSection id="submissiontypes" title="Submission types">
-        <FormRow label="Submission types" labelId={`${id}-types`}>
+        <FormRow label="Submission types" labelId={`${id}-types`} error={errors.types} errorId={`${id}-types-error`}>
           <div role="group" aria-labelledby={`${id}-types`} className="flex flex-wrap gap-x-6 gap-y-2 md:pt-2">
             <label className="flex items-center gap-1.5">
               <input type="checkbox" checked={form.onlinetext} onChange={(e) => set('onlinetext')(e.target.checked)} />
@@ -166,40 +183,12 @@ export function AssignModForm(props) {
             </label>
           </div>
         </FormRow>
-        {form.onlinetext && (
-          <FormRow label="Word limit" labelFor={`${id}-wordlimit`} error={errors.wordlimit} errorId={`${id}-wordlimit-error`}>
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                id={`${id}-wordlimit`}
-                type="number"
-                min={1}
-                className="w-32!"
-                value={form.wordlimit}
-                disabled={!form.wordlimitEnabled}
-                aria-invalid={errors.wordlimit ? 'true' : undefined}
-                aria-describedby={errors.wordlimit ? `${id}-wordlimit-error` : undefined}
-                onChange={(e) => set('wordlimit')(e.target.value)}
-              />
-              <label className="flex items-center gap-1.5">
-                <input type="checkbox" checked={form.wordlimitEnabled} onChange={(e) => set('wordlimitEnabled')(e.target.checked)} />
-                Enable
-              </label>
-            </div>
-          </FormRow>
-        )}
         {form.file && (
-          <>
-            <FormRow label="Maximum number of uploaded files" labelFor={`${id}-maxfiles`}>
-              <select id={`${id}-maxfiles`} className="w-auto!" value={form.maxfiles} onChange={(e) => set('maxfiles')(e.target.value)}>
-                {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </FormRow>
-            <FormRow label="Maximum submission size" labelFor={`${id}-maxbytes`}>
-              <select id={`${id}-maxbytes`} className="w-auto!" value={form.maxbytes} onChange={(e) => set('maxbytes')(e.target.value)}>
-                {MAX_SIZES.map((bytes) => <option key={bytes} value={String(bytes)}>{bytes / MB} MB</option>)}
-              </select>
-            </FormRow>
-          </>
+          <FormRow label="Maximum number of uploaded files" labelFor={`${id}-maxfiles`}>
+            <select id={`${id}-maxfiles`} className="w-auto!" value={form.maxfiles} onChange={(e) => set('maxfiles')(e.target.value)}>
+              {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </FormRow>
         )}
       </FormSection>
       <FormSection id="grade" title="Grade">
@@ -222,7 +211,17 @@ export function AssignModForm(props) {
           />
         </FormRow>
       </FormSection>
-      <AiGenerateSection id={id} value={form.aiPrompt} onChange={set('aiPrompt')} onGenerate={props.onGenerate} placeholder="Mis. Buat tugas studi kasus tentang normalisasi basis data dengan tiga pertanyaan dan rubrik penilaian." />
+      <AiGenerateSection
+        id={id}
+        value={form.aiPrompt}
+        onChange={set('aiPrompt')}
+        onGenerate={generate}
+        generating={ai.status.generating}
+        status={ai.status}
+        references={props.onGenerate ? ai.references : null}
+        onReferencesChange={ai.setReferences}
+        placeholder="Mis. Buat tugas studi kasus tentang normalisasi basis data dengan tiga pertanyaan dan rubrik penilaian."
+      />
     </ModForm>
   );
 }
@@ -230,41 +229,88 @@ export function AssignModForm(props) {
 export function QuizModForm(props) {
   const id = useId();
   const state = useFormState({
-    name: '', intro: '', open: dateValue(0, false), close: dateValue(7, false),
+    name: '', intro: '', timelimit: '', attempts: '1',
     quiz: { mode: QUESTION_MODE.MANUAL, questions: [], aiPrompt: '', aiCount: '10', aiDifficulty: 'sedang' },
   });
-  const { form, set, errors, setErrors } = state;
+  const { form, set, setForm, errors, setErrors } = state;
+  const ai = useAiDraft(props.onGenerate);
+  const [editorKey, setEditorKey] = useState(0);
   const manual = (f) => f.quiz.mode === QUESTION_MODE.MANUAL;
+  // Soal hasil AI masuk ke editor manual agar dapat diperiksa dan disunting sebelum disimpan.
+  const generate = ai.run && (() => ai.run(
+    { aiPrompt: form.quiz.aiPrompt.trim(), aiQuestionCount: Number(form.quiz.aiCount) || 10, aiDifficulty: form.quiz.aiDifficulty },
+    (draft) => {
+      setForm((current) => ({
+        ...current,
+        name: current.name.trim() ? current.name : draft.name ?? '',
+        intro: draft.intro || current.intro,
+        quiz: { ...current.quiz, mode: QUESTION_MODE.MANUAL, questions: [...current.quiz.questions, ...fromGeneratedQuestions(draft.questions)] },
+      }));
+      setEditorKey((key) => key + 1);
+      setErrors((current) => ({ ...current, questionErrors: undefined, questionsMissing: undefined }));
+    },
+  ));
   const validate = (f) => {
     const questionErrors = manual(f) ? validateQuestions(f.quiz.questions) : {};
     return {
       name: f.name.trim() ? undefined : REQUIRED,
-      close: f.open.enabled && f.close.enabled && toUnix(f.close) <= toUnix(f.open) ? 'The close date must be after the open date.' : undefined,
+      timelimit: f.timelimit === '' || (Number.isInteger(Number(f.timelimit)) && Number(f.timelimit) >= 1) ? undefined : 'You must enter a number here.',
       questionErrors: Object.keys(questionErrors).length ? questionErrors : undefined,
+      // Quiz di Moodle dibuat beserta soalnya (plugin local_capstonebridge), jadi minimal satu soal.
+      questionsMissing: manual(f) && f.quiz.questions.length ? undefined : 'Quiz wajib memiliki minimal satu soal. Tambahkan soal atau generate dengan AI.',
     };
   };
   // Soal manual ikut tersimpan bersama quiz; mode AI menunggu hasil generate.
   const toFields = (f) => ({
-    name: f.name.trim(), intro: plain(f.intro) ? f.intro : '', timeopen: toUnix(f.open), timeclose: toUnix(f.close),
+    name: f.name.trim(), intro: plain(f.intro) ? f.intro : '',
+    timelimit_minutes: f.timelimit === '' ? 0 : Number(f.timelimit), attempts: Number(f.attempts),
     questions: manual(f) ? toQuestionFields(f.quiz.questions) : [],
   });
   const extras = (f) => ({ aiPrompt: f.quiz.aiPrompt.trim(), aiQuestionCount: Number(f.quiz.aiCount) || null, aiDifficulty: f.quiz.aiDifficulty });
   const setQuiz = (quiz) => {
     set('quiz')(quiz);
-    if (errors.questionErrors) setErrors((current) => ({ ...current, questionErrors: undefined }));
+    if (errors.questionErrors || errors.questionsMissing) setErrors((current) => ({ ...current, questionErrors: undefined, questionsMissing: undefined }));
   };
 
   return (
     <ModForm sections={['general', 'timing', 'questions']} initiallyOpen={['general', 'questions']} validate={validate} toFields={toFields} extras={extras} state={state} props={props}>
       <FormSection id="general" title="General">
         <NameField id={`${id}-name`} label="Name" value={form.name} onChange={set('name')} error={errors.name} />
-        <EditorField id={`${id}-intro`} label="Description" value={form.intro} onChange={set('intro')} />
+        <EditorField key={editorKey} id={`${id}-intro`} label="Description" value={form.intro} onChange={set('intro')} />
       </FormSection>
       <FormSection id="timing" title="Timing">
-        <DateTimeSelector label="Open the quiz" value={form.open} onChange={set('open')} />
-        <DateTimeSelector label="Close the quiz" value={form.close} onChange={set('close')} error={errors.close} />
+        <FormRow label="Time limit (minutes)" labelFor={`${id}-timelimit`} error={errors.timelimit} errorId={`${id}-timelimit-error`}>
+          <input
+            id={`${id}-timelimit`}
+            type="number"
+            min={1}
+            className="w-32!"
+            placeholder="Tanpa batas"
+            value={form.timelimit}
+            aria-invalid={errors.timelimit ? 'true' : undefined}
+            aria-describedby={errors.timelimit ? `${id}-timelimit-error` : undefined}
+            onChange={(e) => set('timelimit')(e.target.value)}
+          />
+        </FormRow>
+        <FormRow label="Attempts allowed" labelFor={`${id}-attempts`}>
+          <select id={`${id}-attempts`} className="w-auto!" value={form.attempts} onChange={(e) => set('attempts')(e.target.value)}>
+            <option value="0">Unlimited</option>
+            {Array.from({ length: 10 }, (_, i) => String(i + 1)).map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </FormRow>
       </FormSection>
-      <QuizQuestionsSection id={id} value={form.quiz} onChange={setQuiz} errors={errors.questionErrors} onGenerate={props.onGenerate} />
+      <QuizQuestionsSection
+        id={id}
+        value={form.quiz}
+        onChange={setQuiz}
+        errors={errors.questionErrors}
+        missingError={errors.questionsMissing}
+        onGenerate={generate}
+        generating={ai.status.generating}
+        status={ai.status}
+        references={props.onGenerate ? ai.references : null}
+        onReferencesChange={ai.setReferences}
+      />
     </ModForm>
   );
 }
@@ -272,7 +318,13 @@ export function QuizModForm(props) {
 export function LabelModForm(props) {
   const id = useId();
   const state = useFormState({ name: '', text: '', aiPrompt: '' });
-  const { form, set, errors } = state;
+  const { form, set, setForm, errors } = state;
+  const ai = useAiDraft(props.onGenerate);
+  const [editorKey, setEditorKey] = useState(0);
+  const generate = ai.run && (() => ai.run({ aiPrompt: form.aiPrompt.trim() }, (draft) => {
+    setForm((current) => ({ ...current, name: current.name.trim() ? current.name : draft.name ?? '', text: draft.text ?? current.text }));
+    setEditorKey((key) => key + 1);
+  }));
   const validate = (f) => ({ text: plain(f.text) ? undefined : REQUIRED });
   // format 1 = FORMAT_HTML: isi berasal dari editor.
   const toFields = (f) => ({ name: f.name.trim(), text: f.text, format: 1 });
@@ -281,9 +333,19 @@ export function LabelModForm(props) {
     <ModForm sections={['general', 'ai']} initiallyOpen={['general', 'ai']} validate={validate} toFields={toFields} state={state} props={props}>
       <FormSection id="general" title="General">
         <NameField id={`${id}-name`} label="Title in course index" required={false} value={form.name} onChange={set('name')} />
-        <EditorField id={`${id}-text`} label="Text" required value={form.text} onChange={set('text')} error={errors.text} />
+        <EditorField key={editorKey} id={`${id}-text`} label="Text" required value={form.text} onChange={set('text')} error={errors.text} />
       </FormSection>
-      <AiGenerateSection id={id} value={form.aiPrompt} onChange={set('aiPrompt')} onGenerate={props.onGenerate} placeholder="Mis. Tulis ringkasan materi minggu ini dalam tiga paragraf untuk mahasiswa semester tiga." />
+      <AiGenerateSection
+        id={id}
+        value={form.aiPrompt}
+        onChange={set('aiPrompt')}
+        onGenerate={generate}
+        generating={ai.status.generating}
+        status={ai.status}
+        references={props.onGenerate ? ai.references : null}
+        onReferencesChange={ai.setReferences}
+        placeholder="Mis. Tulis ringkasan materi minggu ini dalam tiga paragraf untuk mahasiswa semester tiga."
+      />
     </ModForm>
   );
 }

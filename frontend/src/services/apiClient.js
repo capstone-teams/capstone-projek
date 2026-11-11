@@ -151,7 +151,22 @@ function toApiError(status, payload) {
 /**
  * Satu pintu untuk semua request ke Backend API (Single Gateway).
  */
-export async function request(method, path, { body, query, headers = {}, ignoreForbidden = false } = {}) {
+// GET identik yang sedang berjalan dipakai bersama. Layout Generator AI dan halaman di dalamnya memuat data yang
+// sama pada saat bersamaan (saat dibuka dan setiap event workflow), sehingga tanpa ini setiap endpoint dipanggil
+// dua kali. Hasil tidak disimpan setelah selesai, jadi pemanggilan berikutnya selalu mengambil data terbaru.
+const inflightGets = new Map();
+
+export function request(method, path, options = {}) {
+  if (method !== 'GET' || options.body !== undefined) return send(method, path, options);
+  const key = JSON.stringify([getToken(), path, options.query ?? null, options.headers ?? null, !!options.ignoreForbidden]);
+  const pending = inflightGets.get(key);
+  if (pending) return pending;
+  const promise = send(method, path, options).finally(() => inflightGets.delete(key));
+  inflightGets.set(key, promise);
+  return promise;
+}
+
+async function send(method, path, { body, query, headers = {}, ignoreForbidden = false } = {}) {
   const qs = query
     ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null)).toString()
     : '';

@@ -26,25 +26,36 @@ describe('findWorkflowForCourse', () => {
     expect(await findWorkflowForCourse(99)).toBeNull();
   });
 
-  it('tidak mengambil ulang detail workflow yang sudah berhenti pada pencarian berikutnya', async () => {
+  it('tidak mengambil ulang detail workflow yang belum berubah pada pencarian berikutnya', async () => {
     await findWorkflowForCourse(7);
     expect(detailCalls().sort()).toEqual(['a', 'b', 'b', 'c']); // tiap workflow sekali, ditambah detail terbaru yang cocok
     gets.mockClear();
     await findWorkflowForCourse(7);
-    // Yang berhenti (a, b) dari simpanan; yang berjalan (c) selalu diambil; yang cocok (b) diambil segar.
+    // Course target seluruh workflow (juga yang masih berjalan, c) dari simpanan; hanya yang cocok (b) diambil segar.
+    expect(detailCalls().sort()).toEqual(['b']);
+  });
+
+  it('workflow yang berubah (updated_at baru) diambil ulang dan entri lamanya dibuang', async () => {
+    await findWorkflowForCourse(7);
+    list = [item('a', 'FAILED'), item('b', 'COMPLETED'), item('c', 'RUNNING', '2026-11-02T09:00:00Z')];
+    details.c = detail('c', 'RUNNING', 7, '2026-11-02T09:00:00Z');
+    gets.mockClear();
+    await findWorkflowForCourse(7);
     expect(detailCalls().sort()).toEqual(['b', 'c']);
+    const stored = Object.keys(JSON.parse(sessionStorage.getItem('agentic-lms.workflow-targets')));
+    expect(stored.filter((key) => key.startsWith('c:'))).toEqual(['c:2026-11-02T09:00:00Z']);
   });
 
   it('simpanan bertahan walau halaman dimuat ulang (sessionStorage)', async () => {
     await findWorkflowForCourse(7);
-    expect(Object.keys(JSON.parse(sessionStorage.getItem('agentic-lms.workflow-targets')))).toHaveLength(2);
+    expect(Object.keys(JSON.parse(sessionStorage.getItem('agentic-lms.workflow-targets')))).toHaveLength(3);
     // Muat ulang halaman: simpanan memori hilang, sessionStorage tetap ada.
     const stored = sessionStorage.getItem('agentic-lms.workflow-targets');
     clearWorkflowCache();
     sessionStorage.setItem('agentic-lms.workflow-targets', stored);
     gets.mockClear();
     expect(await findWorkflowForCourse(7)).toMatchObject({ id: 'b' });
-    expect(detailCalls().sort()).toEqual(['b', 'c']);
+    expect(detailCalls().sort()).toEqual(['b']);
   });
 
   it('tetap berfungsi bila sessionStorage tidak dapat dipakai', async () => {

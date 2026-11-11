@@ -1,0 +1,14 @@
+name: course_activity
+version: v1
+description: Draf isi aktivitas (assignment, quiz, text and media area) yang ditambahkan dosen pada satu minggu kursus.
+
+required_variables:
+  - activity_kind
+  - week_reference
+
+optional_variables:
+  - rps_reference
+  - file_reference
+  - existing_activities
+  - instructor_instruction
+  - quiz_settings

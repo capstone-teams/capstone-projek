@@ -16,8 +16,11 @@ const STAGE_LABEL = { uploading: 'Mengunggah file…', processing: 'Memulai pemr
  * onUploaded({ rps, processing, error }) dipanggil setelah file tersimpan di server — juga bila
  * pemrosesan gagal dimulai (error berisi penyebabnya) agar RPS tetap tampil di daftar.
  */
-export default function RpsUploadForm({ onUploaded }) {
+export default function RpsUploadForm({ onUploaded, defaultAutopilot = true }) {
   const inputRef = useRef(null);
+  // Mode otomatis: RPS → course plan → konten seluruh minggu tanpa klik per tahap; publikasi ke Moodle tetap
+  // menunggu satu review akhir dosen.
+  const [autopilot, setAutopilot] = useState(defaultAutopilot);
   const errorId = useId();
   const [file, setFile] = useState(null);
   const [fileError, setFileError] = useState(null);
@@ -64,7 +67,7 @@ export default function RpsUploadForm({ onUploaded }) {
     let processing = null;
     let processError = null;
     try {
-      processing = await processRps(rps.id);
+      processing = await processRps(rps.id, { autopilot });
     } catch (e) {
       processError = e;
     }
@@ -75,6 +78,7 @@ export default function RpsUploadForm({ onUploaded }) {
     }
     else if (rps.deduplicated) setNotice('File yang sama sudah pernah diunggah; RPS yang ada dipakai kembali.');
     else if (processing?.reused) setNotice('RPS ini sudah pernah diproses; hasil sebelumnya dipakai kembali.');
+    else if (autopilot) setNotice('RPS diproses otomatis sampai materi mingguan siap ditinjau. Anda dapat meninggalkan halaman ini.');
     onUploaded?.({ rps, processing, error: processError });
   };
 
@@ -124,6 +128,23 @@ export default function RpsUploadForm({ onUploaded }) {
           hideCount
         />
       )}
+
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={autopilot}
+          disabled={busy}
+          onChange={(event) => setAutopilot(event.target.checked)}
+        />
+        <span>
+          <strong>Generate otomatis sampai materi siap ditinjau</strong>
+          <span className="block text-muted">
+            Analisis RPS, rencana mingguan, dan isi materi dibuat berurutan tanpa perlu menyetujui tiap tahap. Materi
+            dikirim ke Moodle setelah Anda meninjau dan menyetujuinya.
+          </span>
+        </span>
+      </label>
 
       <button type="submit" className="btn btn--primary" disabled={!file || !!fileError || busy}>
         {busy ? STAGE_LABEL[stage] : 'Unggah & proses'}

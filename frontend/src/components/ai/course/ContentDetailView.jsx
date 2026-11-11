@@ -20,6 +20,35 @@ function TextList({ items }) {
   return <ul className="m-0 list-disc pl-5">{items.map((item, index) => <li key={index}>{item}</li>)}</ul>;
 }
 
+// Ilustrasi materi hanya dari host yang diisi backend: diagram (Kroki) dan foto berlisensi (Wikimedia Commons).
+const TRUSTED_IMAGE = /^https:\/\/(kroki\.io|upload\.wikimedia\.org)\//;
+
+/** Diagram atau foto satu section beserta keterangan dan atribusi lisensinya. */
+function Illustration({ illustration }) {
+  if (!illustration?.image_url || !TRUSTED_IMAGE.test(illustration.image_url)) return null;
+  const credit = illustration.attribution;
+  return (
+    <figure className="my-4">
+      <img
+        src={illustration.image_url}
+        alt={illustration.caption ?? ''}
+        loading="lazy"
+        className="mx-auto h-auto max-w-full rounded-md border border-line-subtle bg-white"
+      />
+      <figcaption className="mt-2 text-center text-xs text-muted">
+        {illustration.caption}
+        {credit && (
+          <span className="block">
+            {illustration.source_url?.startsWith('https://')
+              ? <a href={illustration.source_url} target="_blank" rel="noreferrer">{credit}</a>
+              : credit}
+          </span>
+        )}
+      </figcaption>
+    </figure>
+  );
+}
+
 function LearningMaterial({ data, markdown }) {
   const objectives = list(data.learning_objectives);
   const sections = list(data.sections);
@@ -30,6 +59,7 @@ function LearningMaterial({ data, markdown }) {
         sections.map((section, index) => (
           <Section key={index} title={section.heading || `Bagian ${index + 1}`}>
             <MarkdownView markdown={section.body_markdown} />
+            <Illustration illustration={section.illustration} />
           </Section>
         ))
       ) : (

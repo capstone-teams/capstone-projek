@@ -1,5 +1,5 @@
-import { useContext, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useContext, useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { useAction, useApi } from '../../../hooks/useApi';
 import { useOnChange } from '../../../hooks/useOnChange';
@@ -19,7 +19,9 @@ import {
   rejectContents,
 } from '../../../services/contentService';
 import { PLAN_STATUS, getWorkflowPlan } from '../../../services/coursePlanService';
-import { Alert, Badge, Card, EmptyState, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
+import { Alert, Badge, Card, EmptyState, ErrorAlert, Modal, ProgressBar, Spinner } from '../../../components/ui';
+import { approveAndPublish, publishSummary } from '../../../services/publishService';
+import { formatExecutionPreconditionError } from '../../../services/executionService';
 import InstructionModal from '../../../components/ai/InstructionModal';
 import ContentDetailView from '../../../components/ai/course/ContentDetailView';
 import {
@@ -46,14 +48,17 @@ const meta = (table, key) => table[key] ?? { label: key ?? '-', tone: 'neutral' 
 /**
  * Jumlah temuan validasi per konten. GET /contents hanya memberi status dan skor, jadi detail tiap konten
  * (GET /contents/{id}) dimuat di latar setelah daftar tampil. Id konten berbeda tiap versi, sehingga hasilnya
- * disimpan per id dan hanya konten baru yang dimuat.
+ * disimpan per id selama sesi (satu id = satu versi yang tidak berubah) dan hanya konten baru yang dimuat, juga
+ * saat halaman Review dibuka lagi.
  */
+const findingCountCache = new Map();
+
 function useFindingCounts(workflowId, items) {
-  const [counts, setCounts] = useState({});
-  const loaded = useRef(new Set());
+  // Hanya pemicu render ulang setelah sebuah batch selesai; nilainya dibaca dari findingCountCache.
+  const [, setLoadedBatches] = useState(0);
   const ids = items.map((item) => item.id).join(',');
   useEffect(() => {
-    const pending = ids ? ids.split(',').filter((id) => !loaded.current.has(id)) : [];
+    const pending = (ids ? ids.split(',') : []).filter((id) => !findingCountCache.has(id));
     if (!workflowId || !pending.length) return undefined;
     let cancelled = false;
     (async () => {
@@ -62,16 +67,16 @@ function useFindingCounts(workflowId, items) {
         const results = await Promise.all(batch.map((id) => getWorkflowContent(workflowId, id)
           .then((detail) => [id, validationFindings(detail.validation).length])
           .catch(() => [id, null])));
+        results.forEach(([id, count]) => count != null && findingCountCache.set(id, count));
         if (cancelled) return;
-        results.forEach(([id, count]) => count != null && loaded.current.add(id));
-        setCounts((current) => ({ ...current, ...Object.fromEntries(results) }));
+        setLoadedBatches((n) => n + 1);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [workflowId, ids]);
-  return counts;
+  return Object.fromEntries(items.filter((item) => findingCountCache.has(item.id)).map((item) => [item.id, findingCountCache.get(item.id)]));
 }
 
 /** Ringkasan validasi satu konten di daftar: status, skor, dan jumlah temuan. */
@@ -199,6 +204,8 @@ export default function CourseReviewPage() {
   const [selectedId, setSelectedId] = useState(null);
   // { type: 'reject' | 'regenerate', scope, weekNumber, contentIds, contentId, label }
   const [dialog, setDialog] = useState(null);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const navigate = useNavigate();
 
   const contents = useApi(() => (workflowId ? listWorkflowContents(workflowId) : []), [workflowId]);
   const plan = useApi(() => (workflowId ? getWorkflowPlan(workflowId).catch(() => null) : null), [workflowId]);
@@ -216,10 +223,20 @@ export default function CourseReviewPage() {
     refresh?.();
   };
   const approve = useAction((ids) => approveContents(workflowId, ids), { loadingLabel: 'Menyetujui konten…' });
+  const publish = useAction(() => approveAndPublish(workflowId, contents.data ?? []), { loadingLabel: 'Mempublikasikan ke Moodle…' });
+  const runPublish = () => publish.run()
+    .then(() => {
+      setPublishOpen(false);
+      notify?.('Konten disetujui dan sedang dikirim ke Moodle.', { type: 'success' });
+      refresh?.();
+      navigate('../publish', { relative: 'path' });
+    })
+    .catch(() => {});
   const generate = useAction(() => generateContents(workflowId), { loadingLabel: 'Meminta pembuatan konten…' });
   const runApprove = (ids, message) => approve.run(ids).then(() => afterAction(message)).catch(() => {});
 
   const progress = reviewProgress(items);
+  const summary = publishSummary(items);
   const generating = contentGenerationProgressOf(workflow, events);
   const planApproved = plan.data?.status === PLAN_STATUS.APPROVED;
   const filtered = items.filter((item) => (!kind || item.kind === kind) && (!status || item.status === status));
@@ -263,12 +280,21 @@ export default function CourseReviewPage() {
             </button>
             <button
               type="button"
-              className="btn btn--primary"
+              className="btn btn--ghost"
               disabled={!allApprovable.length || approve.pending}
               title={allApprovable.length ? undefined : 'Tidak ada konten lolos validasi yang menunggu persetujuan.'}
               onClick={() => runApprove(allApprovable, `${allApprovable.length} konten disetujui.`)}
             >
               Setujui semua yang lolos validasi ({allApprovable.length})
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={!!generating || !summary.publishable || publish.pending}
+              title={summary.publishable ? undefined : 'Belum ada konten yang lolos validasi.'}
+              onClick={() => setPublishOpen(true)}
+            >
+              Setujui &amp; publikasikan ke Moodle
             </button>
           </>
         )}
@@ -405,6 +431,35 @@ export default function CourseReviewPage() {
           )}
         </div>
       )}
+
+      <Modal
+        open={publishOpen}
+        title="Setujui & publikasikan ke Moodle"
+        onClose={() => { setPublishOpen(false); publish.clearError(); }}
+        footer={(
+          <>
+            <button type="button" className="btn btn--ghost" onClick={() => { setPublishOpen(false); publish.clearError(); }}>Batal</button>
+            <button type="button" className="btn btn--primary" disabled={publish.pending} onClick={runPublish}>
+              {publish.pending ? 'Mempublikasikan…' : 'Ya, publikasikan'}
+            </button>
+          </>
+        )}
+      >
+        <div className="stack text-sm">
+          <p>
+            Section mingguan dan <strong>{summary.publishable} konten</strong> akan dikirim ke kursus Moodle
+            {summary.toApprove.length > 0 && <> ({summary.toApprove.length} konten disetujui sekarang)</>}.
+          </p>
+          {summary.skipped.length > 0 && (
+            <Alert tone="warning" title={`${summary.skipped.length} konten dilewati`}>
+              Konten yang belum lolos validasi atau ditolak tidak dikirim. Regenerasi lalu publikasikan ulang kapan saja.
+            </Alert>
+          )}
+          {publish.error && (
+            <Alert tone="danger" title="Publikasi gagal dimulai">{formatExecutionPreconditionError(publish.error)}</Alert>
+          )}
+        </div>
+      </Modal>
 
       <InstructionModal
         open={dialog?.type === 'reject'}

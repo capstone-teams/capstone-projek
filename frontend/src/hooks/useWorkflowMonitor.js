@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SOCKET_STATUS } from '../services/monitoringSocket';
 import { getWorkflow, getWorkflowEvents } from '../services/workflowService';
-import { isFinalWorkflowEvent, isWorkflowFinished } from '../utils/workflowStatus';
+import { isFinalWorkflowEvent, isWorkflowBusy, isWorkflowFinished } from '../utils/workflowStatus';
 import { usePolling } from './usePolling';
 import { useWorkflowSubscription } from './useWorkflowEvents';
 import { useWorkflowStore } from './useWorkflowStore';
@@ -10,6 +10,9 @@ import { useWorkflowStore } from './useWorkflowStore';
 // polling menjadi sumber pembaruan sampai koneksi pulih.
 export const LIVE_POLL_MS = 15000;
 export const FALLBACK_POLL_MS = 4000;
+// Workflow yang menunggu tindakan dosen (instructor_review) tidak berubah sendiri: setiap aksi dosen sudah
+// memuat ulang status, jadi polling cukup sebagai jaring pengaman yang jarang.
+export const IDLE_POLL_MS = 30000;
 
 /**
  * Memantau satu workflow secara real-time (FE-10.2):
@@ -68,7 +71,9 @@ export function useWorkflowMonitor(workflowId) {
       if (status === SOCKET_STATUS.CONNECTED) sync();
     },
   );
-  usePolling(sync, connected ? LIVE_POLL_MS : FALLBACK_POLL_MS, !!workflowId && !isWorkflowFinished(workflow));
+  const waitingForInstructor = !!workflow && !isWorkflowBusy(workflow);
+  const pollMs = waitingForInstructor ? IDLE_POLL_MS : connected ? LIVE_POLL_MS : FALLBACK_POLL_MS;
+  usePolling(sync, pollMs, !!workflowId && !isWorkflowFinished(workflow));
 
   return {
     workflow,

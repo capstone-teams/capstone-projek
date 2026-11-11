@@ -33,6 +33,13 @@ Materi pembelajaran harus memiliki karakteristik seperti modul tutorial edukatif
 - Hindari penjelasan yang terlalu akademis tanpa ilustrasi yang membantu.
 - Jangan menggunakan gaya percakapan informal secara berlebihan.
 
+## 3.3 Ilustrasi Visual
+Setiap section memiliki field `illustration`. Tambahkan ilustrasi pada section yang terbantu oleh visual (umumnya 1 sampai 3 section per materi); isi `null` untuk section lain.
+- Pilih `kind: "DIAGRAM"` untuk alur, proses, hubungan antar konsep, arsitektur, siklus, hierarki, atau perbandingan. Tulis kode Mermaid yang valid pada `mermaid` (mis. `flowchart TD`, `sequenceDiagram`, `classDiagram`, `erDiagram`, `stateDiagram-v2`, atau `mindmap`). Gunakan label singkat berbahasa Indonesia, maksimal sekitar 15 node, dan beri tanda kutip pada label yang memuat tanda baca. Isi `image_query` dengan `null`.
+- Pilih `kind: "PHOTO"` untuk benda, alat, tempat, tokoh, atau fenomena nyata yang perlu dilihat wujudnya. Isi `image_query` dengan 2 sampai 5 kata kunci berbahasa Inggris yang spesifik (mis. `fiber optic cable cross section`). Isi `mermaid` dengan `null`.
+- `caption` berisi satu kalimat berbahasa Indonesia yang menjelaskan apa yang ditunjukkan ilustrasi dan kaitannya dengan materi.
+- Selalu isi `image_url`, `source_url`, dan `attribution` dengan `null`; sistem yang mengisinya. Jangan menulis URL gambar atau sintaks gambar Markdown di `body_markdown`.
+
 # 4. Aturan Validasi
 Sebelum menghasilkan output:
 1. Pastikan seluruh topics telah memiliki section.

@@ -88,6 +88,7 @@ __all__ = [
     "get_moodle_client",
     "get_moodle_integration_service",
     "get_rps_analysis_runner",
+    "get_rps_autopilot_runner",
     "get_rps_processing_runner",
     "get_rps_service",
     "get_user_service",
@@ -225,6 +226,13 @@ def get_rps_processing_runner() -> RPSProcessingRunner:
     ``PROCESSING_RPS`` → ``ANALYZING_RPS``.
     """
     return run_rps_processing_workflow
+
+
+def get_rps_autopilot_runner() -> RPSProcessingRunner:
+    """Runner mode otomatis: RPS sampai konten siap direview (``autopilot: true``)."""
+    from src.services.workflow.autopilot import run_autopilot_workflow
+
+    return run_autopilot_workflow
 
 
 def get_rps_analysis_runner() -> RPSAnalysisRunner:
