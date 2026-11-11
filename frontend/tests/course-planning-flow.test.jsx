@@ -296,4 +296,25 @@ describe('FE-12.1 tombol Lanjut ke Course Planning pada Hasil Analisis RPS', () 
     expect(node.querySelector('#planning-hint').textContent).toBe('Tersedia setelah RPS selesai dianalisis.');
     expect(plans.getWorkflowPlan).not.toHaveBeenCalled();
   });
+
+  it('menghapus tombol Pantau workflow & Kembali ke daftar RPS dan menyediakan tombol Analisis ulang', async () => {
+    plans.getWorkflowPlan.mockResolvedValue(null);
+    rpsApi.reanalyzeRps.mockResolvedValue({ rps_id: 'rps-1', workflow_id: 'wf-1', status: 'ANALYZING' });
+    await renderRps();
+
+    expect(node.textContent).not.toContain('Pantau workflow');
+    expect(node.textContent).not.toContain('Kembali ke daftar RPS');
+
+    const reanalyzeBtn = button('Analisis ulang');
+    expect(reanalyzeBtn).toBeDefined();
+    expect(reanalyzeBtn.disabled).toBe(false);
+
+    rpsApi.getRps.mockResolvedValue({ id: 'rps-1', status: 'ANALYZING', workflow_id: 'wf-1', filename: 'rps.pdf', has_source_document: true });
+    await act(async () => reanalyzeBtn.click());
+    await settle();
+
+    expect(rpsApi.reanalyzeRps).toHaveBeenCalledWith('rps-1');
+    expect(context.refresh).toHaveBeenCalled();
+    expect(node.textContent).toContain('Pemrosesan RPS sedang berlangsung');
+  });
 });

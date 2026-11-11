@@ -16,7 +16,7 @@ import RpsUploadForm from '../../../components/ai/RpsUploadForm';
 import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsStatus';
 import { formatDateTime } from '../../../utils/format';
-import { WORKFLOW_EVENT, coursePlanProgressOf } from '../../../utils/workflowStatus';
+import { WORKFLOW_EVENT, coursePlanProgressOf, isWorkflowBusy } from '../../../utils/workflowStatus';
 import {
   bindWorkflowToCourse,
   getActiveCourseBinding,
@@ -210,6 +210,17 @@ export default function CourseRpsPage() {
     ? `?${new URLSearchParams({ ...(hasProject ? {} : { rps: rps?.id ?? '' }), workflow: workflowId })}`
     : '';
   const planning = !!coursePlanProgressOf(monitor.workflow, monitor.events);
+  const workflowBusy = isWorkflowBusy(monitor.workflow);
+  const reanalyzeAction = useAction(() => reanalyzeRps(rps.id), { loadingLabel: 'Memulai analisis ulang RPS…' });
+  const canReanalyzeAnalyzed = Boolean(analyzed && rps?.has_source_document !== false);
+  const handleReanalyze = () => {
+    if (!rps?.id || workflowBusy || planning || reanalyzeAction.pending) return;
+    reanalyzeAction.run().then(async () => {
+      await reloadRps({ silent: true });
+      await monitor.reload?.();
+      await refresh?.();
+    }).catch(() => {});
+  };
 
   // ?bagian=hasil (dari tombol "Hasil analisis" di tab Kursus): gulir ke hasil analisis setelah tampil.
   const jumpToResult = params.get('bagian') === 'hasil' && !!analysis;
@@ -275,8 +286,6 @@ export default function CourseRpsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Status workflow ada di tab Workflow; tanpa project kursus, RPS dibuka dari daftar RPS. */}
-          {!hasProject && <Link to=".." relative="path" className="btn btn--ghost btn--sm">Kembali ke daftar RPS</Link>}
           <button
             type="button"
             className="btn btn--secondary btn--sm"
@@ -284,8 +293,15 @@ export default function CourseRpsPage() {
           >
             {showReplace ? 'Tutup upload' : 'Ganti RPS'}
           </button>
-          {workflowId && (
-            <Link to={`../workflows?workflow=${workflowId}`} relative="path" className="btn btn--ghost btn--sm">Pantau workflow</Link>
+          {canReanalyzeAnalyzed && (
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              disabled={workflowBusy || planning || reanalyzeAction.pending}
+              onClick={handleReanalyze}
+            >
+              {reanalyzeAction.pending ? 'Menganalisis ulang…' : 'Analisis ulang'}
+            </button>
           )}
           <CoursePlanningAction
             analyzed={analyzed}
@@ -297,6 +313,8 @@ export default function CourseRpsPage() {
           />
         </div>
       </div>
+
+      <ErrorAlert error={reanalyzeAction.error} onClose={reanalyzeAction.clearError} />
 
       {showReplace && (
         <Card title="Unggah RPS Pengganti">
