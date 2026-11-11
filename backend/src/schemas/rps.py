@@ -34,6 +34,7 @@ from src.services.rps.enums import RPSStatus
 
 __all__ = [
     "RPSAnalysisResponse",
+    "RPSAnalysisUpdateRequest",
     "RPSDetailResponse",
     "RPSListItem",
     "RPSListResponse",
@@ -275,6 +276,31 @@ class RPSAnalysisResponse(BaseModel):
                     "cpmk": [{"id": "CPMK-1", "description": "Merancang basis data relasional"}],
                     "weeks": [{"week": 1, "topics": ["Pengenalan Basis Data"]}],
                 },
+            }
+        }
+    )
+
+
+class RPSAnalysisUpdateRequest(BaseModel):
+    """Body ``PATCH /api/v1/rps/{rps_id}/analysis`` (design-api §6.7).
+
+    Bentuk ``data`` sama persis dengan response §6.4, sehingga client cukup
+    mengirim kembali objek yang sudah dibacanya setelah diubah dosen. Validasi
+    schema tetap milik server: field di luar kontrak ``extra="forbid"`` dan
+    ditolak ``422``.
+    """
+
+    data: RPSStructuredData
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "data": {
+                    "schema_version": "2.0",
+                    "course": {"name": "Basis Data", "code": "IF123", "credits": 3},
+                    "cpmk": [{"id": "CPMK-1", "description": "Merancang basis data relasional"}],
+                    "weeks": [{"week": 1, "topics": ["Pengenalan Basis Data"]}],
+                }
             }
         }
     )

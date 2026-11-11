@@ -50,6 +50,7 @@ from fastapi import (
 from src.config.settings import get_settings
 from src.schemas.rps import (
     RPSAnalysisResponse,
+    RPSAnalysisUpdateRequest,
     RPSDetailResponse,
     RPSListItem,
     RPSListResponse,
@@ -216,6 +217,34 @@ async def read_rps_analysis(
     """
     document = await service.get_analysis(
         rps_id=rps_id, owner_id=current_user.id
+    )
+    return RPSAnalysisResponse(
+        rps_id=document.id or "",
+        analyzed_at=document.analyzed_at,
+        data=RPSStructuredData.model_validate(document.structured_data),
+    )
+
+
+@router.patch("/{rps_id}/analysis", response_model=RPSAnalysisResponse)
+async def update_rps_analysis(
+    rps_id: RpsIdPath,
+    payload: RPSAnalysisUpdateRequest,
+    current_user: User = Depends(instructor_only),
+    service: RPSService = Depends(get_rps_service),
+) -> RPSAnalysisResponse:
+    """Simpan koreksi dosen atas hasil analisis RPS (design-api §6.7).
+
+    Body memakai bentuk yang sama dengan response §6.4 sehingga client dapat
+    mengirim kembali objek yang sudah dibacanya. Data divalidasi terhadap RPS
+    Structured Data dan harus memuat informasi akademik; model bahasa **tidak**
+    dipanggil ulang, dan perencanaan yang sudah memakai data lama tidak otomatis
+    dijalankan ulang. RPS yang belum ``ANALYZED`` menghasilkan 409
+    ``INVALID_REQUEST``; RPS milik dosen lain 404 seperti dokumen tidak ada.
+    """
+    document = await service.update_analysis(
+        rps_id=rps_id,
+        owner_id=current_user.id,
+        data=payload.data,
     )
     return RPSAnalysisResponse(
         rps_id=document.id or "",

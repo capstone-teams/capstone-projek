@@ -54,3 +54,11 @@ export function reanalyzeRps(rpsId) {
 export function getRpsAnalysis(rpsId) {
   return api.get(`/rps/${rpsId}/analysis`);
 }
+
+/**
+ * PATCH /rps/{id}/analysis (§6.7): simpan koreksi dosen atas RPS Structured Data.
+ * Bentuk `data` sama dengan response GET, jadi cukup kirim balik objek yang sudah diubah.
+ */
+export function updateRpsAnalysis(rpsId, data) {
+  return api.patch(`/rps/${rpsId}/analysis`, { data });
+}

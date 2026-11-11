@@ -580,3 +580,100 @@ async def test_analysis_without_academic_content_is_a_failure(
     assert detail["status"] == "FAILED"
     assert detail["processing_error_code"] == "LLM_GENERATION_FAILED"
     assert "informasi akademik" in detail["processing_error_message"]
+
+
+# --- Koreksi dosen atas hasil analisis (design-api §6.7) --------------------
+
+
+async def analyzed_rps(
+    client: httpx.AsyncClient, headers: dict[str, str]
+) -> str:
+    """Unggah → proses → analisis; kembalikan id RPS yang sudah ``ANALYZED``."""
+    rps_id = await processed_rps(client, headers)
+    scheduled = await client.post(f"{RPS_URL}/{rps_id}/reanalyze", headers=headers)
+    assert scheduled.status_code == 202
+    detail = await client.get(f"{RPS_URL}/{rps_id}", headers=headers)
+    assert detail.json()["status"] == "ANALYZED"
+    return rps_id
+
+
+@pytest.mark.asyncio
+async def test_lecturer_can_correct_analyzed_rps(client, instructor_headers):
+    rps_id = await analyzed_rps(client, instructor_headers)
+    edited = {
+        **ANALYSIS_DATA,
+        "course": {"name": "Basis Data Lanjut", "code": "IF123", "credits": 4},
+    }
+
+    response = await client.patch(
+        f"{RPS_URL}/{rps_id}/analysis", headers=instructor_headers, json={"data": edited}
+    )
+
+    assert response.status_code == 200
+    corrected = response.json()["data"]["course"]
+    assert corrected["name"] == "Basis Data Lanjut"
+    assert corrected["credits"] == 4
+    stored = (
+        await client.get(f"{RPS_URL}/{rps_id}/analysis", headers=instructor_headers)
+    ).json()
+    assert stored["data"]["course"]["credits"] == 4
+    # analyzed_at menandai kapan model menganalisis, bukan kapan dosen mengedit.
+    assert stored["analyzed_at"] == response.json()["analyzed_at"]
+
+
+@pytest.mark.asyncio
+async def test_correction_rejects_unknown_field(client, instructor_headers):
+    rps_id = await analyzed_rps(client, instructor_headers)
+    payload = {**ANALYSIS_DATA, "tidak_dikenal": True}
+
+    response = await client.patch(
+        f"{RPS_URL}/{rps_id}/analysis", headers=instructor_headers, json={"data": payload}
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_correction_requires_analyzed_document(client, instructor_headers):
+    uploaded = (await upload_rps(client, instructor_headers)).json()
+
+    response = await client.patch(
+        f"{RPS_URL}/{uploaded['id']}/analysis",
+        headers=instructor_headers,
+        json={"data": ANALYSIS_DATA},
+    )
+
+    assert response.status_code == 409
+    assert error_code(response) == "INVALID_REQUEST"
+
+
+@pytest.mark.asyncio
+async def test_correction_rejects_empty_academic_content(
+    client, instructor_headers
+):
+    rps_id = await analyzed_rps(client, instructor_headers)
+
+    response = await client.patch(
+        f"{RPS_URL}/{rps_id}/analysis",
+        headers=instructor_headers,
+        json={"data": {"course": {}, "weeks": []}},
+    )
+
+    assert response.status_code == 422
+    assert error_code(response) == "INVALID_REQUEST"
+
+
+@pytest.mark.asyncio
+async def test_correction_of_another_lecturers_rps_is_not_found(
+    client, instructor_headers, other_instructor_headers
+):
+    rps_id = await analyzed_rps(client, instructor_headers)
+
+    response = await client.patch(
+        f"{RPS_URL}/{rps_id}/analysis",
+        headers=other_instructor_headers,
+        json={"data": ANALYSIS_DATA},
+    )
+
+    assert response.status_code == 404
+    assert error_code(response) == "RESOURCE_NOT_FOUND"

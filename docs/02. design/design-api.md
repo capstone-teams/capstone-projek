@@ -424,6 +424,46 @@ workflow baru dengan id yang sudah tercatat pada RPS.
 > sebagai `processing_error_code` (`LLM_GENERATION_FAILED`) +
 > `processing_error_message`.
 
+## 6.7 Update RPS Analysis
+
+```http
+PATCH /api/v1/rps/{rps_id}/analysis
+```
+
+Koreksi dosen atas hasil analisis RPS. Dosen memperbaiki bagian yang salah pada
+RPS Structured Data (mis. nama mata kuliah, CPMK, topik mingguan) sebelum
+menyusun rencana pembelajaran, tanpa menjalankan ulang Docling maupun model
+bahasa.
+
+Request — bentuk `data` sama persis dengan `data` pada §6.4, sehingga client
+cukup mengirim kembali objek yang sudah dibacanya setelah diubah:
+
+```json
+{
+  "data": {
+    "schema_version": "2.0",
+    "course": { "name": "Arsitektur Komputer", "code": "IF201407", "credits": 3 },
+    "cpmk": [{ "id": "CPMK-1", "description": "Menganalisis organisasi komputer" }],
+    "weeks": [{ "week": 1, "topics": ["Pengenalan Arsitektur Komputer"] }]
+  }
+}
+```
+
+Response `200` sama dengan §6.4: `rps_id`, `analyzed_at`, dan `data` tersimpan
+setelah koreksi. `analyzed_at` **tidak** berubah karena ia menandai kapan model
+menghasilkan data awal, bukan kapan dosen mengedit.
+
+Aturan validasi:
+
+- `data` wajib lolos RPS Structured Data (content-schema §6.2). Field di luar
+  kontrak ditolak `422 INVALID_REQUEST` (`extra="forbid"`), dan data tanpa
+  informasi akademik juga `422`.
+- Hanya untuk dokumen `ANALYZED`; status lain `409 INVALID_REQUEST` karena
+  dokumen yang belum atau sedang dianalisis masih dimiliki proses background.
+- Hanya dosen pemilik RPS (`404 RESOURCE_NOT_FOUND` untuk RPS dosen lain).
+- Koreksi **tidak** memicu perencanaan ulang otomatis. Rencana/konten yang sudah
+  dibuat tetap memakai data lama sampai dosen meminta generate ulang (§8, §13).
+
 ---
 
 # 7. Instructor Setup API

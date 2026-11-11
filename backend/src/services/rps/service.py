@@ -495,6 +495,31 @@ class RPSService:
         )
         return await self._persist(document)
 
+    async def update_analysis(
+        self,
+        *,
+        rps_id: str,
+        owner_id: str,
+        data: RPSStructuredData | dict[str, Any],
+    ) -> RPSDocument:
+        """Simpan koreksi dosen atas RPS Structured Data (tanpa memanggil model).
+
+        Bentuk data melewati validasi yang sama dengan hasil analisis, sehingga
+        kolom ``structured_data`` tidak pernah memuat data yang tidak dapat
+        dibaca perencana. Dokumen yang belum ``ANALYZED`` ditolak
+        :class:`~src.services.rps.errors.RPSStateError`, sedangkan RPS milik
+        dosen lain menghasilkan not-found yang sama seperti dokumen tidak ada.
+        """
+        document = await self.get_rps(rps_id=rps_id, owner_id=owner_id)
+        structured = self._validated_structured_data(data)
+        if not structured.has_academic_content():
+            raise RPSValidationError(
+                "structured_data",
+                "harus memuat informasi akademik (mata kuliah, CPMK, atau minggu)",
+            )
+        document.update_analysis(structured.model_dump(mode="json"))
+        return await self._persist(document)
+
     async def fail_analysis(
         self,
         *,
