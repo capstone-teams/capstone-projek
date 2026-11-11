@@ -28,6 +28,7 @@ from src.config import settings  # sesuaikan path
 from src.schemas.rps_structured import RPSStructuredData
 from src.services.analysis.schema import RPS_OUTPUT_SCHEMA
 from src.services.llm import LLMService, OpenAIProvider
+from src.services.llm.base import LLMInvalidOutputError
 
 logger = logging.getLogger(__name__)
 
@@ -160,12 +161,10 @@ def _explain_validation_error(exc: ValidationError) -> list[str]:
 
 
 def _classify_provider_error(exc: Exception) -> tuple[str, str]:
-    name = type(exc).__name__.lower()
-    if isinstance(exc, TimeoutError) or "timeout" in name:
-        return "PROVIDER_TIMEOUT", "Layanan model tidak merespons tepat waktu."
-    if "ratelimit" in name:
-        return "PROVIDER_RATE_LIMIT", "Layanan model sedang membatasi permintaan."
-    return "PROVIDER_ERROR", "Terjadi kesalahan pada layanan model."
+    """Penyebab kegagalan yang aman ditampilkan; sama dengan klasifikasi generation konten."""
+    from src.services.content.pipeline import classify_provider_error
+
+    return classify_provider_error(exc)
 
 
 def _build_feedback(details: list[str], raw_text: str | None) -> str:
@@ -273,6 +272,32 @@ async def analyze_rps(
             )
         except Exception as exc:
             code, message = _classify_provider_error(exc)
+            if isinstance(exc, LLMInvalidOutputError) and attempt < total:
+                # Output bukan JSON (mis. terpotong): perbaiki dengan jatah retry yang sama
+                # seperti output yang tidak sesuai schema, bukan langsung gagal.
+                last_code, last_details = code, []
+                await _trace(
+                    record_trace,
+                    attempt=attempt,
+                    prompt=f"{PROMPT_NAME}/{PROMPT_VERSION}",
+                    model=None,
+                    tokens_input=None,
+                    tokens_output=None,
+                    duration_ms=elapsed_ms(),
+                    validation="failed",
+                    reason_code=code,
+                    error=str(exc)[:MAX_ERROR_CHARS],
+                )
+                feedback = _build_feedback([], None)
+                await _emit(
+                    emit_event,
+                    RPSEvent.RETRY_FIX,
+                    f"{message} Memperbaiki (percobaan {attempt}/{total}).",
+                    attempt=attempt,
+                    reason_code=code,
+                    details=[],
+                )
+                continue
             await _trace(
                 record_trace,
                 attempt=attempt,

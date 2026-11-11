@@ -71,9 +71,11 @@ async def retry_with_backoff(
                     attempt,
                     type(exc).__name__,
                 )
-                raise LLMRetryExhaustedError(
+                exhausted = LLMRetryExhaustedError(
                     f"Gagal terhubung ke layanan LLM setelah {attempt} kali percobaan. Silakan coba beberapa saat lagi."
-                ) from None
+                )
+                exhausted.last_error = exc
+                raise exhausted from None
 
             wait_time = calculate_backoff(
                 attempt,

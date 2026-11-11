@@ -58,7 +58,50 @@ def explain_validation_error(exc: ValidationError) -> list[str]:
 
 
 def classify_provider_error(exc: Exception) -> tuple[str, str]:
-    """Klasifikasikan error provider tanpa membocorkan informasi sensitif."""
+    """Klasifikasikan error provider tanpa membocorkan informasi sensitif.
+
+    Error layanan LLM aplikasi dikenali lebih dulu. Untuk retry yang habis,
+    penyebabnya diambil dari error sementara terakhir (rate limit, timeout,
+    koneksi) agar dosen tahu mengapa proses berhenti.
+    """
+    # Import lokal: modul ini dipakai juga oleh service analisis RPS.
+    from src.services.llm.base import (
+        LLMConfigurationError,
+        LLMConnectionError,
+        LLMInvalidOutputError,
+        LLMRateLimitError,
+        LLMRetryExhaustedError,
+        LLMTimeoutError,
+    )
+
+    if isinstance(exc, LLMRetryExhaustedError) and exc.last_error is not None:
+        code, message = classify_provider_error(exc.last_error)
+        return code, f"{message} Percobaan ulang otomatis sudah habis."
+    if isinstance(exc, LLMConfigurationError):
+        return (
+            "PROVIDER_NOT_CONFIGURED",
+            "Layanan model belum dikonfigurasi dengan benar di server (API key atau nama model).",
+        )
+    if isinstance(exc, LLMRateLimitError):
+        return (
+            "PROVIDER_RATE_LIMIT",
+            "Layanan model sedang membatasi permintaan (rate limit atau kuota habis).",
+        )
+    if isinstance(exc, LLMTimeoutError):
+        return (
+            "PROVIDER_TIMEOUT",
+            "Layanan model tidak merespons tepat waktu.",
+        )
+    if isinstance(exc, LLMConnectionError):
+        return (
+            "PROVIDER_CONNECTION_ERROR",
+            "Tidak dapat terhubung ke layanan model atau layanan sedang gangguan.",
+        )
+    if isinstance(exc, LLMInvalidOutputError):
+        return (
+            "PROVIDER_INVALID_OUTPUT",
+            "Output model bukan JSON yang valid (kemungkinan terpotong karena dokumen terlalu panjang).",
+        )
 
     name = type(exc).__name__.lower()
     message = str(exc).lower()
