@@ -6,6 +6,7 @@ import CoursePublishPage from '../src/pages/dosen/ai/CoursePublishPage';
 import * as coursePlanService from '../src/services/coursePlanService';
 import * as moodleIntegrationService from '../src/services/moodleIntegrationService';
 import * as executionService from '../src/services/executionService';
+import * as workflowService from '../src/services/workflowService';
 import { ApiError } from '../src/services/apiClient';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -236,5 +237,41 @@ describe('FE-13.1 Moodle Structure Execution Readiness Check & Start', () => {
     // Pesan error terjemahan ramah pengguna harus muncul
     await waitFor(() => container.textContent.includes('Eksekusi struktur lain sedang berjalan'), 'Error alert');
     expect(container.textContent).toContain('Eksekusi struktur lain sedang berjalan pada alur kerja ini.');
+  });
+
+  it('otomatis mengikat moodle_course_id sebelum startExecution bila workflow server belum terikat', async () => {
+    mockUseCourse.mockReturnValue({
+      course: { id: 'course-1', name: 'Sistem Basis Data' },
+      moodleCourse: { id: 48, fullname: 'Sistem Basis Data', shortname: 'SBD-2223' },
+      workflow: { id: 'wf-1', moodle_course_id: null, status: 'RUNNING', rps_id: 'rps-1' },
+      workflowId: 'wf-1',
+      refresh: vi.fn(),
+    });
+    const bindSpy = vi.spyOn(workflowService, 'bindWorkflowToCourse').mockResolvedValue({
+      id: 'wf-1',
+      moodle_course_id: 48,
+      status: 'RUNNING',
+      stage: 'instructor_review',
+    });
+
+    await renderPage();
+    await waitFor(() => container.textContent.includes('Eksekusi Struktur Course'), 'Ready button');
+
+    const startBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Eksekusi Struktur Course')
+    );
+    await act(async () => {
+      startBtn.click();
+    });
+
+    const confirmBtn = [...container.querySelectorAll('dialog button')].find((b) =>
+      b.textContent.includes('Ya, Mulai Eksekusi')
+    );
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    expect(bindSpy).toHaveBeenCalledWith('wf-1', 48, expect.objectContaining({ rpsId: 'rps-1', throwOnError: true }));
+    expect(executionService.startExecution).toHaveBeenCalledWith('wf-1', 'STRUCTURE');
   });
 });

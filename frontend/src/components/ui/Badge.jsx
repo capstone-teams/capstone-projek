@@ -1,4 +1,36 @@
-import { STATUS_LABELS, statusTone } from '../../utils/workflow';
+const COURSE_STATUS_LABELS = {
+  CREATED: 'Baru dibuat',
+  DRAFT: 'Draft',
+  PLANNING: 'Menyusun rencana',
+  WAITING_PLAN_REVIEW: 'Menunggu review rencana',
+  PLAN_APPROVED: 'Rencana disetujui',
+  GENERATING_CONTENT: 'Membuat konten',
+  VALIDATING: 'Validasi konten',
+  WAITING_CONTENT_REVIEW: 'Menunggu review konten',
+  CONTENT_REJECTED: 'Konten perlu revisi',
+  APPROVED: 'Siap dieksekusi',
+  EXECUTING: 'Mengirim ke Moodle',
+  EXECUTED: 'Terkirim ke Moodle',
+  VERIFYING: 'Memverifikasi Moodle',
+  COMPLETED: 'Selesai',
+  FAILED: 'Gagal',
+};
+
+const COURSE_STATUS_TONES = {
+  PLANNING: 'info',
+  GENERATING_CONTENT: 'info',
+  VALIDATING: 'info',
+  EXECUTING: 'info',
+  VERIFYING: 'info',
+  WAITING_PLAN_REVIEW: 'warning',
+  WAITING_CONTENT_REVIEW: 'warning',
+  CONTENT_REJECTED: 'warning',
+  PLAN_APPROVED: 'success',
+  APPROVED: 'success',
+  EXECUTED: 'success',
+  COMPLETED: 'success',
+  FAILED: 'danger',
+};
 
 const BADGE_TONES = {
   neutral: 'bg-surface text-ink border border-line',
@@ -18,5 +50,5 @@ export function Badge({ tone = 'neutral', children }) {
 }
 
 export function StatusBadge({ status }) {
-  return <Badge tone={statusTone(status)}>{STATUS_LABELS[status] ?? status}</Badge>;
+  return <Badge tone={COURSE_STATUS_TONES[status] ?? 'neutral'}>{COURSE_STATUS_LABELS[status] ?? status}</Badge>;
 }

@@ -12,6 +12,7 @@ import {
   isWorkflowBusy,
 } from '../../../utils/workflowStatus';
 import { Alert, Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../ui';
+import ActivityConfigPanel from './ActivityConfigPanel';
 
 const MAX_VISIBLE_TOPICS = 3;
 
@@ -321,10 +322,12 @@ export default function WorkflowContentTriggerCard({
             </div>
 
             {weeks.length > 0 && (
-              <ul
-                className="m-0 grid list-none gap-3 p-0 md:grid-cols-2 lg:grid-cols-3"
-                aria-label="Daftar minggu course plan"
-              >
+              <>
+                <ActivityConfigPanel mode="readonly" plan={plan} />
+                <ul
+                  className="m-0 grid list-none gap-3 p-0 md:grid-cols-2 lg:grid-cols-3"
+                  aria-label="Daftar minggu course plan"
+                >
                 {weeks.map((week) => {
                   const exam = isExamWeek(week);
                   const checked = !exam && !excluded.includes(week.week_number);
@@ -339,7 +342,8 @@ export default function WorkflowContentTriggerCard({
                     />
                   );
                 })}
-              </ul>
+                </ul>
+              </>
             )}
           </section>
         )}

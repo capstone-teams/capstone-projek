@@ -22,6 +22,7 @@ import { useOnChange } from '../../../hooks/useOnChange';
 import { AppStateContext } from '../../../context/appStateContext';
 import { Alert, Badge, Card, EmptyState, ErrorAlert, Modal, Spinner } from '../../../components/ui';
 import InstructionModal from '../../../components/ai/InstructionModal';
+import ActivityConfigPanel from '../../../components/ai/course/ActivityConfigPanel';
 import CoursePlanDetails from '../../../components/ai/course/CoursePlanDetails';
 import CoursePlanProgress from '../../../components/ai/course/CoursePlanProgress';
 import CoursePlanValidation from '../../../components/ai/course/CoursePlanValidation';
@@ -200,6 +201,7 @@ export default function CoursePlanPage() {
             </div>
           )
         )}
+        {workflowId && !inProgress && !showReadOnly && rpsReady && <ActivityConfigPanel mode="edit" />}
         {readOnly ? (
           <>
             <p className="mb-3 text-sm text-muted">Rencana tersimpan pada project kursus (hanya dibaca).</p>
@@ -292,6 +294,13 @@ export default function CoursePlanPage() {
       )}
       {shown?.revision_notes && <Alert tone="warning" title="Catatan revisi">{shown.revision_notes}</Alert>}
       {shown?.regeneration_instruction && <Alert tone="info" title="Prompt tambahan saat regenerasi">{shown.regeneration_instruction}</Alert>}
+
+      {!viewingOld && !inProgress && shown && (
+        <ActivityConfigPanel
+          mode={latest.status === PLAN_STATUS.APPROVED ? 'readonly' : 'edit'}
+          plan={latest}
+        />
+      )}
 
       {viewingOld && older.loading ? <Spinner /> : shown ? <CoursePlanDetails plan={shown} course={course ?? {}} issuesByWeek={issuesByWeek} /> : null}
       <ErrorAlert error={older.error} />

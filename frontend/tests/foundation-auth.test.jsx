@@ -70,7 +70,7 @@ describe('FE-06.2 login (Single Gateway)', () => {
     await act(async () => state.login('dosen@lecturer.itk.ac.id', 'dosen123'));
     expect(service.login).toHaveBeenCalledWith('dosen@lecturer.itk.ac.id', 'dosen123', expect.any(Object));
     expect(service.requestToken).not.toHaveBeenCalled();
-    expect(state.user).toMatchObject({ id: 'user_001', fullname: 'Rina Kartika', role: 'DOSEN', backendId: 'user_001', teacherCourseIds: [2, 3, 4] });
+    expect(state.user).toMatchObject({ id: 'user_001', fullname: 'Rina Kartika', role: 'DOSEN', backendId: 'user_001', teacherCourseIds: undefined });
     expect(storedToken()).toBe('mock-token:dosen@lecturer.itk.ac.id');
   });
 
@@ -138,19 +138,9 @@ describe('FE-06.2 session restore', () => {
     expect(storedToken()).toBeNull();
   });
 
-  it('discards a rejected Moodle token', async () => {
-    storeSession('expired');
-    service.getCurrentUser.mockResolvedValueOnce(instructorMe);
-    service.resolveSession.mockRejectedValueOnce(new Error('invalidtoken'));
-    await mount();
-    expect(state.user).toBeNull();
-    expect(storedTokens()).toEqual([null, null]);
-  });
-
-  it('keeps the tokens when the backend is unreachable during restore', async () => {
+  it('keeps the token when the backend is unreachable during restore', async () => {
     storeSession();
     service.getCurrentUser.mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR', 'Tidak dapat terhubung ke server backend.'));
-    service.resolveSession.mockResolvedValueOnce(teacher);
     await mount();
     expect(state.user).toBeNull();
     expect(state.initializing).toBe(false);
@@ -213,8 +203,11 @@ describe('FE-06.2 logout & expiry', () => {
 
   it('a 401 for the stored token on a later request expires the session', async () => {
     await loggedIn();
-    // Mode mock: token "mock-token:dosen" tidak dikenal mock backend → 401.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'AUTHENTICATION_FAILED', message: 'Autentikasi gagal.' } }), { status: 401 }),
+    );
     await act(async () => { await request('GET', '/courses').catch(() => {}); });
+    fetchSpy.mockRestore();
     expect(state.user).toBeNull();
     expect(state.sessionNotice).toBe(SESSION_NOTICE.EXPIRED);
     expect(storedToken()).toBeNull();

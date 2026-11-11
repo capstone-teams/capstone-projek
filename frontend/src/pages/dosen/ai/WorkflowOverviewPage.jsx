@@ -2,8 +2,8 @@ import { useCourse } from '../../../hooks/useCourse';
 import { useAction } from '../../../hooks/useApi';
 import { setMoodleTarget } from '../../../services/workflowService';
 import { Card, ErrorAlert } from '../../../components/ui';
-import EventLog from '../../../components/ai/EventLog';
 import WorkflowConnectionNote from '../../../components/ai/WorkflowConnectionNote';
+import WorkflowEventTimeline from '../../../components/ai/WorkflowEventTimeline';
 import WorkflowStatusPanel from '../../../components/ai/WorkflowStatusPanel';
 
 /**
@@ -25,7 +25,7 @@ export default function WorkflowOverviewPage() {
         </button>
       </Card>
       <Card title="Aktivitas agent">
-        <EventLog events={events} />
+        <WorkflowEventTimeline events={events} />
       </Card>
     </div>
   );

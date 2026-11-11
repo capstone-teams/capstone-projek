@@ -26,7 +26,7 @@ async function loadGatewayCourses() {
       category: c.category ?? null,
     }));
   }
-  const legacyRes = await api.get('/courses').catch(() => null);
+  const legacyRes = await api.get('/courses', { ignoreForbidden: true }).catch(() => null);
   const items = legacyRes?.items ?? legacyRes?.courses ?? [];
   if (!items.length && moodleError) throw moodleError;
   return items;

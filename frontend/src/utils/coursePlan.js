@@ -21,6 +21,18 @@ export function weekTypeLabel(week) {
   return WEEK_TYPE_LABELS[type] ?? null;
 }
 
+/** Daftar unik jenis aktivitas pada minggu non-ujian dalam sebuah course plan. */
+export function plannedActivityTypesOf(plan) {
+  const seen = new Set();
+  for (const week of plan?.weeks ?? []) {
+    if (isExamWeek(week)) continue;
+    for (const activity of week?.planned_activities ?? []) {
+      if (activity) seen.add(activity);
+    }
+  }
+  return [...seen];
+}
+
 /** Temuan validasi dikelompokkan: tingkat rencana (week kosong) lebih dulu, lalu per minggu berurutan. */
 export function groupValidationIssues(issues = []) {
   const general = issues.filter((issue) => issue?.week == null);

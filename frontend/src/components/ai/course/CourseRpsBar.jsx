@@ -1,8 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useApi } from '../../../hooks/useApi';
-import { findCourseByMoodleId } from '../../../services/courseService';
 import { getRps } from '../../../services/rpsService';
-import { getActiveCourseBinding } from '../../../services/workflowService';
+import { findWorkflowForCourse, getActiveCourseBinding } from '../../../services/workflowService';
 import { RPS_STATUS, rpsStatusMeta } from '../../../utils/rpsStatus';
 import RpsStatusBadge from '../RpsStatusBadge';
 import ActivityIcon from '../../moodle/ActivityIcon';
@@ -10,8 +9,8 @@ import { COURSE_CARD } from '../../moodle/course/courseCard';
 
 /**
  * Kartu teratas tab Kursus untuk dosen, bergaya kartu aktivitas LMS ITK: RPS kursus ini (GET /rps/{id}) dengan
- * tautan ke halaman RPS dan ke hasil analisisnya di Generator AI. RPS diambil dari kursus backend (rps_id), atau dari project kursus bila halaman
- * berisi data kursus tanpa rps_id. Backend belum menyediakan unduhan berkas RPS, jadi tautan membuka detailnya.
+ * tautan ke halaman RPS dan ke hasil analisisnya di Generator AI. RPS diambil dari binding aktif, metadata kursus,
+ * atau workflow yang menargetkan kursus ini.
  */
 export default function CourseRpsBar({ course }) {
   const courseKeys = [course?.id, course?.moodle_course_id, course?.shortname, course?.code].filter(Boolean);
@@ -19,9 +18,10 @@ export default function CourseRpsBar({ course }) {
   const boundRpsId = bound?.rpsId;
 
   const { data, loading } = useApi(async () => {
-    const rpsId = boundRpsId ?? course?.rps_id ?? (await findCourseByMoodleId(course?.id).catch(() => null))?.rps_id;
+    const wfRpsId = boundRpsId || course?.rps_id ? null : (await findWorkflowForCourse(...courseKeys).catch(() => null))?.rps_id;
+    const rpsId = boundRpsId ?? course?.rps_id ?? wfRpsId;
     return rpsId ? getRps(rpsId).catch(() => ({ id: rpsId })) : null;
-  }, [course?.id, course?.rps_id, boundRpsId]);
+  }, [course?.id, course?.moodle_course_id, course?.shortname, course?.code, course?.rps_id, boundRpsId]);
 
   if (loading) return null;
   const base = `/course/${course.id}/ai`;

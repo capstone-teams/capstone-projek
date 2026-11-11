@@ -7,6 +7,7 @@ import {
   formatExecutionPreconditionError,
   startExecution,
 } from '../../../services/executionService';
+import { bindWorkflowToCourse } from '../../../services/workflowService';
 import { PLAN_STATUS } from '../../../services/coursePlanService';
 
 /**
@@ -55,6 +56,17 @@ export default function ExecutionReadinessCard({
     setExecuting(true);
     setError(null);
     try {
+      const numericTarget = Number(targetId);
+      if (
+        Number.isInteger(numericTarget)
+        && numericTarget > 0
+        && Number(workflow?.moodle_course_id) !== numericTarget
+      ) {
+        await bindWorkflowToCourse(workflowId, numericTarget, {
+          rpsId: workflow?.rps_id,
+          throwOnError: true,
+        });
+      }
       const response = await startExecution(workflowId, EXECUTION_SCOPE.STRUCTURE);
       setConfirmOpen(false);
       onExecutionStarted?.(response);
