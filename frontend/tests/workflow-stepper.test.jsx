@@ -89,18 +89,20 @@ const fullExecuted = () => [
 ];
 
 describe('WorkflowStepper & deriveStepperState (data workflow backend)', () => {
-  it('memetakan seluruh tahapan workflow nyata dari Rencana hingga Selesai', () => {
+  it('memetakan seluruh tahapan workflow nyata dari RPS hingga Selesai', () => {
     expect(deriveStepperState(null, [])).toEqual({ current: 0, finished: false });
     expect(deriveStepperState(wf({ stage: 'rps_analysis' }), [])).toEqual({ current: 0, finished: false });
-    expect(deriveStepperState(wf(), planned())).toEqual({ current: 0, finished: false });
-    expect(deriveStepperState(wf(), approved())).toEqual({ current: 1, finished: false });
-    expect(deriveStepperState(wf({ stage: 'content_generation' }), contentGen())).toEqual({ current: 1, finished: false });
-    expect(deriveStepperState(wf({ stage: 'validation' }), contentGen())).toEqual({ current: 1, finished: false });
-    expect(deriveStepperState(wf(), contentReview())).toEqual({ current: 2, finished: false });
-    expect(deriveStepperState(wf(), contentApproved())).toEqual({ current: 3, finished: false });
-    expect(deriveStepperState(wf({ stage: 'moodle_execution' }), contentApproved())).toEqual({ current: 3, finished: false });
-    expect(deriveStepperState(wf(), fullExecuted())).toEqual({ current: 4, finished: false });
-    expect(deriveStepperState(wf({ status: 'COMPLETED', stage: null }), fullExecuted())).toEqual({ current: 5, finished: true });
+    expect(deriveStepperState(wf(), analyzed())).toEqual({ current: 1, finished: false });
+    expect(deriveStepperState(wf(), planned())).toEqual({ current: 1, finished: false });
+    expect(deriveStepperState(wf(), approved())).toEqual({ current: 2, finished: false });
+    expect(deriveStepperState(wf({ stage: 'content_generation' }), contentGen())).toEqual({ current: 2, finished: false });
+    expect(deriveStepperState(wf({ stage: 'validation' }), contentGen())).toEqual({ current: 2, finished: false });
+    expect(deriveStepperState(wf(), contentReview())).toEqual({ current: 3, finished: false });
+    expect(deriveStepperState(wf(), contentApproved())).toEqual({ current: 4, finished: false });
+    expect(deriveStepperState(wf({ stage: 'moodle_execution' }), contentApproved())).toEqual({ current: 4, finished: false });
+    expect(deriveStepperState(wf(), fullExecuted())).toEqual({ current: 5, finished: false });
+    expect(deriveStepperState(wf(), fullExecuted(), { verifications: [{ status: 'PASS', matches: true }] })).toEqual({ current: 6, finished: true });
+    expect(deriveStepperState(wf({ status: 'COMPLETED', stage: null }), fullExecuted())).toEqual({ current: 6, finished: true });
   });
 
   it('tidak mundur ke Konten saat sebagian konten sudah disetujui, diregenerasi, atau pasca-eksekusi struktur', () => {
@@ -119,32 +121,32 @@ describe('WorkflowStepper & deriveStepperState (data workflow backend)', () => {
       ev('WORKFLOW_WAITING_FOR_REVIEW', 'instructor_review'),
     ];
 
-    // 4/8 disetujui -> tetap di langkah (3) Review (index 2), belum lompat ke Eksekusi Moodle
+    // 4/8 disetujui -> tetap di langkah (4) Review (index 3), belum lompat ke Eksekusi Moodle
     expect(deriveStepperState(wf(), contentApproved(), {
       plan: { status: 'APPROVED' },
       contents: partialContents,
-    })).toEqual({ current: 2, finished: false });
+    })).toEqual({ current: 3, finished: false });
 
     // Setelah eksekusi STRUCTURE berjalan belakangan -> tetap tidak turun kembali ke Konten
     expect(deriveStepperState(wf(), structureAfterReviewEvents, {
       plan: { status: 'APPROVED' },
       contents: partialContents,
       executions: [{ scope: 'STRUCTURE', status: 'SUCCESS' }],
-    })).toEqual({ current: 2, finished: false });
-    expect(deriveStepperState(wf(), structureAfterReviewEvents)).toEqual({ current: 2, finished: false });
+    })).toEqual({ current: 3, finished: false });
+    expect(deriveStepperState(wf(), structureAfterReviewEvents)).toEqual({ current: 3, finished: false });
 
     // Sedang regenerasi item ketika daftar konten sudah ada -> progres tetap tidak mundur
     expect(deriveStepperState(wf({ stage: 'content_generation' }), contentGen(), {
       plan: { status: 'APPROVED' },
       contents: partialContents,
-    })).toEqual({ current: 2, finished: false });
+    })).toEqual({ current: 3, finished: false });
 
-    // 8/8 disetujui -> maju ke langkah (4) Eksekusi Moodle (index 3)
+    // 8/8 disetujui -> maju ke langkah (5) Eksekusi Moodle (index 4)
     expect(deriveStepperState(wf(), structureAfterReviewEvents, {
       plan: { status: 'APPROVED' },
       contents: allApprovedContents,
       executions: [{ scope: 'STRUCTURE', status: 'SUCCESS' }],
-    })).toEqual({ current: 3, finished: false });
+    })).toEqual({ current: 4, finished: false });
   });
 
   it('menandai langkah yang selesai dengan ✓ pada komponen WorkflowStepper', async () => {
@@ -152,11 +154,13 @@ describe('WorkflowStepper & deriveStepperState (data workflow backend)', () => {
     const root = createRoot(node);
     await act(async () => root.render(<WorkflowStepper workflow={wf()} events={contentReview()} />));
     const items = [...node.querySelectorAll('.stepper__item')];
+    expect(items).toHaveLength(7);
     expect(items[0].className).toContain('stepper__item--done');
     expect(items[1].className).toContain('stepper__item--done');
-    expect(items[2].className).toContain('stepper__item--current');
-    expect(items[2].getAttribute('aria-current')).toBe('step');
-    expect(items[3].className).toContain('stepper__item--todo');
+    expect(items[2].className).toContain('stepper__item--done');
+    expect(items[3].className).toContain('stepper__item--current');
+    expect(items[3].getAttribute('aria-current')).toBe('step');
+    expect(items[4].className).toContain('stepper__item--todo');
     await act(async () => root.unmount());
   });
 });
@@ -200,14 +204,16 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
     expect(node.textContent).toContain('Menunggu review Anda');
     expect(node.textContent).not.toMatch(/\bDraft\b/);
 
-    // Step 1 (Rencana) done (✓), Step 2 (Konten) current
+    // Step RPS & Rencana done (✓), Step Konten current
     const items = [...node.querySelectorAll('.stepper__item')];
     expect(items[0].className).toContain('stepper__item--done');
-    expect(items[1].className).toContain('stepper__item--current');
+    expect(items[1].className).toContain('stepper__item--done');
+    expect(items[2].className).toContain('stepper__item--current');
 
-    // Overview menampilkan langkah berikutnya dan timeline event nyata
+    // Overview menampilkan langkah berikutnya dan timeline event nyata (hanya 1 kartu Aktivitas agent dari layout)
     expect(node.textContent).toContain('Eksekusi struktur');
     expect(node.textContent).toContain('RPS SBD.pdf');
+    expect(node.querySelectorAll('[aria-label="Aktivitas agent"]')).toHaveLength(1);
     const profileLink = [...node.querySelectorAll('a')].find((a) => a.textContent.includes('Profil dosen'));
     expect(profileLink?.getAttribute('href')).toBe('/user/profile');
   });
@@ -245,8 +251,9 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
     const items = [...node.querySelectorAll('.stepper__item')];
     expect(items[0].className).toContain('stepper__item--done');
     expect(items[1].className).toContain('stepper__item--done');
-    expect(items[2].className).toContain('stepper__item--current');
-    expect(items[3].className).toContain('stepper__item--todo');
+    expect(items[2].className).toContain('stepper__item--done');
+    expect(items[3].className).toContain('stepper__item--current');
+    expect(items[4].className).toContain('stepper__item--todo');
     expect(node.textContent).toContain('Review konten');
   });
 
@@ -365,5 +372,54 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
 
     expect(bindSpy).toHaveBeenCalledTimes(2);
     expect(node.textContent).not.toContain('Gagal menghubungkan RPS ke kursus di server');
+  });
+
+  it('AiCourseLayout hanya merender 1 bar stepper interaktif (tanpa tab kedua) & menampilkan card Aktivitas agent di semua step', async () => {
+    vi.spyOn(courseService, 'findCourseByMoodleId').mockResolvedValue(null);
+    vi.spyOn(workflowService, 'getActiveCourseBinding').mockReturnValue({ workflowId: 'wf-1', rpsId: 'rps-1' });
+    vi.spyOn(workflowService, 'findWorkflowForCourse').mockResolvedValue(wf());
+
+    monitorState.workflow = wf();
+    monitorState.events = contentReview();
+
+    await act(async () => root.render(
+      <MemoryRouter initialEntries={['/course/48/ai/plan']}>
+        <Routes>
+          <Route path="/course/:courseId/ai" element={<AiCourseLayout />}>
+            <Route path="plan" element={<div>Halaman Rencana Simulasi</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    ));
+
+    // Tidak ada tab navigasi kedua di bawah stepper
+    expect(node.querySelector('nav.tabs')).toBeNull();
+    expect(node.textContent).toContain('Halaman Rencana Simulasi');
+
+    // Stepper interaktif menampilkan tautan navigasi dan menandai langkah Rencana sedang dibuka
+    const stepperLinks = [...node.querySelectorAll('.stepper a.stepper__link')];
+    expect(stepperLinks.map((a) => a.getAttribute('href'))).toEqual([
+      '/course/48/ai/rps',
+      '/course/48/ai/plan',
+      '/course/48/ai/content',
+      '/course/48/ai/review',
+      '/course/48/ai/publish',
+      '/course/48/ai/verification',
+    ]);
+    const viewingPlan = stepperLinks.find((a) => a.getAttribute('href') === '/course/48/ai/plan');
+    expect(viewingPlan?.getAttribute('aria-current')).toBe('page');
+
+    // Card Aktivitas agent tampil native di halaman step Rencana dan bisa disembunyikan/ditampilkan
+    const activitySection = node.querySelector('[aria-label="Aktivitas agent"]');
+    expect(activitySection).not.toBeNull();
+    expect(activitySection.textContent).toContain('Aktivitas agent');
+    expect(activitySection.textContent).toContain('Detail workflow →');
+
+    const toggleBtn = [...activitySection.querySelectorAll('button')].find((b) => b.textContent.includes('Sembunyikan'));
+    expect(toggleBtn).toBeTruthy();
+    await act(async () => {
+      toggleBtn.click();
+    });
+    expect(activitySection.textContent).toContain('Tampilkan (');
   });
 });

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MoodleConnectionBanner from '../src/components/moodle/MoodleConnectionBanner';
 import CourseTargetCard from '../src/components/ai/course/CourseTargetCard';
 import CourseTargetSelectionPage from '../src/pages/dosen/ai/CourseTargetSelectionPage';
-import { TABS } from '../src/pages/dosen/ai/AiCourseLayout';
+import { WORKFLOW_STEPPER_STEPS } from '../src/utils/workflowStatus';
 import CourseOverviewPage from '../src/pages/dosen/ai/CourseOverviewPage';
 
 const moodleService = vi.hoisted(() => ({
@@ -407,12 +407,12 @@ describe('FE-09.2 CourseTargetSelectionPage (Workflow Integration & Modal Confir
 });
 
 describe('Penyederhanaan FE-09: Integrasi Target Moodle ke Layout & Overview', () => {
-  it('subtab navigasi AiCourseLayout tidak lagi memuat tab Course Target terpisah', () => {
-    const tabKeys = TABS.map((t) => t.to);
-    const tabLabels = TABS.map((t) => t.label);
-    expect(tabKeys).not.toContain('target');
-    expect(tabLabels).not.toContain('Course Target');
-    expect(tabKeys).toEqual(['', 'rps', 'plan', 'content', 'review', 'publish', 'workflows']);
+  it('stepper navigasi AiCourseLayout tidak memuat langkah Course Target terpisah', () => {
+    const stepRoutes = WORKFLOW_STEPPER_STEPS.map((s) => s.to);
+    const stepLabels = WORKFLOW_STEPPER_STEPS.map((s) => s.label);
+    expect(stepRoutes).not.toContain('target');
+    expect(stepLabels).not.toContain('Course Target');
+    expect(stepRoutes).toEqual(['rps', 'plan', 'content', 'review', 'publish', 'verification', '']);
   });
 
   it('CourseOverviewPage menampilkan informasi target Moodle secara jelas di kartu konfigurasi', async () => {

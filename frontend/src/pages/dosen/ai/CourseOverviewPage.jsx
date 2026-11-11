@@ -2,10 +2,10 @@ import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { useApi } from '../../../hooks/useApi';
 import { getRps } from '../../../services/rpsService';
+import { findLatestFinishedFullExecution, isVerificationPassed } from '../../../utils/verificationResult';
 import { Alert, Badge, Card, ProgressBar, Spinner } from '../../../components/ui';
 import RpsStatusBadge from '../../../components/ai/RpsStatusBadge';
 import WorkflowConnectionNote from '../../../components/ai/WorkflowConnectionNote';
-import WorkflowEventTimeline from '../../../components/ai/WorkflowEventTimeline';
 import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
 import {
   AWAITED_ACTION,
@@ -27,7 +27,7 @@ function quickTarget(page, workflow) {
 }
 
 export default function CourseOverviewPage() {
-  const { course, moodleCourse, workflow, workflowId, events = [], contents = null, connection } = useCourse() ?? {};
+  const { course, moodleCourse, workflow, workflowId, events = [], contents = null, executions = null, verifications = null, connection } = useCourse() ?? {};
   const activeWorkflow = workflow ?? null;
   const rpsId = activeWorkflow?.rps_id ?? course?.rps_id ?? null;
   const rps = useApi(() => (rpsId ? getRps(rpsId).catch(() => null) : null), [rpsId]);
@@ -53,14 +53,17 @@ export default function CourseOverviewPage() {
     : null;
   const failureMessage = failureEvent?.message || course?.processing_error_message || 'Workflow berhenti karena kesalahan.';
 
-  const hadFullExecution = events.some(
-    (ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && / - (Learning Material|Learning Resource|Assignment|Quiz) /.test(ev.message ?? ''),
-  );
+  const latestVerification = Array.isArray(verifications) && verifications.length > 0 ? verifications[0] : null;
+  const verificationPassed = isVerificationPassed(latestVerification);
+  const workflowCompleted = activeWorkflow?.status === WORKFLOW_API_STATUS.COMPLETED || verificationPassed;
+  const hadFullExecution = Boolean(findLatestFinishedFullExecution(executions ?? []))
+    || events.some(
+      (ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && / - (Learning Material|Learning Resource|Assignment|Quiz) /.test(ev.message ?? ''),
+    );
 
   return (
     <div className="grid grid--2">
-      <div className="stack">
-        <Card title="Langkah berikutnya">
+      <Card title="Langkah berikutnya">
           {!hasRps ? (
             <div className="next-step">
               <p>Kursus ini belum memiliki dokumen RPS. Silakan unggah dokumen RPS untuk memulai penyusunan rencana pembelajaran.</p>
@@ -79,10 +82,13 @@ export default function CourseOverviewPage() {
                 <Link to="workflows" className="btn btn--ghost">Pantau workflow</Link>
               </div>
             </div>
-          ) : activeWorkflow.status === WORKFLOW_API_STATUS.COMPLETED ? (
+          ) : workflowCompleted ? (
             <div className="next-step">
               <Alert tone="success" title="Seluruh tahap selesai">Generator AI telah menyelesaikan seluruh tahapan untuk kursus ini.</Alert>
-              <Link to="publish" className="btn btn--primary">Lihat hasil publikasi</Link>
+              <div className="flex flex-wrap gap-2">
+                <Link to="verification" className="btn btn--primary">Lihat hasil verifikasi</Link>
+                <Link to="publish" className="btn btn--ghost">Lihat hasil publikasi</Link>
+              </div>
             </div>
           ) : busy ? (
             <div className="stack">
@@ -121,8 +127,11 @@ export default function CourseOverviewPage() {
             </div>
           ) : hadFullExecution ? (
             <div className="next-step">
-              <p>Eksekusi struktur dan konten ke Moodle sudah selesai. Anda dapat meninjau detail operasi dan riwayat eksekusi.</p>
-              <Link to="publish" className="btn btn--primary">Buka halaman Publikasi</Link>
+              <p>Eksekusi struktur dan konten ke Moodle sudah selesai. Lanjutkan dengan verifikasi kesesuaian course atau tinjau riwayat eksekusi.</p>
+              <div className="flex flex-wrap gap-2">
+                <Link to="verification" className="btn btn--primary">Verifikasi hasil di Moodle</Link>
+                <Link to="publish" className="btn btn--ghost">Buka halaman Publikasi</Link>
+              </div>
             </div>
           ) : (
             <div className="next-step">
@@ -162,13 +171,6 @@ export default function CourseOverviewPage() {
             <Link to="/user/profile" className="font-semibold text-primary underline">Profil dosen</Link>.
           </div>
         </Card>
-      </div>
-
-      <div className="stack">
-        <Card title="Aktivitas agent">
-          <WorkflowEventTimeline events={events} />
-        </Card>
-      </div>
     </div>
   );
 }

@@ -256,13 +256,25 @@
   }
 
   .stepper {
-    @apply mb-4 flex list-none gap-2 overflow-x-auto rounded-lg border border-line bg-white px-4 py-3;
+    @apply mb-4 flex list-none items-center gap-2 overflow-x-auto rounded-lg border border-line bg-white px-4 py-3;
   }
   .stepper__item {
     @apply flex min-w-max flex-1 items-center gap-2 text-muted;
   }
+  .stepper__item:last-child {
+    @apply flex-none;
+  }
   .stepper__item:not(:last-child)::after {
     @apply h-0.5 min-w-3 flex-1 bg-line content-[''];
+  }
+  .stepper__link {
+    @apply inline-flex items-center gap-2 rounded-md px-2 py-1 text-inherit no-underline transition-colors;
+  }
+  a.stepper__link:hover {
+    @apply bg-surface text-ink;
+  }
+  .stepper__item--viewing .stepper__link {
+    @apply bg-primary-light font-semibold text-primary;
   }
   .stepper__dot {
     @apply grid size-6 shrink-0 place-items-center rounded-full border-2 border-line text-xs font-bold;
@@ -282,7 +294,8 @@
   .stepper__label {
     @apply max-sm:hidden;
   }
-  .stepper__item--current .stepper__label {
+  .stepper__item--current .stepper__label,
+  .stepper__item--viewing .stepper__label {
     @apply max-sm:inline;
   }
 

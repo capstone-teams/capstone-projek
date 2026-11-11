@@ -491,27 +491,33 @@ export function awaitedActionOf(workflow, events = []) {
   return null;
 }
 
-// ---- Stepper generator AI (header 6 langkah pada AiCourseLayout)
+// ---- Stepper generator AI (navigasi utama 7 langkah pada AiCourseLayout)
 
 export const WORKFLOW_STEPPER_STEPS = [
-  { key: 'plan', label: 'Rencana' },
-  { key: 'content', label: 'Konten' },
-  { key: 'review', label: 'Review' },
-  { key: 'execution', label: 'Eksekusi Moodle' },
-  { key: 'verification', label: 'Verifikasi' },
-  { key: 'done', label: 'Selesai' },
+  { key: 'rps', label: 'RPS', to: 'rps' },
+  { key: 'plan', label: 'Rencana', to: 'plan' },
+  { key: 'content', label: 'Konten', to: 'content' },
+  { key: 'review', label: 'Review', to: 'review' },
+  { key: 'execution', label: 'Eksekusi Moodle', to: 'publish' },
+  { key: 'verification', label: 'Verifikasi', to: 'verification' },
+  { key: 'done', label: 'Selesai', to: '' },
 ];
 
 function stepperIndexForStage(stage, events = []) {
   switch (stage) {
-    case WORKFLOW_STAGE.CONTENT_GENERATION:
+    case WORKFLOW_STAGE.RPS_PROCESSING:
+    case WORKFLOW_STAGE.RPS_ANALYSIS:
+      return 0;
+    case WORKFLOW_STAGE.COURSE_PLANNING:
       return 1;
+    case WORKFLOW_STAGE.CONTENT_GENERATION:
+      return 2;
     case WORKFLOW_STAGE.VALIDATION:
-      return isContentGenerationActiveContext(events) ? 1 : 0;
+      return isContentGenerationActiveContext(events) ? 2 : 1;
     case WORKFLOW_STAGE.MOODLE_EXECUTION:
-      return 3;
-    case WORKFLOW_STAGE.VERIFICATION:
       return 4;
+    case WORKFLOW_STAGE.VERIFICATION:
+      return 5;
     default:
       return 0;
   }
@@ -525,33 +531,44 @@ function eventMilestoneIndex(workflow, events = []) {
   );
   const action = awaitedActionOf(workflow, events);
   switch (action) {
+    case AWAITED_ACTION.START_PLANNING:
+    case AWAITED_ACTION.REVIEW_PLAN:
+    case AWAITED_ACTION.REVISE_PLAN:
+      return 1;
     case AWAITED_ACTION.EXECUTE_STRUCTURE:
     case AWAITED_ACTION.GENERATE_CONTENT:
-      return hasContentHistory ? 2 : 1;
+      return hasContentHistory ? 3 : 2;
     case AWAITED_ACTION.REVIEW_CONTENT:
     case AWAITED_ACTION.REVISE_CONTENT:
-      return 2;
-    case AWAITED_ACTION.EXECUTE_FULL:
       return 3;
+    case AWAITED_ACTION.EXECUTE_FULL:
+      return 4;
     default: {
       const hadFullExecution = events.some((ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(ev));
-      if (hadFullExecution) return 4;
-      if (hasContentHistory) return 2;
-      if (events.some((ev) => ev?.event === WORKFLOW_EVENT.PLAN_APPROVED)) return 1;
+      if (hadFullExecution) return 5;
+      if (hasContentHistory) return 3;
+      if (events.some((ev) => ev?.event === WORKFLOW_EVENT.PLAN_APPROVED)) return 2;
+      if (events.some((ev) => completedStage(ev, [WORKFLOW_STAGE.RPS_ANALYSIS]) || ev?.event === WORKFLOW_EVENT.PLAN_GENERATED)) return 1;
       return 0;
     }
   }
 }
 
 /**
- * Menurunkan langkah aktif (0..5) dan status selesai untuk 6-step WorkflowStepper dari snapshot
- * workflow nyata (`status` + `stage`), riwayat event, serta data aktual `{ plan, contents, executions }`.
+ * Menurunkan langkah aktif (0..6) dan status selesai untuk 7-step WorkflowStepper dari snapshot
+ * workflow nyata (`status` + `stage`), riwayat event, serta data aktual `{ plan, contents, executions, verifications }`.
  * Langkah dijaga monoton terhadap pencapaian deliverable nyata agar tidak mundur ke "Konten" saat
  * konten mingguan sudah ada (mis. sedang review parsial, regenerasi item, atau pasca-eksekusi struktur).
  */
-export function deriveStepperState(workflow, events = [], { plan = null, contents = null, executions = null } = {}) {
+export function deriveStepperState(workflow, events = [], { plan = null, contents = null, executions = null, verifications = null } = {}) {
   if (!workflow) return { current: 0, finished: false };
-  if (workflow.status === WORKFLOW_API_STATUS.COMPLETED) return { current: 5, finished: true };
+  const latestVerification = Array.isArray(verifications) && verifications.length > 0 ? verifications[0] : null;
+  const verificationPassed = Boolean(
+    latestVerification && (latestVerification.matches === true || latestVerification.status === 'PASS'),
+  );
+  if (workflow.status === WORKFLOW_API_STATUS.COMPLETED || verificationPassed) {
+    return { current: 6, finished: true };
+  }
 
   const hasPlan = Boolean(plan);
   const planApproved = plan?.status === 'APPROVED';
@@ -563,14 +580,19 @@ export function deriveStepperState(workflow, events = [], { plan = null, content
   const hasFullExecutionCompleted = hasExecutionsList
     ? executions.some((ex) => ex?.scope === 'FULL' && (ex?.status === 'SUCCESS' || ex?.status === 'PARTIAL_SUCCESS'))
     : events.some((ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(ev));
+  const rpsAnalyzed = hasPlan
+    || hasContents
+    || (hasExecutionsList && executions.length > 0)
+    || events.some((ev) => completedStage(ev, [WORKFLOW_STAGE.RPS_ANALYSIS]) || ev?.event === WORKFLOW_EVENT.PLAN_APPROVED);
 
   let milestone = 0;
   if (hasFullExecutionCompleted) {
-    milestone = 4;
+    milestone = 5;
   } else if (hasContentsList) {
-    if (allContentsApproved) milestone = 3;
-    else if (hasContents) milestone = 2;
-    else if (planApproved || (!hasPlan && events.some((ev) => ev?.event === WORKFLOW_EVENT.PLAN_APPROVED))) milestone = 1;
+    if (allContentsApproved) milestone = 4;
+    else if (hasContents) milestone = 3;
+    else if (planApproved || events.some((ev) => ev?.event === WORKFLOW_EVENT.PLAN_APPROVED)) milestone = 2;
+    else if (rpsAnalyzed) milestone = 1;
   } else {
     milestone = eventMilestoneIndex(workflow, events);
   }
@@ -802,15 +824,6 @@ export function deriveContentMatrixRows(plan, contents = [], events = [], workfl
     const cells = {};
 
     CONTENT_KIND_ORDER.forEach((kind) => {
-      if (exam) {
-        cells[kind] = { kind, status: CONTENT_CELL_STATUS.EXAM };
-        return;
-      }
-      if (!isKindApplicableToWeek(week, kind)) {
-        cells[kind] = { kind, status: CONTENT_CELL_STATUS.SKIPPED, reason: 'week_type' };
-        return;
-      }
-
       const key = `${week.week_number}:${kind}`;
       const record = byWeekAndKind.get(key) ?? null;
       const live = liveByCell.get(key) ?? null;
@@ -831,6 +844,14 @@ export function deriveContentMatrixRows(plan, contents = [], events = [], workfl
         cells[kind] = { kind, status: recordCellStatus(record), record };
         return;
       }
+      if (exam) {
+        cells[kind] = { kind, status: CONTENT_CELL_STATUS.EXAM };
+        return;
+      }
+      if (!isKindApplicableToWeek(week, kind)) {
+        cells[kind] = { kind, status: CONTENT_CELL_STATUS.SKIPPED, reason: 'week_type' };
+        return;
+      }
       if (weekDone) {
         cells[kind] = { kind, status: CONTENT_CELL_STATUS.SKIPPED, reason: 'not_scheduled' };
         return;
@@ -838,6 +859,7 @@ export function deriveContentMatrixRows(plan, contents = [], events = [], workfl
       cells[kind] = { kind, status: CONTENT_CELL_STATUS.PENDING };
     });
 
-    return { week, exam, cells };
+    const rowExam = exam && !Object.values(cells).some((cell) => cell.status !== CONTENT_CELL_STATUS.EXAM);
+    return { week, exam: rowExam, cells };
   });
 }
