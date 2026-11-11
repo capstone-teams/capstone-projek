@@ -10,6 +10,9 @@ import ProfilePage from '../src/pages/moodle/ProfilePage';
 import { AuthContext } from '../src/context/authContext';
 import { AppStateProvider } from '../src/context/AppStateProvider';
 import * as courseService from '../src/services/courseService';
+import * as coursePlanService from '../src/services/coursePlanService';
+import * as contentService from '../src/services/contentService';
+import * as executionService from '../src/services/executionService';
 import * as workflowService from '../src/services/workflowService';
 import * as rpsService from '../src/services/rpsService';
 import * as moodleApi from '../src/services/moodle/moodleApi';
@@ -100,6 +103,50 @@ describe('WorkflowStepper & deriveStepperState (data workflow backend)', () => {
     expect(deriveStepperState(wf({ status: 'COMPLETED', stage: null }), fullExecuted())).toEqual({ current: 5, finished: true });
   });
 
+  it('tidak mundur ke Konten saat sebagian konten sudah disetujui, diregenerasi, atau pasca-eksekusi struktur', () => {
+    const partialContents = [
+      { id: 'c1', status: 'APPROVED' },
+      { id: 'c2', status: 'DRAFT' },
+    ];
+    const allApprovedContents = [
+      { id: 'c1', status: 'APPROVED' },
+      { id: 'c2', status: 'APPROVED' },
+    ];
+    const structureAfterReviewEvents = [
+      ...contentApproved(),
+      ev('WORKFLOW_MOODLE_OPERATION', 'moodle_execution', 'Minggu 1 diterapkan ke Moodle.'),
+      ev('WORKFLOW_STAGE_COMPLETED', 'moodle_execution'),
+      ev('WORKFLOW_WAITING_FOR_REVIEW', 'instructor_review'),
+    ];
+
+    // 4/8 disetujui -> tetap di langkah (3) Review (index 2), belum lompat ke Eksekusi Moodle
+    expect(deriveStepperState(wf(), contentApproved(), {
+      plan: { status: 'APPROVED' },
+      contents: partialContents,
+    })).toEqual({ current: 2, finished: false });
+
+    // Setelah eksekusi STRUCTURE berjalan belakangan -> tetap tidak turun kembali ke Konten
+    expect(deriveStepperState(wf(), structureAfterReviewEvents, {
+      plan: { status: 'APPROVED' },
+      contents: partialContents,
+      executions: [{ scope: 'STRUCTURE', status: 'SUCCESS' }],
+    })).toEqual({ current: 2, finished: false });
+    expect(deriveStepperState(wf(), structureAfterReviewEvents)).toEqual({ current: 2, finished: false });
+
+    // Sedang regenerasi item ketika daftar konten sudah ada -> progres tetap tidak mundur
+    expect(deriveStepperState(wf({ stage: 'content_generation' }), contentGen(), {
+      plan: { status: 'APPROVED' },
+      contents: partialContents,
+    })).toEqual({ current: 2, finished: false });
+
+    // 8/8 disetujui -> maju ke langkah (4) Eksekusi Moodle (index 3)
+    expect(deriveStepperState(wf(), structureAfterReviewEvents, {
+      plan: { status: 'APPROVED' },
+      contents: allApprovedContents,
+      executions: [{ scope: 'STRUCTURE', status: 'SUCCESS' }],
+    })).toEqual({ current: 3, finished: false });
+  });
+
   it('menandai langkah yang selesai dengan ✓ pada komponen WorkflowStepper', async () => {
     const node = document.createElement('div');
     const root = createRoot(node);
@@ -161,6 +208,44 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
     // Overview menampilkan langkah berikutnya dan timeline event nyata
     expect(node.textContent).toContain('Eksekusi struktur');
     expect(node.textContent).toContain('RPS SBD.pdf');
+  });
+
+  it('AiCourseLayout menjaga stepper di Review saat konten sudah ada & sebagian disetujui', async () => {
+    vi.spyOn(courseService, 'findCourseByMoodleId').mockResolvedValue(null);
+    vi.spyOn(workflowService, 'getActiveCourseBinding').mockReturnValue({ workflowId: 'wf-1', rpsId: 'rps-1' });
+    vi.spyOn(workflowService, 'findWorkflowForCourse').mockResolvedValue(wf());
+    vi.spyOn(rpsService, 'getRps').mockResolvedValue({ id: 'rps-1', filename: 'RPS SBD.pdf', status: 'ANALYZED' });
+    vi.spyOn(coursePlanService, 'getWorkflowPlan').mockResolvedValue({ id: 'plan-1', status: 'APPROVED' });
+    vi.spyOn(contentService, 'listWorkflowContents').mockResolvedValue([
+      { id: 'c1', status: 'APPROVED' },
+      { id: 'c2', status: 'FAILED' },
+    ]);
+    vi.spyOn(executionService, 'listExecutions').mockResolvedValue([{ execution_id: 'ex-1', scope: 'STRUCTURE', status: 'SUCCESS' }]);
+
+    monitorState.workflow = wf();
+    monitorState.events = [
+      ...contentApproved(),
+      ev('WORKFLOW_MOODLE_OPERATION', 'moodle_execution', 'Minggu 1 diterapkan ke Moodle.'),
+      ev('WORKFLOW_STAGE_COMPLETED', 'moodle_execution'),
+      ev('WORKFLOW_WAITING_FOR_REVIEW', 'instructor_review'),
+    ];
+
+    await act(async () => root.render(
+      <MemoryRouter initialEntries={['/course/48/ai']}>
+        <Routes>
+          <Route path="/course/:courseId/ai" element={<AiCourseLayout />}>
+            <Route index element={<CourseOverviewPage />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    ));
+
+    const items = [...node.querySelectorAll('.stepper__item')];
+    expect(items[0].className).toContain('stepper__item--done');
+    expect(items[1].className).toContain('stepper__item--done');
+    expect(items[2].className).toContain('stepper__item--current');
+    expect(items[3].className).toContain('stepper__item--todo');
+    expect(node.textContent).toContain('Review konten');
   });
 
   it('Mahasiswa (STUDENT) menerima kursus terdaftarnya tanpa error 403 /courses fallback atau ProfilePage error', async () => {

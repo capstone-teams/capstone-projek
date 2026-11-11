@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { findCourseByMoodleId } from '../../../services/courseService';
+import { getWorkflowPlan } from '../../../services/coursePlanService';
+import { listWorkflowContents } from '../../../services/contentService';
+import { listExecutions } from '../../../services/executionService';
 import { useAction, useApi } from '../../../hooks/useApi';
+import { useOnChange } from '../../../hooks/useOnChange';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
 import { getRps } from '../../../services/rpsService';
@@ -128,12 +132,32 @@ function CourseProjectLayout() {
   const { reload: reloadWorkflow, workflow, events } = monitor;
   const effectiveWorkflow = workflow ?? activeWorkflow ?? null;
 
+  const progressSnapshot = useApi(async () => {
+    if (!workflowId) return { plan: null, contents: null, executions: null };
+    const [plan, contents, executions] = await Promise.all([
+      getWorkflowPlan(workflowId).catch(() => null),
+      listWorkflowContents(workflowId).catch(() => null),
+      listExecutions(workflowId).catch(() => null),
+    ]);
+    return { plan, contents, executions };
+  }, [workflowId, version]);
+
+  const progressSignature = effectiveWorkflow
+    ? `${effectiveWorkflow.status}|${effectiveWorkflow.stage ?? ''}|${effectiveWorkflow.updated_at ?? ''}|${events.length}`
+    : null;
+  const { reload: reloadSnapshot } = progressSnapshot;
+  useOnChange(progressSignature, () => {
+    reloadSnapshot({ silent: true });
+  }, 300);
+
+  const { reload: reloadActiveWf } = activeWfQuery;
   const refresh = useCallback(() => {
     setVersion((v) => v + 1);
     reloadWorkflow();
-    activeWfQuery.reload({ silent: true });
+    reloadSnapshot({ silent: true });
+    reloadActiveWf({ silent: true });
     return reload({ silent: true });
-  }, [reload, reloadWorkflow, activeWfQuery, setVersion]);
+  }, [reload, reloadWorkflow, reloadSnapshot, reloadActiveWf, setVersion]);
 
   // Simpan workflow yang tampil sebagai course target kursus ini di server (bindWorkflowToCourse menelan galat PUT,
   // jadi hasil kosong berarti gagal dan ditampilkan ke dosen).
@@ -161,7 +185,13 @@ function CourseProjectLayout() {
         </p>
         {effectiveWorkflow ? <WorkflowStatusBadge workflow={effectiveWorkflow} /> : <Badge>Belum dimulai</Badge>}
       </div>
-      <WorkflowStepper workflow={effectiveWorkflow} events={events} />
+      <WorkflowStepper
+        workflow={effectiveWorkflow}
+        events={events}
+        plan={progressSnapshot.data?.plan ?? null}
+        contents={progressSnapshot.data?.contents ?? null}
+        executions={progressSnapshot.data?.executions ?? null}
+      />
 
       {localOnly && (
         <Alert tone="warning" title="RPS belum tersimpan untuk kursus ini">
@@ -193,6 +223,9 @@ function CourseProjectLayout() {
           workflow: effectiveWorkflow,
           workflowId,
           events,
+          plan: progressSnapshot.data?.plan ?? null,
+          contents: progressSnapshot.data?.contents ?? null,
+          executions: progressSnapshot.data?.executions ?? null,
           connection: monitor.connection,
           version,
           refresh,

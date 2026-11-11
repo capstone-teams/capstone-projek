@@ -517,51 +517,87 @@ function stepperIndexForStage(stage, events = []) {
   }
 }
 
+function eventMilestoneIndex(workflow, events = []) {
+  const hasContentHistory = events.some(
+    (ev) => CONTENT_RESULT_EVENTS.includes(ev?.event)
+      || ev?.event === WORKFLOW_EVENT.CONTENTS_APPROVED
+      || ev?.event === WORKFLOW_EVENT.CONTENTS_REJECTED,
+  );
+  const action = awaitedActionOf(workflow, events);
+  switch (action) {
+    case AWAITED_ACTION.EXECUTE_STRUCTURE:
+    case AWAITED_ACTION.GENERATE_CONTENT:
+      return hasContentHistory ? 2 : 1;
+    case AWAITED_ACTION.REVIEW_CONTENT:
+    case AWAITED_ACTION.REVISE_CONTENT:
+      return 2;
+    case AWAITED_ACTION.EXECUTE_FULL:
+      return 3;
+    default: {
+      const hadFullExecution = events.some((ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(ev));
+      if (hadFullExecution) return 4;
+      if (hasContentHistory) return 2;
+      if (events.some((ev) => ev?.event === WORKFLOW_EVENT.PLAN_APPROVED)) return 1;
+      return 0;
+    }
+  }
+}
+
 /**
  * Menurunkan langkah aktif (0..5) dan status selesai untuk 6-step WorkflowStepper dari snapshot
- * workflow nyata (`status` + `stage`) dan riwayat event WebSocket/HTTP.
+ * workflow nyata (`status` + `stage`), riwayat event, serta data aktual `{ plan, contents, executions }`.
+ * Langkah dijaga monoton terhadap pencapaian deliverable nyata agar tidak mundur ke "Konten" saat
+ * konten mingguan sudah ada (mis. sedang review parsial, regenerasi item, atau pasca-eksekusi struktur).
  */
-export function deriveStepperState(workflow, events = []) {
+export function deriveStepperState(workflow, events = [], { plan = null, contents = null, executions = null } = {}) {
   if (!workflow) return { current: 0, finished: false };
   if (workflow.status === WORKFLOW_API_STATUS.COMPLETED) return { current: 5, finished: true };
+
+  const hasPlan = Boolean(plan);
+  const planApproved = plan?.status === 'APPROVED';
+  const hasContentsList = Array.isArray(contents);
+  const hasContents = hasContentsList && contents.length > 0;
+  const allContentsApproved = hasContents
+    && contents.every((item) => item?.status === 'APPROVED' || item?.status === 'EXECUTED');
+  const hasExecutionsList = Array.isArray(executions);
+  const hasFullExecutionCompleted = hasExecutionsList
+    ? executions.some((ex) => ex?.scope === 'FULL' && (ex?.status === 'SUCCESS' || ex?.status === 'PARTIAL_SUCCESS'))
+    : events.some((ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(ev));
+
+  let milestone = 0;
+  if (hasFullExecutionCompleted) {
+    milestone = 4;
+  } else if (hasContentsList) {
+    if (allContentsApproved) milestone = 3;
+    else if (hasContents) milestone = 2;
+    else if (planApproved || (!hasPlan && events.some((ev) => ev?.event === WORKFLOW_EVENT.PLAN_APPROVED))) milestone = 1;
+  } else {
+    milestone = eventMilestoneIndex(workflow, events);
+  }
 
   if (workflow.status === WORKFLOW_API_STATUS.FAILED) {
     const failed = lastEvent(events, WORKFLOW_EVENT.FAILED);
     const started = lastEvent(events, WORKFLOW_EVENT.STAGE_STARTED);
-    return { current: stepperIndexForStage(failed?.stage ?? started?.stage, events), finished: false };
+    const stageStep = stepperIndexForStage(failed?.stage ?? started?.stage, events);
+    return { current: Math.max(milestone, stageStep), finished: false };
   }
 
   if (workflow.status === WORKFLOW_API_STATUS.QUEUED) {
     const started = lastEvent(events, WORKFLOW_EVENT.STAGE_STARTED);
-    return { current: started ? stepperIndexForStage(started.stage, events) : 0, finished: false };
+    const stageStep = started ? stepperIndexForStage(started.stage, events) : 0;
+    return { current: Math.max(milestone, stageStep), finished: false };
   }
 
   if (workflow.stage === WORKFLOW_STAGE.RETRYING) {
     const retry = lastEvent(events, WORKFLOW_EVENT.RETRY);
-    return { current: stepperIndexForStage(retry?.stage, events), finished: false };
+    return { current: Math.max(milestone, stepperIndexForStage(retry?.stage, events)), finished: false };
   }
 
   if (workflow.stage === WORKFLOW_STAGE.INSTRUCTOR_REVIEW) {
-    const action = awaitedActionOf(workflow, events);
-    switch (action) {
-      case AWAITED_ACTION.EXECUTE_STRUCTURE:
-      case AWAITED_ACTION.GENERATE_CONTENT:
-        return { current: 1, finished: false };
-      case AWAITED_ACTION.REVIEW_CONTENT:
-      case AWAITED_ACTION.REVISE_CONTENT:
-        return { current: 2, finished: false };
-      case AWAITED_ACTION.EXECUTE_FULL:
-        return { current: 3, finished: false };
-      case null: {
-        const hadFullExecution = events.some((ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && isActivityOperation(ev));
-        return { current: hadFullExecution ? 4 : 0, finished: false };
-      }
-      default:
-        return { current: 0, finished: false };
-    }
+    return { current: Math.max(milestone, eventMilestoneIndex(workflow, [])), finished: false };
   }
 
-  return { current: stepperIndexForStage(workflow.stage, events), finished: false };
+  return { current: Math.max(milestone, stepperIndexForStage(workflow.stage, events)), finished: false };
 }
 
 // ---- Content generation (BE-19.3, FE-16)

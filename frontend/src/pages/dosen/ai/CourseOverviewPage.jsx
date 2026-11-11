@@ -8,6 +8,7 @@ import WorkflowConnectionNote from '../../../components/ai/WorkflowConnectionNot
 import WorkflowEventTimeline from '../../../components/ai/WorkflowEventTimeline';
 import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
 import {
+  AWAITED_ACTION,
   AWAITED_ACTION_META,
   STAGE_LABELS,
   WORKFLOW_API_STATUS,
@@ -26,7 +27,7 @@ function quickTarget(page, workflow) {
 }
 
 export default function CourseOverviewPage() {
-  const { course, moodleCourse, workflow, workflowId, events = [], connection } = useCourse() ?? {};
+  const { course, moodleCourse, workflow, workflowId, events = [], contents = null, connection } = useCourse() ?? {};
   const activeWorkflow = workflow ?? null;
   const rpsId = activeWorkflow?.rps_id ?? course?.rps_id ?? null;
   const rps = useApi(() => (rpsId ? getRps(rpsId).catch(() => null) : null), [rpsId]);
@@ -37,7 +38,14 @@ export default function CourseOverviewPage() {
 
   const busy = isWorkflowBusy(activeWorkflow);
   const waitingReview = needsInstructorAction(activeWorkflow);
-  const actionMeta = waitingReview ? AWAITED_ACTION_META[awaitedActionOf(activeWorkflow, events)] : null;
+  const hasPartialContents = Array.isArray(contents)
+    && contents.length > 0
+    && contents.some((item) => item?.status !== 'APPROVED' && item?.status !== 'EXECUTED');
+  const awaitedAction = awaitedActionOf(activeWorkflow, events);
+  const resolvedAction = waitingReview
+    ? (hasPartialContents ? AWAITED_ACTION.REVIEW_CONTENT : awaitedAction)
+    : null;
+  const actionMeta = resolvedAction ? AWAITED_ACTION_META[resolvedAction] : null;
   const statusMeta = activeWorkflow ? workflowStatusMeta(activeWorkflow) : null;
 
   const failureEvent = activeWorkflow?.status === WORKFLOW_API_STATUS.FAILED

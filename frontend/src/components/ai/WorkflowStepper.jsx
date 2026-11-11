@@ -1,7 +1,7 @@
 import { WORKFLOW_STEPPER_STEPS, deriveStepperState } from '../../utils/workflowStatus';
 
-export default function WorkflowStepper({ workflow = null, events = [] }) {
-  const { current, finished } = deriveStepperState(workflow, events);
+export default function WorkflowStepper({ workflow = null, events = [], plan = null, contents = null, executions = null }) {
+  const { current, finished } = deriveStepperState(workflow, events, { plan, contents, executions });
 
   return (
     <ol className="stepper" aria-label="Tahapan workflow">
