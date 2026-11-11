@@ -42,8 +42,12 @@ export default function CourseOverviewPage() {
     && contents.length > 0
     && contents.some((item) => item?.status !== 'APPROVED' && item?.status !== 'EXECUTED');
   const awaitedAction = awaitedActionOf(activeWorkflow, events);
+  // Eksekusi FULL sudah selesai berarti langkah berikutnya verifikasi; konten
+  // parsial (mis. item yang gagal divalidasi) tidak boleh menyandera di Review.
   const resolvedAction = waitingReview
-    ? (hasPartialContents ? AWAITED_ACTION.REVIEW_CONTENT : awaitedAction)
+    ? hasPartialContents && awaitedAction !== AWAITED_ACTION.VERIFY_MOODLE
+      ? AWAITED_ACTION.REVIEW_CONTENT
+      : awaitedAction
     : null;
   const actionMeta = resolvedAction ? AWAITED_ACTION_META[resolvedAction] : null;
   const statusMeta = activeWorkflow ? workflowStatusMeta(activeWorkflow) : null;

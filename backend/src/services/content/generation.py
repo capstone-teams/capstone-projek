@@ -407,6 +407,10 @@ class ContentGenerationService:
         for ctx in sorted(contexts, key=lambda item: item.week_number):
             if ctx.week_number not in weeks:
                 continue
+            # Minggu tanpa bahan (mis. minggu review yang topiknya kosong di RPS)
+            # dilewati: model tidak punya konteks untuk menyusun konten.
+            if not ctx.week_data.topics and not ctx.week_data.learning_outcomes:
+                continue
             for kind in active:
                 if kind not in KINDS_BY_WEEK_TYPE.get(
                     ctx.week_data.week_type.lower(), ()

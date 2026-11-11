@@ -201,7 +201,7 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
     ));
 
     // Tidak lagi menampakkan badge Draft hardcoded
-    expect(node.textContent).toContain('Menunggu review Anda');
+    expect(node.textContent).toContain('Menunggu tindakan Anda');
     expect(node.textContent).not.toMatch(/\bDraft\b/);
 
     // Step RPS & Rencana done (✓), Step Konten current

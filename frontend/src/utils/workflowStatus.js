@@ -46,7 +46,9 @@ export const WORKFLOW_STATUS_META = {
   [WORKFLOW_STATUS.PLANNING_COURSE]: { label: 'Menyusun rencana', tone: 'info', marker: 'running', description: 'Agent sedang menyusun rencana mingguan.' },
   [WORKFLOW_STATUS.GENERATING_CONTENT]: { label: 'Membuat konten', tone: 'info', marker: 'running', description: 'Agent sedang membuat konten pembelajaran.' },
   [WORKFLOW_STATUS.VALIDATING]: { label: 'Validasi', tone: 'info', marker: 'running', description: 'Hasil agent sedang divalidasi.' },
-  [WORKFLOW_STATUS.WAITING_FOR_REVIEW]: { label: 'Menunggu review Anda', tone: 'warning', marker: 'review', description: 'Perlu tindakan Anda sebelum workflow berlanjut.' },
+  // Label sengaja tidak menyebut "review": status ini juga dipakai setelah eksekusi
+  // Moodle selesai, ketika tindakan yang ditunggu adalah verifikasi, bukan review.
+  [WORKFLOW_STATUS.WAITING_FOR_REVIEW]: { label: 'Menunggu tindakan Anda', tone: 'warning', marker: 'review', description: 'Perlu tindakan Anda sebelum workflow berlanjut.' },
   [WORKFLOW_STATUS.EXECUTING_TO_MOODLE]: { label: 'Eksekusi ke Moodle', tone: 'info', marker: 'running', description: 'Struktur kursus sedang dibuat di Moodle.' },
   [WORKFLOW_STATUS.VERIFYING]: { label: 'Verifikasi', tone: 'info', marker: 'running', description: 'Hasil pengiriman sedang diperiksa.' },
   [WORKFLOW_STATUS.RETRYING]: { label: 'Mencoba ulang', tone: 'warning', marker: 'retry', description: 'Tahap gagal sebagian dan sedang diperbaiki otomatis.' },
