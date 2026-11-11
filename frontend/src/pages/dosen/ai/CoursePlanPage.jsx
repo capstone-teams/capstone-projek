@@ -338,7 +338,8 @@ export default function CoursePlanPage() {
           <p>
             {cleanApproved && 'Lolos validasi akademik. '}
             {latest.approved_at && `Disetujui ${formatDateTime(latest.approved_at)}. `}
-            {course?.id && (
+            {/* Tautan memakai workflow, bukan `course`: kursus Moodle tidak selalu punya baris course aplikasi. */}
+            {workflow?.id && (
               <>
                 Berikutnya: <Link to="../publish" relative="path" className="font-semibold underline">buat struktur mingguan di Moodle</Link>.
               </>
