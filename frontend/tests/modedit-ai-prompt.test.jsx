@@ -92,6 +92,26 @@ describe('Form aktivitas baru: generate otomatis dan quiz', () => {
     expect(ai).toEqual({ aiPrompt: 'Ringkas materi ini.' });
   });
 
+  it('draf AI mengisi nama dan isi Text and media area tanpa menimpa nama yang sudah diisi dosen', async () => {
+    const onGenerate = vi.fn().mockResolvedValue({ name: 'Pengantar Minggu 3', text: '<p>Ringkasan normalisasi.</p>', references_used: ['File: slide.pdf'] });
+    await mount(LabelModForm, { onGenerate });
+    await setValue(container.querySelector('input[id$="-name"]'), 'Judul saya');
+    await click(button('Generate dengan AI'));
+    expect(container.querySelector('input[id$="-name"]').value).toBe('Judul saya');
+    expect(container.querySelector('[role="textbox"]').innerHTML).toContain('Ringkasan normalisasi.');
+    expect(container.textContent).toContain('Draf dibuat dari: File: slide.pdf.');
+    await save();
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ name: 'Judul saya', text: '<p>Ringkasan normalisasi.</p>' });
+  });
+
+  it('galat generate ditampilkan tanpa mengubah isian', async () => {
+    const onGenerate = vi.fn().mockRejectedValue(new Error('Belum ada referensi untuk minggu ini.'));
+    await mount(AssignModForm, { onGenerate });
+    await click(button('Generate dengan AI'));
+    expect(container.querySelector('[role="alert"]').textContent).toBe('Belum ada referensi untuk minggu ini.');
+    expect(container.querySelector('input[id$="-name"]').value).toBe('');
+  });
+
   it('hanya ada satu tombol simpan', async () => {
     await mount(AssignModForm);
     expect(button('Save and return to course')).toBeTruthy();
@@ -179,10 +199,40 @@ describe('Form aktivitas baru: generate otomatis dan quiz', () => {
       await setValue(container.querySelector('select[id$="-difficulty"]'), 'sulit');
       expect(button('Generate soal dengan AI').disabled).toBe(true);
       expect(container.textContent).toContain('Generate soal quiz dengan AI belum tersedia.');
+      // Quiz dibuat beserta soalnya: tanpa soal (belum di-generate) tidak ada yang tersimpan.
       await save();
-      const [fields, ai] = onSubmit.mock.calls[0];
-      expect(fields.questions).toEqual([]);
-      expect(ai).toEqual({ aiPrompt: 'Soal tentang normalisasi.', aiQuestionCount: 15, aiDifficulty: 'sulit' });
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(container.textContent).toContain('Quiz wajib memiliki minimal satu soal.');
+    });
+
+    it('soal hasil generate AI masuk ke editor manual, lengkap dengan kunci dan pembahasan', async () => {
+      const onGenerate = vi.fn().mockResolvedValue({
+        name: 'Kuis Normalisasi',
+        intro: '<p>Kerjakan dengan teliti.</p>',
+        questions: [{
+          question_text: 'Bentuk normal yang menghilangkan dependensi parsial?',
+          options: [{ key: 'A', text: '1NF' }, { key: 'B', text: '2NF' }, { key: 'C', text: '3NF' }, { key: 'D', text: 'BCNF' }],
+          correct_option_key: 'B',
+          explanation: '2NF menghilangkan dependensi parsial.',
+        }],
+        references_used: ['Materi minggu ini', 'RPS kursus'],
+      });
+      await mount(QuizModForm, { onGenerate });
+      await click([...container.querySelectorAll('input[type="radio"]')].find((r) => r.parentElement.textContent.includes('Generate otomatis')));
+      await setValue(container.querySelector('input[id$="-count"]'), '5');
+      await click(button('Generate soal dengan AI'));
+      expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({ aiQuestionCount: 5, aiDifficulty: 'sedang', useWeek: true, useRps: true, file: null }));
+      // Pindah ke mode manual dengan soal terisi; nama kosong diisi dari draf.
+      expect(container.querySelector('input[id$="-name"]').value).toBe('Kuis Normalisasi');
+      expect(questionBox(1).querySelector('textarea').value).toBe('Bentuk normal yang menghilangkan dependensi parsial?');
+      expect(container.textContent).toContain('Draf dibuat dari: Materi minggu ini, RPS kursus.');
+      await save();
+      expect(onSubmit.mock.calls[0][0].questions).toEqual([{
+        text: 'Bentuk normal yang menghilangkan dependensi parsial?',
+        options: ['1NF', '2NF', '3NF', 'BCNF'],
+        correct_index: 1,
+        explanation: '2NF menghilangkan dependensi parsial.',
+      }]);
     });
 
     it('validasi Moodle tetap berlaku: tanpa nama tidak ada yang terkirim', async () => {

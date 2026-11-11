@@ -27,7 +27,7 @@ const ACTIVITY_TYPES = [
     kind: 'resource',
     recommended: true,
     iconClass: 'bg-[#40a6e7]',
-    description: 'Add text, images or video that appear directly on the course page.',
+    description: 'Teks, gambar, atau diagram yang langsung tampil di kartu minggu pada halaman kursus.',
   },
 ];
 

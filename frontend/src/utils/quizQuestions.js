@@ -3,7 +3,7 @@
 export const AI_PROMPT_MAX = 2000;
 export const MIN_OPTIONS = 2;
 export const MAX_OPTIONS = 6;
-export const MAX_AI_QUESTIONS = 50;
+export const MAX_AI_QUESTIONS = 30;
 export const QUESTION_MODE = { MANUAL: 'manual', AI: 'ai' };
 export const DIFFICULTY_LABELS = { mudah: 'Mudah', sedang: 'Sedang', sulit: 'Sulit' };
 
@@ -31,6 +31,17 @@ export function validateQuestions(questions) {
 export function toQuestionFields(questions) {
   return questions.map((question) => {
     const kept = question.options.map((text, index) => ({ text: text.trim(), index })).filter((option) => option.text);
-    return { text: question.text.trim(), options: kept.map((option) => option.text), correct_index: kept.findIndex((option) => option.index === question.correct) };
+    const fields = { text: question.text.trim(), options: kept.map((option) => option.text), correct_index: kept.findIndex((option) => option.index === question.correct) };
+    // Pembahasan dari AI ikut tersimpan sebagai umpan balik soal.
+    return question.explanation?.trim() ? { ...fields, explanation: question.explanation.trim() } : fields;
+  });
+}
+
+/** Soal hasil generate AI (question_text, options [{key, text}], correct_option_key) menjadi soal editor. */
+export function fromGeneratedQuestions(questions = []) {
+  return questions.map((question) => {
+    const options = (question.options ?? []).map((option) => option.text ?? '');
+    const correct = (question.options ?? []).findIndex((option) => option.key === question.correct_option_key);
+    return { key: nextKey(), text: question.question_text ?? '', options, correct: correct >= 0 ? correct : null, explanation: question.explanation ?? '' };
   });
 }
