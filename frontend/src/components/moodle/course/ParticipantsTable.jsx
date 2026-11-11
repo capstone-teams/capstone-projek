@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApi } from '../../../hooks/useApi';
-import { addMoodleParticipant, getEnrolledUsers } from '../../../services/moodle/moodleApi';
+import { addMoodleParticipants, getEnrolledUsers, getParticipantCandidates } from '../../../services/moodle/moodleApi';
 import { Avatar, Badge, ErrorAlert, Field, Modal, Spinner } from '../../ui';
 import { formatRelative } from '../../../utils/format';
 
@@ -17,25 +17,31 @@ export default function ParticipantsTable({ courseId, showEmail = false, canMana
   const [query, setQuery] = useState('');
   const [role, setRole] = useState('');
   const [addOpen, setAddOpen] = useState(false);
-  const [addQuery, setAddQuery] = useState('');
+  const [selected, setSelected] = useState([]);
   const [addRole, setAddRole] = useState('student');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState(null);
+  // Daftar akun Moodle dimuat hanya saat dialog dibuka (sinkron dengan Moodle, bukan tebakan email).
+  const candidates = useApi(() => (addOpen ? getParticipantCandidates(courseId) : []), [addOpen, courseId]);
 
   const openAdd = () => {
-    setAddQuery('');
+    setSelected([]);
     setAddRole('student');
     setAddError(null);
     setAddOpen(true);
   };
 
-  // Akun dicari di Moodle lewat email atau username; dosen tidak membuat akun baru di sini.
+  const toggle = (userId) =>
+    setSelected((current) =>
+      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
+    );
+
   const submitAdd = async (event) => {
     event.preventDefault();
     setAdding(true);
     setAddError(null);
     try {
-      await addMoodleParticipant(courseId, { query: addQuery, role: addRole });
+      await addMoodleParticipants(courseId, { userIds: selected, role: addRole });
       setAddOpen(false);
       await reload({ silent: true });
     } catch (caught) {
@@ -76,18 +82,33 @@ export default function ParticipantsTable({ courseId, showEmail = false, canMana
         <Modal open={addOpen} title="Tambah peserta dari Moodle" onClose={() => setAddOpen(false)}>
           <form onSubmit={submitAdd} className="form">
             <p className="text-sm text-muted">
-              Masukkan email atau username akun Moodle mahasiswa/dosen. Akun harus sudah ada di Moodle.
+              Pilih akun Moodle yang belum terdaftar di kursus ini. Daftar diambil langsung dari Moodle.
             </p>
-            <Field label="Email atau username" required>
-              <input
-                value={addQuery}
-                onChange={(e) => setAddQuery(e.target.value)}
-                placeholder="nama@kampus.ac.id"
-                aria-label="Email atau username Moodle"
-                required
-                autoFocus
-              />
-            </Field>
+            <ErrorAlert error={candidates.error} />
+            {candidates.loading ? (
+              <Spinner label="Memuat akun Moodle…" />
+            ) : (
+              <fieldset className="max-h-72 overflow-y-auto rounded-lg border border-line p-2">
+                <legend className="sr-only">Akun Moodle</legend>
+                {(candidates.data ?? []).map((user) => (
+                  <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded p-1.5 hover:bg-surface">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(user.id)}
+                      onChange={() => toggle(user.id)}
+                      aria-label={`Pilih ${user.fullname || user.username}`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate">{user.fullname || user.username}</span>
+                      <span className="block truncate text-xs text-muted">{user.email || user.username}</span>
+                    </span>
+                  </label>
+                ))}
+                {!candidates.data?.length && (
+                  <p className="p-2 text-sm text-muted">Semua akun Moodle sudah terdaftar di kursus ini.</p>
+                )}
+              </fieldset>
+            )}
             <Field label="Peran">
               <select value={addRole} onChange={(e) => setAddRole(e.target.value)} aria-label="Peran peserta">
                 <option value="student">Mahasiswa</option>
@@ -99,8 +120,8 @@ export default function ParticipantsTable({ courseId, showEmail = false, canMana
               <button type="button" className="btn btn--ghost" onClick={() => setAddOpen(false)}>
                 Batal
               </button>
-              <button type="submit" className="btn btn--primary" disabled={adding || !addQuery.trim()}>
-                {adding ? 'Menambahkan…' : 'Tambahkan'}
+              <button type="submit" className="btn btn--primary" disabled={adding || !selected.length}>
+                {adding ? 'Menambahkan…' : `Tambahkan${selected.length ? ` (${selected.length})` : ''}`}
               </button>
             </div>
           </form>

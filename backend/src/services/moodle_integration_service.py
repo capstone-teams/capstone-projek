@@ -25,6 +25,7 @@ GET_PAGES_FUNCTION = "mod_page_get_pages_by_courses"
 GET_ASSIGNMENTS_FUNCTION = "mod_assign_get_assignments"
 GET_QUIZZES_FUNCTION = "mod_quiz_get_quizzes_by_courses"
 GET_USERS_BY_FIELD_FUNCTION = "core_user_get_users_by_field"
+LIST_USERS_FUNCTION = "core_user_get_users"
 CREATE_USERS_FUNCTION = "core_user_create_users"
 ENROL_USERS_FUNCTION = "enrol_manual_enrol_users"
 GET_ENROLLED_USERS_FUNCTION = "core_enrol_get_enrolled_users"
@@ -464,6 +465,29 @@ class MoodleIntegrationService:
             if users:
                 return _to_user(users[0])
         return None
+
+    async def list_users(self) -> list[MoodleUser]:
+        """Seluruh akun Moodle yang aktif, untuk dipilih dosen di halaman Peserta.
+
+        ponytail: satu panggilan tanpa paginasi. Situs dengan ribuan akun perlu
+        pencarian bertahap; sekarang daftar akun demo masih kecil.
+        """
+        payload = await self._client.call(
+            LIST_USERS_FUNCTION,
+            {
+                "criteria": [
+                    {"key": "deleted", "value": "0"},
+                    {"key": "suspended", "value": "0"},
+                ]
+            },
+        )
+        raw_users = payload.get("users") if isinstance(payload, dict) else None
+        users = _expect_list(raw_users, LIST_USERS_FUNCTION)
+        return [
+            _to_user(raw)
+            for raw in users
+            if raw.get("username") != "guest" and not raw.get("deleted")
+        ]
 
     async def create_user(
         self,

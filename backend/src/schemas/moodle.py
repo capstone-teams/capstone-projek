@@ -13,7 +13,7 @@ __all__ = [
     "MoodleCourseContentsResponse",
     "MoodleCourseListResponse",
     "MoodleCourseResponse",
-    "AddMoodleParticipantRequest",
+    "AddMoodleParticipantsRequest",
     "MoodleModuleResponse",
     "MoodleParticipantListResponse",
     "MoodleParticipantResponse",
@@ -151,14 +151,12 @@ class MoodleParticipantListResponse(BaseModel):
     participants: list[MoodleParticipantResponse]
 
 
-class AddMoodleParticipantRequest(BaseModel):
+class AddMoodleParticipantsRequest(BaseModel):
     """Tambah peserta dari akun Moodle yang sudah ada (bukan membuat akun baru)."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    query: str = Field(
+    user_ids: list[int] = Field(
         min_length=1,
-        max_length=254,
-        description="Email atau username akun Moodle yang akan didaftarkan.",
+        max_length=100,
+        description="ID user Moodle yang dipilih dosen dari daftar akun.",
     )
     role: Literal["student", "teacher"] = "student"

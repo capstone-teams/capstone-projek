@@ -262,9 +262,16 @@ export function getEnrolledUsers(courseId) {
     );
 }
 
-/** Daftarkan akun Moodle yang sudah ada (dicari lewat email/username) ke course. */
-export function addMoodleParticipant(courseId, { query, role = 'student' }) {
-  return api.post(`/integrations/moodle/courses/${courseId}/participants`, { query, role });
+/** Akun Moodle aktif yang belum terdaftar di course (dipilih dosen di halaman Peserta). */
+export function getParticipantCandidates(courseId) {
+  return api
+    .get(`/integrations/moodle/courses/${courseId}/participant-candidates`)
+    .then((res) => res?.participants ?? []);
+}
+
+/** Daftarkan akun Moodle terpilih (ID user Moodle) ke course. */
+export function addMoodleParticipants(courseId, { userIds, role = 'student' }) {
+  return api.post(`/integrations/moodle/courses/${courseId}/participants`, { user_ids: userIds, role });
 }
 
 export async function getActionEvents({ from = Math.floor(Date.now() / 1000) - 14 * 86400, limit = 20 } = {}) {

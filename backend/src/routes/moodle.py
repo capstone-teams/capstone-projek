@@ -20,7 +20,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Response, UploadFile, status
 
 from src.schemas.moodle import (
-    AddMoodleParticipantRequest,
+    AddMoodleParticipantsRequest,
     ApiErrorResponse,
     CreateMoodleCourseRequest,
     MoodleParticipantListResponse,
@@ -443,36 +443,71 @@ async def list_participants(
     )
 
 
+@router.get(
+    "/courses/{moodle_course_id}/participant-candidates",
+    response_model=MoodleParticipantListResponse,
+    summary="Akun Moodle yang belum terdaftar di course",
+    dependencies=[Depends(instructor_only)],
+)
+async def list_participant_candidates(
+    moodle_course_id: MoodleCourseIdPath, service: ServiceDependency
+) -> MoodleParticipantListResponse:
+    """Seluruh akun Moodle aktif yang belum menjadi peserta course.
+
+    Dosen memilih dari daftar ini, jadi tidak perlu menebak email/username.
+    """
+    enrolled = {
+        enrolment.user.moodle_user_id
+        for enrolment in await service.get_enrolled_users(moodle_course_id)
+    }
+    candidates = [
+        user
+        for user in await service.list_users()
+        if user.moodle_user_id not in enrolled
+    ]
+    return MoodleParticipantListResponse(
+        participants=[
+            MoodleParticipantResponse(
+                id=user.moodle_user_id,
+                username=user.username,
+                fullname=user.fullname,
+                email=user.email,
+            )
+            for user in candidates
+        ]
+    )
+
+
 @router.post(
     "/courses/{moodle_course_id}/participants",
-    response_model=MoodleParticipantResponse,
+    response_model=MoodleParticipantListResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Tambahkan peserta dari akun Moodle",
     dependencies=[Depends(instructor_only)],
 )
-async def add_participant(
+async def add_participants(
     moodle_course_id: MoodleCourseIdPath,
-    payload: AddMoodleParticipantRequest,
+    payload: AddMoodleParticipantsRequest,
     service: ServiceDependency,
-) -> MoodleParticipantResponse:
-    """Daftarkan akun Moodle yang sudah ada ke course lewat ``enrol_manual_enrol_users``.
+) -> MoodleParticipantListResponse:
+    """Daftarkan akun Moodle terpilih ke course lewat ``enrol_manual_enrol_users``.
 
-    Pencarian memakai email atau username persis karena itulah yang diketahui
-    dosen. Enrolment manual idempoten: akun yang sudah terdaftar tidak menjadi
-    anggota ganda.
+    Enrolment manual idempoten: akun yang sudah terdaftar tidak menjadi anggota
+    ganda, sehingga daftar pilihan yang basi tetap aman dikirim ulang.
     """
-    user = await service.find_user(payload.query)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                "Akun Moodle dengan email atau username tersebut tidak ditemukan. "
-                "Pastikan akun sudah dibuat di Moodle."
-            ),
-        )
-    await service.enrol_users(moodle_course_id, [(user.moodle_user_id, payload.role)])
-    return _participant_response(
-        MoodleEnrolment(
-            user=user, roles=(_PARTICIPANT_ROLE_SHORTNAMES[payload.role],)
-        )
+    await service.enrol_users(
+        moodle_course_id,
+        [(user_id, payload.role) for user_id in payload.user_ids],
+    )
+    shortname = _PARTICIPANT_ROLE_SHORTNAMES[payload.role]
+    return MoodleParticipantListResponse(
+        participants=[
+            MoodleParticipantResponse(
+                id=user_id,
+                username="",
+                fullname="",
+                roles=[MoodleParticipantRoleResponse(shortname=shortname, name=shortname)],
+            )
+            for user_id in payload.user_ids
+        ]
     )
