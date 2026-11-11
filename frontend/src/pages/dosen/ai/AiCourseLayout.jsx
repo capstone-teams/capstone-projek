@@ -274,6 +274,9 @@ function CourseProjectLayout() {
         verifications={progressSnapshot.data?.verifications ?? null}
       />
 
+      {/* Riwayat aktivitas agent (LLM) selalu di kolom kanan seluruh tahap; layar sempit menumpuk di bawah. */}
+      <div className={onStatusPage ? '' : 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:items-start'}>
+      <div className="min-w-0">
       {syncError && (
         <Alert
           tone="danger"
@@ -311,9 +314,10 @@ function CourseProjectLayout() {
           workflowLoading: activeWfQuery.loading && !workflowId,
         }} />
       </ErrorBoundary>
+      </div>
 
       {!onStatusPage && (
-        <section className="mt-6" aria-label="Aktivitas agent">
+        <section className="min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto" aria-label="Aktivitas agent">
           <Card
             title="Aktivitas agent"
             actions={(
@@ -345,6 +349,7 @@ function CourseProjectLayout() {
           </Card>
         </section>
       )}
+      </div>
     </>
   );
 }
