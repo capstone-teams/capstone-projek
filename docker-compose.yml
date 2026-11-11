@@ -97,6 +97,10 @@ services:
       - --port
       - "8000"
       - --reload
+      # Tanpa ini `--reload` menggantung di "Waiting for background tasks" selama
+      # masih ada WebSocket terbuka (tab browser), sehingga API berhenti melayani.
+      - --timeout-graceful-shutdown
+      - "5"
     healthcheck:
       test:
         - CMD
