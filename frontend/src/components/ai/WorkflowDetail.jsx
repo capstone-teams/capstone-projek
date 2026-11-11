@@ -4,6 +4,7 @@ import { formatDateTime } from '../../utils/format';
 import { Card, ErrorAlert, Spinner } from '../ui';
 import WorkflowConnectionNote from './WorkflowConnectionNote';
 import WorkflowEventTimeline from './WorkflowEventTimeline';
+import WorkflowContentProgress from './WorkflowContentProgress';
 import WorkflowMoodleOperations from './WorkflowMoodleOperations';
 import WorkflowStatusPanel from './WorkflowStatusPanel';
 
@@ -45,6 +46,7 @@ export default function WorkflowDetail({ workflowId, rpsName, onChanged, linkBas
         <WorkflowConnectionNote workflow={workflow} connection={connection} />
         <WorkflowStatusPanel workflow={workflow} events={events} linkBase={linkBase} />
       </Card>
+      <WorkflowContentProgress events={events} />
       <WorkflowMoodleOperations workflowId={workflowId} events={events} />
       <Card title="Riwayat event">
         <WorkflowEventTimeline events={events} />

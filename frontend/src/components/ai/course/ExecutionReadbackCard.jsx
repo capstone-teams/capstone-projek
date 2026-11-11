@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Alert, Badge } from '../../ui';
 
 /**
@@ -5,13 +6,15 @@ import { Alert, Badge } from '../../ui';
  * Ditampilkan setelah eksekusi selesai untuk memastikan struktur di Moodle
  * cocok persis dengan course plan (jumlah, keterurutan, dan penamaan section).
  */
-export default function ExecutionReadbackCard({ readback }) {
+export default function ExecutionReadbackCard({ readback, verificationUrl = null }) {
   if (!readback || !readback.checked) {
     if (readback?.error) {
       return (
-        <Alert tone="warning" title="Pemeriksaan Read-Back Moodle Gagal">
-          Sistem belum dapat memverifikasi struktur di Moodle: {readback.error}
-        </Alert>
+        <div id="execution-readback">
+          <Alert tone="warning" title="Pemeriksaan Read-Back Moodle Gagal">
+            Sistem belum dapat memverifikasi struktur di Moodle: {readback.error}
+          </Alert>
+        </div>
       );
     }
     return null;
@@ -27,7 +30,7 @@ export default function ExecutionReadbackCard({ readback }) {
   } = readback;
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-4 space-y-3">
+    <div id="execution-readback" className="rounded-lg border border-line bg-surface p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-sm text-ink">
@@ -38,7 +41,7 @@ export default function ExecutionReadbackCard({ readback }) {
           </Badge>
         </div>
         <span className="text-xs text-muted">
-          Pemeriksaan Otomatis Terhadap LMS Moodle
+          Cek Cepat Kerangka Section (Step 6 Verifikasi mengecek seluruh activity &amp; perbaikan)
         </span>
       </div>
 
@@ -48,8 +51,8 @@ export default function ExecutionReadbackCard({ readback }) {
         </Alert>
       ) : (
         <Alert tone="danger" title="Struktur Moodle Belum Sesuai Sepenuhnya">
-          <div className="text-xs space-y-1.5 mt-1">
-            <p>
+          <div className="text-xs space-y-2 mt-1">
+            <p className="m-0">
               Ditemukan ketidaksesuaian antara struktur Moodle aktual dengan rencana pembelajaran:
             </p>
             <ul className="list-disc pl-4 space-y-0.5">
@@ -72,6 +75,19 @@ export default function ExecutionReadbackCard({ readback }) {
                 </li>
               )}
             </ul>
+            {(mismatched_weeks.length > 0 || !ordered) && (
+              <p className="m-0 text-ink">
+                Ketidakcocokan ini biasanya terjadi jika nama/urutan section di Moodle berbeda karakter atau berasal dari struktur kursus sebelumnya.
+                {verificationUrl && (
+                  <>
+                    {' '}
+                    <Link to={verificationUrl} relative="path" className="font-semibold underline">
+                      Lihat detail perbedaan &amp; perbaikan di Tab Verifikasi →
+                    </Link>
+                  </>
+                )}
+              </p>
+            )}
           </div>
         </Alert>
       )}

@@ -87,8 +87,51 @@ function ValidationSummary({ validation, findings }) {
   );
 }
 
+/** Tombol aksi review untuk satu item konten (dipakai bersama di daftar minggu dan panel detail). */
+function ContentActionButtons({ item, generating, approvePending, onRegenerate, onReject, onApprove }) {
+  const blocker = approvalBlocker(item);
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        disabled={generating}
+        onClick={onRegenerate}
+      >
+        Regenerasi
+      </button>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        disabled={isContentApproved(item)}
+        onClick={onReject}
+      >
+        Tolak
+      </button>
+      <button
+        type="button"
+        className="btn btn--primary btn--sm"
+        disabled={!!blocker || approvePending}
+        title={blocker ?? undefined}
+        onClick={onApprove}
+      >
+        Setujui
+      </button>
+    </>
+  );
+}
+
 /** Detail konten terpilih beserta riwayat versinya (GET /contents/{id}/versions); versi lama dapat dibuka. */
-function ContentDetailPanel({ workflowId, content, onClose }) {
+function ContentDetailPanel({
+  workflowId,
+  content,
+  generating,
+  approvePending,
+  onRegenerate,
+  onReject,
+  onApprove,
+  onClose,
+}) {
   const [versionId, setVersionId] = useState(content.id);
   const versions = useApi(() => listContentVersions(workflowId, content.id).catch(() => []), [workflowId, content.id]);
   const detail = useApi(() => getWorkflowContent(workflowId, versionId), [workflowId, versionId]);
@@ -98,32 +141,47 @@ function ContentDetailPanel({ workflowId, content, onClose }) {
   return (
     <Card
       title="Detail konten"
-      actions={<button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>Tutup</button>}
-    >
-      {items.length > 1 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Riwayat versi konten">
-          <span className="text-muted">Versi:</span>
-          {items.map((item) => {
-            const active = item.id === versionId;
-            const status = meta(CONTENT_STATUS_META, item.status);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={active}
-                className={`btn btn--sm ${active ? 'btn--primary' : 'btn--ghost'}`}
-                title={`${status.label}${item.created_at ? ` · ${formatDateTime(item.created_at)}` : ''}`}
-                onClick={() => setVersionId(item.id)}
-              >
-                {`Versi ${item.version}`}{item.id === latestId ? ' (terbaru)' : ''}
-              </button>
-            );
-          })}
-        </div>
+      className="flex flex-col xl:max-h-[calc(100vh-6rem)] max-xl:my-auto max-xl:max-h-[calc(100vh-2rem)] max-xl:w-full max-xl:max-w-2xl max-xl:shadow-xl"
+      actions={(
+        <>
+          <ContentActionButtons
+            item={content}
+            generating={generating}
+            approvePending={approvePending}
+            onRegenerate={onRegenerate}
+            onReject={onReject}
+            onApprove={onApprove}
+          />
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>Tutup</button>
+        </>
       )}
-      {versionId !== latestId && <Alert tone="info" title="Menampilkan versi sebelumnya">Versi lama hanya untuk ditinjau; keputusan review berlaku untuk versi terbaru.</Alert>}
-      <ErrorAlert error={detail.error} />
-      {detail.loading && !detail.data ? <Spinner label="Memuat konten…" /> : detail.data && <ContentDetailView content={detail.data} />}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        {items.length > 1 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Riwayat versi konten">
+            <span className="text-muted">Versi:</span>
+            {items.map((item) => {
+              const active = item.id === versionId;
+              const status = meta(CONTENT_STATUS_META, item.status);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={active}
+                  className={`btn btn--sm ${active ? 'btn--primary' : 'btn--ghost'}`}
+                  title={`${status.label}${item.created_at ? ` · ${formatDateTime(item.created_at)}` : ''}`}
+                  onClick={() => setVersionId(item.id)}
+                >
+                  {`Versi ${item.version}`}{item.id === latestId ? ' (terbaru)' : ''}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {versionId !== latestId && <Alert tone="info" title="Menampilkan versi sebelumnya">Versi lama hanya untuk ditinjau; keputusan review berlaku untuk versi terbaru.</Alert>}
+        <ErrorAlert error={detail.error} />
+        {detail.loading && !detail.data ? <Spinner label="Memuat konten…" /> : detail.data && <ContentDetailView content={detail.data} />}
+      </div>
     </Card>
   );
 }
@@ -170,6 +228,15 @@ export default function CourseReviewPage() {
   const approvableIds = (list) => list.filter(isApprovable).map((item) => item.id);
   const allApprovable = approvableIds(items);
   const selected = items.find((item) => item.id === selectedId);
+
+  useEffect(() => {
+    if (!selected || dialog) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setSelectedId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selected, dialog]);
 
   if (!workflowId) {
     return (
@@ -238,7 +305,7 @@ export default function CourseReviewPage() {
               <Alert tone="success" title="Seluruh konten telah disetujui">
                 <p>
                   Langkah berikutnya: kirim struktur dan seluruh konten ke Moodle.{' '}
-                  <Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke eksekusi FULL</Link>
+                  <Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke Eksekusi Moodle →</Link>
                 </p>
               </Alert>
             )}
@@ -257,7 +324,7 @@ export default function CourseReviewPage() {
       </Card>
 
       {items.length > 0 && (
-        <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
+        <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start' : ''}`}>
           <div className="stack">
             {weeks.length === 0 && <EmptyState title="Tidak ada konten yang cocok dengan filter." />}
             {weeks.map(({ week, contents: weekItems }) => {
@@ -284,7 +351,6 @@ export default function CourseReviewPage() {
                   <ul className="m-0 grid list-none gap-2 p-0" aria-label={`Konten ${weekLabel}`}>
                     {weekItems.map((item) => {
                       const itemStatus = meta(CONTENT_STATUS_META, item.status);
-                      const blocker = approvalBlocker(item);
                       return (
                         <li key={item.id} className={`flex flex-wrap items-center gap-3 rounded-md border p-3 ${item.id === selectedId ? 'border-primary bg-primary-light/40' : 'border-line'}`} aria-label={item.title}>
                           <div className="min-w-0 flex-1">
@@ -299,15 +365,14 @@ export default function CourseReviewPage() {
                             <div className="mt-1"><ValidationSummary validation={item.validation} findings={findings[item.id]} /></div>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            <button type="button" className="btn btn--ghost btn--sm" disabled={!!generating} onClick={() => setDialog({ type: 'regenerate', scope: REGENERATION_SCOPE.ITEM, contentId: item.id, label: `"${item.title}"` })}>
-                              Regenerasi
-                            </button>
-                            <button type="button" className="btn btn--ghost btn--sm" disabled={isContentApproved(item)} onClick={() => setDialog({ type: 'reject', contentIds: [item.id], label: `"${item.title}"` })}>
-                              Tolak
-                            </button>
-                            <button type="button" className="btn btn--primary btn--sm" disabled={!!blocker || approve.pending} title={blocker ?? undefined} onClick={() => runApprove([item.id], `"${item.title}" disetujui.`)}>
-                              Setujui
-                            </button>
+                            <ContentActionButtons
+                              item={item}
+                              generating={!!generating}
+                              approvePending={approve.pending}
+                              onRegenerate={() => setDialog({ type: 'regenerate', scope: REGENERATION_SCOPE.ITEM, contentId: item.id, label: `"${item.title}"` })}
+                              onReject={() => setDialog({ type: 'reject', contentIds: [item.id], label: `"${item.title}"` })}
+                              onApprove={() => runApprove([item.id], `"${item.title}" disetujui.`)}
+                            />
                           </div>
                         </li>
                       );
@@ -317,7 +382,27 @@ export default function CourseReviewPage() {
               );
             })}
           </div>
-          {selected && <ContentDetailPanel key={selected.id} workflowId={workflowId} content={selected} onClose={() => setSelectedId(null)} />}
+          {selected && (
+            <div
+              data-testid="content-detail-drawer"
+              className="xl:sticky xl:top-20 xl:min-w-0 max-xl:fixed max-xl:inset-0 max-xl:z-50 max-xl:flex max-xl:items-start max-xl:justify-end max-xl:overflow-y-auto max-xl:bg-black/40 max-xl:p-4"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setSelectedId(null);
+              }}
+            >
+              <ContentDetailPanel
+                key={selected.id}
+                workflowId={workflowId}
+                content={selected}
+                generating={!!generating}
+                approvePending={approve.pending}
+                onRegenerate={() => setDialog({ type: 'regenerate', scope: REGENERATION_SCOPE.ITEM, contentId: selected.id, label: `"${selected.title}"` })}
+                onReject={() => setDialog({ type: 'reject', contentIds: [selected.id], label: `"${selected.title}"` })}
+                onApprove={() => runApprove([selected.id], `"${selected.title}" disetujui.`)}
+                onClose={() => setSelectedId(null)}
+              />
+            </div>
+          )}
         </div>
       )}
 

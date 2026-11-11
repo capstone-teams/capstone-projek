@@ -10,12 +10,13 @@ import { ROLE, ROLE_LABEL } from '../../types/auth';
 
 export default function ProfilePage() {
   const { user, site } = useAuth();
-  const profile = useApi(() => getUserById(user.id), [user.id]);
+  const isDosen = user?.role === ROLE.DOSEN;
+  const profile = useApi(() => getUserById(user.id).catch(() => null), [user.id]);
   const courses = useApi(() => getCoursesByClassification('all'));
   const p = profile.data;
   const teacherIds = new Set(user.teacherCourseIds ?? []);
   // Tanpa data kursus ajar dari Moodle (Backend Gateway), peran di kursus mengikuti role backend.
-  const teaches = (courseId) => (user.teacherCourseIds ? teacherIds.has(courseId) : user.role === ROLE.DOSEN);
+  const teaches = (courseId) => (user.teacherCourseIds ? teacherIds.has(courseId) : isDosen);
 
   return (
     <PageContainer>
@@ -42,7 +43,7 @@ export default function ProfilePage() {
               <dt>Username</dt>
               <dd>{user.username}</dd>
               <dt>Email</dt>
-              <dd>{p?.email || '-'}</dd>
+              <dd>{p?.email || user.email || '-'}</dd>
               <dt>Kota</dt>
               <dd>{p?.city || '-'}</dd>
               <dt>Akses pertama</dt>
@@ -58,6 +59,8 @@ export default function ProfilePage() {
           <ErrorAlert error={courses.error} />
           {courses.loading && !courses.data ? (
             <Spinner />
+          ) : (courses.data ?? []).length === 0 ? (
+            <p className="text-sm text-muted">Belum ada kursus.</p>
           ) : (
             <ul className="list">
               {(courses.data ?? []).map((c) => (

@@ -13,7 +13,7 @@
 | External System       | Moodle open-source, self-hosted oleh tim (DL-001)      |
 | Integration Mechanism | Moodle Web Service API                                 |
 | Moodle Version        | 5.3 LTS — Proposed (DL-002)                            |
-| Last Updated          | 2026-10-13                                             |
+| Last Updated          | 2026-11-10                                             |
 
 ---
 
@@ -274,6 +274,8 @@ Verification Result
 
 Verification digunakan untuk memastikan bahwa data yang diharapkan benar-benar tersedia pada Moodle.
 
+Implementasi (BE-21.2, `src/services/verification`): course dibaca ulang dengan `core_course_get_contents`, lalu dibandingkan dengan section course plan dan activity dari operasi eksekusi yang tidak `SKIPPED` (jenis module, section, judul, dan cmid pada mapping BE-04.3). Perbedaan yang terkait operasi diperbaiki dengan menjalankan ulang operasi itu, paling banyak `MOODLE_VERIFICATION_MAX_REPAIRS` putaran; mapping yang menunjuk objek yang sudah tidak ada dibuang lebih dulu agar objek dibuat ulang. Activity yang tidak berasal dari eksekusi hanya dilaporkan. Hasil disimpan sebagai `VerificationResult` (Data Model §20.1).
+
 ---
 
 # 8. Operation Mapping
@@ -298,9 +300,9 @@ Tabel berikut merupakan integration contract tingkat sistem.
 | Read assignment          | Assignment             | Read               | `mod_assign_*`                                                 | Candidate |
 | Read quiz                | Quiz                   | Read               | `mod_quiz_*`                                                   | Candidate |
 | Upload file              | Moodle file storage    | Upload             | `core_files_upload` or dedicated upload endpoint               | Candidate |
-| Verify course structure  | Course contents        | Read               | `core_course_get_contents`                                     | Candidate |
-| Verify activity          | Activity/module        | Read               | TBD                                                            | TBD       |
-| Verify student access    | Course/activity access | Read               | TBD                                                            | TBD       |
+| Verify course structure  | Course contents        | Read               | `core_course_get_contents`                                     | Confirmed (BE-16.2, BE-21.2) |
+| Verify activity          | Activity/module        | Read               | `core_course_get_contents` (cmid, `modname`, nama, section) dibandingkan dengan mapping BE-04.3 | Confirmed (BE-21.2) |
+| Verify student access    | Course/activity access | Read               | Token akun mahasiswa: `core_course_get_contents`, `mod_page_view_page`, `mod_url_view_url`, `mod_assign_view_assign`, `mod_quiz_view_quiz`, `mod_quiz_get_quiz_access_information`, `mod_quiz_start_attempt` | Confirmed (BE-16.3, BE-21.3) |
 
 Moodle mendokumentasikan `core_course_create_courses`, `core_course_get_contents`, dan `core_course_update_courses` sebagai external functions.
 
@@ -1406,3 +1408,5 @@ These items must not be converted from `TBD` to `Confirmed` until verified again
 | ------- | ---------- | ----------------------------------------------------------------------------------------------- | --------------- |
 | 0.1     | 2026-09-02 | Initial Moodle Integration Design                                                               | Project Team    |
 | 0.2     | 2026-10-13 | Target diubah ke Moodle self-hosted (DL-001), versi Moodle (DL-002), mekanisme activity (DL-003) | Project Manager |
+| 0.3     | 2026-11-10 | Moodle verification: read-back, pembandingan activity terhadap mapping, perbaikan otomatis (BE-21.2) | Moodle Integration Engineer |
+| 0.4     | 2026-11-10 | Student access ke page, url, assignment, dan quiz dengan token akun mahasiswa (BE-21.3) | Moodle Integration Engineer |

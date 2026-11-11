@@ -209,6 +209,8 @@ def test_report_can_be_serialized():
         "course_visible": True,
         "weekly_sections": 3,
         "hidden_sections": [],
+        "activities": 2,
+        "hidden_activities": [],
         "visible": True,
     }
     assert data["enrolled"]["weekly_sections"][0] == {"section": 1, "name": "Minggu 1"}

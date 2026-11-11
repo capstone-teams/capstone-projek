@@ -10,8 +10,8 @@
 | Database          | PostgreSQL — Proposed                                          |
 | Owner             | Capstone Team                                                  |
 | Related Documents | Project Charter, PRD, System Design, Moodle Integration Design, Content Schema |
-| Version           | 0.5                                                            |
-| Last Updated      | 2026-11-09                                                     |
+| Version           | 0.6                                                            |
+| Last Updated      | 2026-11-10                                                     |
 
 ---
 
@@ -681,6 +681,26 @@ Conceptual fields:
 
 Verification should compare expected and actual state rather than merely checking whether an API call returned successfully.
 
+Implementasi BE-21.2 menyimpan hasil verifikasi **per eksekusi** pada tabel `verification_results` (bagian 20.1). Tabel konseptual `verifications` di atas tidak dipakai aplikasi.
+
+## 20.1 VerificationResult (`verification_results`)
+
+| Field         | Type      | Description                                                          |
+| ------------- | --------- | -------------------------------------------------------------------- |
+| id            | String    | Primary key                                                          |
+| workflow_id   | String    | FK → Workflow                                                        |
+| execution_id  | String    | FK → MoodleExecution yang diverifikasi                               |
+| status        | Enum      | `PASS` / `PARTIAL` / `FAIL` / `UNKNOWN` (Content Schema §35)         |
+| discrepancies | JSONB     | Daftar perbedaan yang masih ada setelah perbaikan                    |
+| repaired      | JSONB     | Daftar perbedaan yang ditemukan lalu berhasil diperbaiki             |
+| repair_count  | Integer   | Jumlah operasi yang dijalankan ulang untuk perbaikan                 |
+| repair_rounds | Integer   | Jumlah putaran perbaikan (dibatasi `MOODLE_VERIFICATION_MAX_REPAIRS`) |
+| summary       | JSONB     | Jumlah section dan activity yang diharapkan dan ditemukan            |
+| error_message | Text      | Pesan aman bila Moodle tidak dapat dibaca (status `UNKNOWN`)         |
+| verified_at   | Timestamp | Waktu verifikasi                                                     |
+
+Jenis perbedaan: `MISSING` (hilang), `WRONG_SECTION` (salah section), `TITLE_MISMATCH` (judul atau nama section berbeda), `UNEXPECTED` (module di section mingguan yang tidak berasal dari eksekusi), dan `MAPPING_MISMATCH` (Moodle object ID tidak sesuai mapping BE-04.3). Status `PASS` berarti tidak ada perbedaan, `PARTIAL` berarti hanya ada `UNEXPECTED` (dilaporkan, tidak pernah dihapus), `FAIL` berarti masih ada perbedaan yang dapat diperbaiki setelah batas perbaikan, dan `UNKNOWN` berarti Moodle tidak dapat dibaca.
+
 ---
 
 # 21. Entity Relationships
@@ -751,6 +771,7 @@ Recommended relationships:
 | Course → MoodleExecution       | 1 : N       |
 | MoodleExecution → ExecutionOperation | 1 : N |
 | MoodleExecution → Verification | 1 : N       |
+| MoodleExecution → VerificationResult | 1 : N |
 
 ---
 
@@ -1328,3 +1349,4 @@ Perubahan schema harus dievaluasi terhadap PRD dan System Design sebelum impleme
 | 0.3     | 2026-10-13 | Contoh provider LLM disesuaikan dengan DL-007                         | Project Manager |
 | 0.4     | 2026-10-19 | Role DOSEN/MAHASISWA, Instructor Profile, Workflow, Workflow Event, Activity Configuration per dosen (DL-011) | Project Manager |
 | 0.5     | 2026-11-09 | Moodle Execution per run, Execution Operation, status SKIPPED, dan tautan ke tabel mapping BE-04.3 (BE-16.1) | Moodle Integration Engineer |
+| 0.6     | 2026-11-10 | VerificationResult per eksekusi beserta jenis perbedaan dan jumlah perbaikan (BE-21.2) | Moodle Integration Engineer |

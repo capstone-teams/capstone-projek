@@ -10,6 +10,12 @@ Dipakai untuk demo student access setelah course plan dieksekusi ke Moodle:
 4. login sebagai mahasiswa yang tidak terdaftar (bawaan ``mhs.uji2``) dan memastikan
    Moodle menolaknya.
 
+Sejak BE-21.3 setiap activity hasil eksekusi FULL (page, url, assignment, quiz)
+juga diperiksa: visibilitasnya, dibuka oleh mahasiswa terdaftar, dan ditolak bagi
+mahasiswa yang tidak terdaftar. ``--start-quiz`` benar-benar memulai attempt quiz
+sebagai mahasiswa terdaftar lalu langsung menyelesaikannya; gunakan hanya pada
+course uji karena attempt tersebut tersimpan di Moodle.
+
 Contoh (dari folder ``backend``)::
 
     MOODLE_STUDENT_PASSWORD='...' MOODLE_STUDENT2_PASSWORD='...' \\
@@ -36,6 +42,7 @@ from src.services.moodle_client import MoodleClient
 from src.services.moodle_exceptions import MoodleError
 from src.services.moodle_integration_service import MoodleIntegrationService
 from src.services.moodle_student_access import (
+    ACTIVITY_LABELS,
     MoodleStudentAccessService,
     StudentAccessReport,
     StudentAccessSetupError,
@@ -81,6 +88,50 @@ def _line(ok: bool, text: str) -> str:
     return f"  [{'OK' if ok else 'GAGAL'}] {text}"
 
 
+def _activity_lines(report: StudentAccessReport) -> list[str]:
+    """Satu baris per activity yang dibuka mahasiswa terdaftar (BE-21.3)."""
+    lines = []
+    hidden = set(report.visibility.hidden_activities)
+    for item in report.visibility.activities:
+        if item.moodle_module_id in hidden:
+            lines.append(
+                _line(
+                    False,
+                    f"Minggu {item.section_number} - {item.modname} '{item.name}' tersembunyi (pakai --show-hidden)",
+                )
+            )
+    for access in report.enrolled.activities:
+        label = ACTIVITY_LABELS.get(access.modname, access.modname)
+        text = f"Minggu {access.section_number} - {label} '{access.name}'"
+        if not access.opened:
+            lines.append(_line(False, f"{text} gagal dibuka ({access.error_code})"))
+        elif access.attempt_requested:
+            detail = (
+                "attempt dimulai lalu diselesaikan"
+                if access.attempt_started
+                else f"attempt gagal dimulai ({access.error_code})"
+            )
+            lines.append(_line(access.attempt_started, f"{text} dibuka, {detail}"))
+        elif access.can_attempt is not None:
+            detail = (
+                "attempt dapat dimulai"
+                if access.can_attempt
+                else "attempt belum dapat dimulai"
+            )
+            lines.append(_line(True, f"{text} dibuka, {detail}"))
+        else:
+            lines.append(_line(True, f"{text} dibuka"))
+    rejected = [item for item in report.not_enrolled.activities if not item.opened]
+    if report.not_enrolled.activities:
+        lines.append(
+            _line(
+                len(rejected) == len(report.not_enrolled.activities),
+                f"{report.not_enrolled.username} (tidak terdaftar) ditolak pada {len(rejected)}/{len(report.not_enrolled.activities)} activity",
+            )
+        )
+    return lines
+
+
 def format_report(report: StudentAccessReport, *, enrolled_now: bool) -> str:
     visibility = report.visibility
     total = len(visibility.weekly_sections)
@@ -117,6 +168,7 @@ def format_report(report: StudentAccessReport, *, enrolled_now: bool) -> str:
                 f"{report.enrolled.username} ditolak Moodle ({report.enrolled.error_code})",
             )
         )
+    lines.extend(_activity_lines(report))
     if report.not_enrolled_rejected:
         lines.append(
             _line(
@@ -157,6 +209,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Jangan mendaftarkan mahasiswa; hanya verifikasi.",
     )
+    parser.add_argument(
+        "--start-quiz",
+        action="store_true",
+        help="Mulai lalu selesaikan satu attempt quiz sebagai mahasiswa terdaftar (hanya untuk course uji).",
+    )
     return parser.parse_args(argv)
 
 
@@ -168,6 +225,7 @@ async def run(
     not_enrolled: tuple[str, str],
     show_hidden: bool = False,
     enrol: bool = True,
+    start_quiz: bool = False,
 ) -> tuple[StudentAccessReport, bool]:
     """Jalankan alur demo; mengembalikan laporan dan apakah mahasiswa baru didaftarkan."""
     enrolled_now = False
@@ -177,7 +235,7 @@ async def run(
     if show_hidden:
         await access.ensure_visible(course_id)
     report = await access.verify(
-        course_id, enrolled=enrolled, not_enrolled=not_enrolled
+        course_id, enrolled=enrolled, not_enrolled=not_enrolled, start_quiz=start_quiz
     )
     return report, enrolled_now
 
@@ -203,6 +261,7 @@ async def main(
                 not_enrolled=not_enrolled,
                 show_hidden=args.show_hidden,
                 enrol=not args.no_enrol,
+                start_quiz=args.start_quiz,
             )
         except StudentAccessSetupError as exc:
             print(f"Belum siap: {exc}", file=sys.stderr)

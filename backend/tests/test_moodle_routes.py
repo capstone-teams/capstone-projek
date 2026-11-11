@@ -232,10 +232,16 @@ async def test_read_endpoints_stay_available_outside_development(app, client):
 
 @pytest.mark.asyncio
 async def test_only_instructors_can_use_the_endpoints(app, client, fake):
-    for role in (UserRole.STUDENT, UserRole.ADMIN):
+    """Status dan write khusus dosen; course boleh dibaca mahasiswa (lihat
+    ``test_moodle_student_courses.py``), admin tidak memakai endpoint ini."""
+    students_denied = [READ_ENDPOINTS[0], *WRITE_ENDPOINTS]
+    for role, endpoints in (
+        (UserRole.STUDENT, students_denied),
+        (UserRole.ADMIN, READ_ENDPOINTS + WRITE_ENDPOINTS),
+    ):
         as_role(app, role)
 
-        for method, path, body in READ_ENDPOINTS + WRITE_ENDPOINTS:
+        for method, path, body in endpoints:
             response = await call(client, method, path, body)
 
             assert response.status_code == 403
@@ -371,8 +377,19 @@ async def test_endpoints_are_documented_in_openapi(client):
     for path, methods in expected.items():
         assert methods <= set(paths[path])
         for method in methods:
-            assert paths[path][method]["tags"] == ["Moodle Integration"]
+            assert paths[path][method]["tags"][0] == "Moodle Integration"
             assert paths[path][method]["summary"]
+    student_reads = {
+        (path, method)
+        for path, methods in paths.items()
+        for method, operation in methods.items()
+        if "Student Access" in operation.get("tags", [])
+    }
+    assert student_reads == {
+        (f"{BASE}/courses", "get"),
+        (f"{BASE}/courses/{{moodle_course_id}}", "get"),
+        (f"{BASE}/courses/{{moodle_course_id}}/contents", "get"),
+    }
     assert "502" in paths[f"{BASE}/status"]["get"]["responses"]
     assert TOKEN not in response.text
 

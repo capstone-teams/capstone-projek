@@ -1,5 +1,5 @@
 import { api } from './apiClient';
-import { isWorkflowFinished } from '../utils/workflowStatus';
+import { isWorkflowBusy, isWorkflowFinished } from '../utils/workflowStatus';
 
 // Monitoring workflow dan course target
 
@@ -64,7 +64,7 @@ export function getActiveCourseBinding(...courseIdentifiers) {
  * Menyimpan asosiasi kursus -> workflow & RPS aktif ke storage lokal & sesi.
  * Mendukung penyimpanan ke beberapa alias identifier sekaligus (mis. [2, "IF2230-SAMPLE"]).
  */
-export function saveActiveCourseBinding(primaryKey, { workflowId, rpsId }, aliases = []) {
+export function saveActiveCourseBinding(primaryKey, { workflowId, rpsId, pendingTargetSync }, aliases = []) {
   const keys = [primaryKey, ...aliases].flat().filter(Boolean).map(String);
   if (keys.length === 0) return;
   try {
@@ -77,16 +77,16 @@ export function saveActiveCourseBinding(primaryKey, { workflowId, rpsId }, alias
       }
     };
     const bindings = read();
-    const entry = {
-      workflowId: workflowId ?? null,
-      rpsId: rpsId ?? null,
-      updated_at: new Date().toISOString(),
-    };
+    const updatedAt = new Date().toISOString();
     for (const key of keys) {
+      const nextPending = pendingTargetSync !== undefined
+        ? Boolean(pendingTargetSync)
+        : Boolean(bindings[key]?.pendingTargetSync);
       bindings[key] = {
         workflowId: workflowId ?? bindings[key]?.workflowId ?? null,
         rpsId: rpsId ?? bindings[key]?.rpsId ?? null,
-        updated_at: entry.updated_at,
+        pendingTargetSync: nextPending,
+        updated_at: updatedAt,
       };
     }
     const serialized = JSON.stringify(bindings);
@@ -182,22 +182,28 @@ export function setWorkflowMoodleTarget(workflowId, moodleCourseId) {
 /**
  * Mengikat workflow baru ke kursus Moodle dan melepaskan seluruh workflow lama yang sebelumnya menargetkan kursus ini (overwrite).
  */
-export async function bindWorkflowToCourse(newWorkflowId, moodleCourseId, { rpsId = null, aliases = [] } = {}) {
+export async function bindWorkflowToCourse(newWorkflowId, moodleCourseId, { rpsId = null, aliases = [], throwOnError = false } = {}) {
   const keys = [moodleCourseId, ...aliases].flat().filter(Boolean).map(String);
   if (keys.length === 0) return null;
-
-  // Segera catat binding lokal agar transisi halaman langsung memakai workflow & RPS baru
-  saveActiveCourseBinding(keys[0], { workflowId: newWorkflowId, rpsId }, keys.slice(1));
 
   const targetId = Number(moodleCourseId);
   const isNumeric = Number.isInteger(targetId) && targetId > 0;
 
+  // Segera catat binding lokal agar transisi halaman langsung memakai workflow & RPS baru.
+  // pendingTargetSync tetap true bila target numerik hingga workflow selesai berjalan dan terikat di server.
+  saveActiveCourseBinding(keys[0], {
+    workflowId: newWorkflowId,
+    rpsId,
+    pendingTargetSync: isNumeric,
+  }, keys.slice(1));
+
   let updated = null;
+  let bindError = null;
   if (isNumeric) {
-    targetCache.set(`${newWorkflowId}:active`, Promise.resolve(targetId));
     try {
       updated = await setWorkflowMoodleTarget(newWorkflowId, targetId);
     } catch (err) {
+      bindError = err;
       console.warn('Gagal mengikat moodle-target di backend:', err);
     }
 
@@ -212,8 +218,19 @@ export async function bindWorkflowToCourse(newWorkflowId, moodleCourseId, { rpsI
     } catch {
       // Abaikan jika pembersihan workflow lama gagal di backend
     }
+
+    // Jika workflow sudah berhenti (mis. WAITING_FOR_REVIEW) saat target tersimpan, ikatan tidak akan tertimpa
+    // lagi oleh runner background, sehingga pendingTargetSync dapat langsung ditandai selesai.
+    if (updated && Number(updated.moodle_course_id) === targetId && !isWorkflowBusy(updated)) {
+      saveActiveCourseBinding(keys[0], {
+        workflowId: newWorkflowId,
+        rpsId: rpsId ?? updated.rps_id,
+        pendingTargetSync: false,
+      }, keys.slice(1));
+    }
   }
 
+  if (throwOnError && bindError) throw bindError;
   return updated;
 }
 

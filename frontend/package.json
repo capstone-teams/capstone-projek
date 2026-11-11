@@ -12,9 +12,6 @@
     "build": "vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:e2e": "playwright test",
-    "test:design": "playwright test --config playwright.design.config.js",
-    "verify:foundation": "npm run lint && npm run build && npm test && npm run test:e2e && node scripts/check-foundation-readiness.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

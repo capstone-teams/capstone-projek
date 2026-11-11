@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CoursePublishPage from '../src/pages/dosen/ai/CoursePublishPage';
 import * as coursePlanService from '../src/services/coursePlanService';
+import * as contentService from '../src/services/contentService';
+import * as instructorService from '../src/services/instructorService';
 import * as moodleIntegrationService from '../src/services/moodleIntegrationService';
 import * as executionService from '../src/services/executionService';
 import * as monitoringSocket from '../src/services/monitoringSocket';
@@ -137,6 +139,8 @@ describe('FE-13.2 Moodle Structure Execution Progress, Operations Detail & Read-
 
     vi.spyOn(executionService, 'listExecutions').mockResolvedValue([mockRunningExecution]);
     vi.spyOn(executionService, 'getExecution').mockResolvedValue(mockRunningExecution);
+    vi.spyOn(contentService, 'listWorkflowContents').mockResolvedValue([]);
+    vi.spyOn(instructorService, 'getInstructorSetup').mockResolvedValue(null);
     vi.spyOn(executionService, 'retryExecution').mockResolvedValue({
       ...mockFailedExecution,
       status: 'PENDING',
@@ -326,5 +330,212 @@ describe('FE-13.2 Moodle Structure Execution Progress, Operations Detail & Read-
     // Detail beralih ke exec-success-1
     await waitFor(() => container.textContent.includes('16/16 (100%)'), 'Switched execution detail');
     expect(executionService.getExecution).toHaveBeenCalledWith('wf-1', 'exec-success-1');
+    expect(container.textContent).toContain('Cakupan eksekusi struktur section (STRUCTURE) selesai');
+  });
+
+  it('FE-18.1: menampilkan daftar operasi FULL per minggu & per konten (SUCCESS, FAILED, SKIPPED, PENDING) dan tautan ke Tab Kursus', async () => {
+    const fullExecution = {
+      execution_id: 'exec-full-1',
+      workflow_id: 'wf-1',
+      course_plan_id: 'plan-1',
+      scope: 'FULL',
+      status: 'FAILED',
+      moodle_course_id: 2,
+      summary: { total: 5, success: 2, failed: 1, skipped: 1 },
+      error_message: '1 operasi gagal diterapkan ke Moodle.',
+      created_at: '2026-11-11T09:00:00Z',
+      started_at: '2026-11-11T09:00:02Z',
+      completed_at: null,
+      operations: [
+        {
+          operation_id: 'op-sec-1',
+          operation_type: 'SECTION',
+          status: 'SUCCESS',
+          week_number: 1,
+          title: 'Pengantar Basis Data',
+          moodle_object_id: '201',
+          error_message: null,
+          retry_count: 0,
+        },
+        {
+          operation_id: 'op-mat-1',
+          operation_type: 'LEARNING_MATERIAL',
+          status: 'SUCCESS',
+          week_number: 1,
+          content_id: 'ct-1',
+          title: 'Konsep Basis Data Relasional',
+          moodle_object_id: '311',
+          error_message: null,
+          retry_count: 0,
+        },
+        {
+          operation_id: 'op-res-1',
+          operation_type: 'LEARNING_RESOURCE',
+          status: 'SKIPPED',
+          week_number: 1,
+          content_id: null,
+          title: null,
+          moodle_object_id: null,
+          error_message: 'Belum ada konten APPROVED untuk jenis ini.',
+          retry_count: 0,
+        },
+        {
+          operation_id: 'op-asg-1',
+          operation_type: 'ASSIGNMENT',
+          status: 'FAILED',
+          week_number: 1,
+          content_id: 'ct-2',
+          title: 'Tugas 1: Rancangan ERD',
+          moodle_object_id: null,
+          error_message: 'Moodle menolak data tugas.',
+          retry_count: 1,
+        },
+        {
+          operation_id: 'op-quiz-2',
+          operation_type: 'QUIZ',
+          status: 'PENDING',
+          week_number: 2,
+          content_id: 'ct-3',
+          title: 'Kuis 1: Normalisasi',
+          moodle_object_id: null,
+          error_message: null,
+          retry_count: 0,
+        },
+      ],
+      readback: null,
+    };
+
+    vi.spyOn(executionService, 'listExecutions').mockResolvedValue([fullExecution]);
+    vi.spyOn(executionService, 'getExecution').mockResolvedValue(fullExecution);
+
+    await renderPage();
+    await waitFor(() => container.textContent.includes('Status Eksekusi Course Moodle'), 'FULL progress card');
+
+    // Progress bar memproses operasi non-skipped: 2 dari 4 operasi aktif (50%) + info dilewati
+    expect(container.textContent).toContain('2/4 (50%)');
+    expect(container.textContent).toContain('1 dari 5 operasi berstatus dilewati');
+
+    // Seluruh operasi pada Minggu 1 & Minggu 2 tampil bersamaan tanpa saling menimpa
+    expect(container.textContent).toContain('Section #201');
+    expect(container.textContent).toContain('Konsep Basis Data Relasional');
+    expect(container.textContent).toContain('Activity #311');
+    expect(container.textContent).toContain('Belum ada konten APPROVED untuk jenis ini.');
+    expect(container.textContent).toContain('Tugas 1: Rancangan ERD');
+    expect(container.textContent).toContain('Moodle menolak data tugas.');
+    expect(container.textContent).toContain('(Dicoba ulang: 1x)');
+    expect(container.textContent).toContain('Kuis 1: Normalisasi');
+    expect(container.textContent).toContain('Menunggu');
+
+    // Tautan langsung ke Tab Kursus (/course/2) dan tombol retry tersedia
+    const courseLink = [...container.querySelectorAll('a')].find((a) =>
+      a.textContent.includes('Buka Tab Kursus →')
+    );
+    expect(courseLink).toBeTruthy();
+    expect(courseLink.getAttribute('href')).toBe('/course/2');
+
+    // Riwayat eksekusi menampilkan badge FULL
+    expect(container.textContent).toContain('Riwayat Eksekusi Moodle');
+    expect(container.textContent).toContain('Operasi Berhasil');
+
+    const retryBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Ulangi Operasi Gagal')
+    );
+    expect(retryBtn).toBeTruthy();
+    await act(async () => {
+      retryBtn.click();
+    });
+    expect(executionService.retryExecution).toHaveBeenCalledWith('wf-1', 'exec-full-1');
+  });
+
+  it('FE-18.1: memperbarui operasi FULL secara otomatis saat menerima event WebSocket', async () => {
+    const runningFull = {
+      execution_id: 'exec-full-live',
+      workflow_id: 'wf-1',
+      course_plan_id: 'plan-1',
+      scope: 'FULL',
+      status: 'RUNNING',
+      moodle_course_id: 2,
+      summary: { total: 2, success: 1, failed: 0, skipped: 0 },
+      operations: [
+        { operation_id: 'op-1', operation_type: 'SECTION', status: 'SUCCESS', week_number: 1, moodle_object_id: '201' },
+        { operation_id: 'op-2', operation_type: 'LEARNING_MATERIAL', status: 'RUNNING', week_number: 1, title: 'Materi Live' },
+      ],
+    };
+    const completedFull = {
+      ...runningFull,
+      status: 'SUCCESS',
+      summary: { total: 2, success: 2, failed: 0, skipped: 0 },
+      operations: [
+        { operation_id: 'op-1', operation_type: 'SECTION', status: 'SUCCESS', week_number: 1, moodle_object_id: '201' },
+        { operation_id: 'op-2', operation_type: 'LEARNING_MATERIAL', status: 'SUCCESS', week_number: 1, title: 'Materi Live', moodle_object_id: '399' },
+      ],
+    };
+
+    vi.spyOn(executionService, 'listExecutions').mockResolvedValue([runningFull]);
+    vi.spyOn(executionService, 'getExecution').mockResolvedValue(runningFull);
+
+    await renderPage();
+    await waitFor(() => container.textContent.includes('1/2 (50%)'), 'Running FULL progress');
+
+    vi.spyOn(executionService, 'getExecution').mockResolvedValue(completedFull);
+    await act(async () => {
+      wsCallback?.({
+        event: 'WORKFLOW_MOODLE_OPERATION',
+        workflow_id: 'wf-1',
+        message: 'Minggu 1 - Learning Material diterapkan ke Moodle.',
+      });
+    });
+
+    await waitFor(() => container.textContent.includes('2/2 (100%)'), 'Updated FULL progress');
+    expect(container.textContent).toContain('Activity #399');
+  });
+
+  it('menampilkan penjelasan terstruktur & CTA Verifikasi saat 61 operasi berhasil (Gagal: 0) namun read-back tidak cocok', async () => {
+    const readbackMismatchExecution = {
+      execution_id: 'exec-readback-fail',
+      workflow_id: 'wf-1',
+      course_plan_id: 'plan-1',
+      scope: 'FULL',
+      status: 'FAILED',
+      moodle_course_id: 49,
+      summary: { total: 80, success: 61, failed: 0, skipped: 19 },
+      error_message: 'Hasil read-back tidak sesuai course plan.',
+      created_at: '2026-11-11T11:35:00Z',
+      started_at: '2026-11-11T11:35:01Z',
+      completed_at: '2026-11-11T11:35:30Z',
+      operations: [],
+      readback: {
+        checked: true,
+        matches: false,
+        expected_sections: 16,
+        actual_sections: 16,
+        ordered: true,
+        missing_weeks: [],
+        mismatched_weeks: [12, 13, 15],
+      },
+    };
+
+    vi.spyOn(executionService, 'listExecutions').mockResolvedValue([readbackMismatchExecution]);
+    vi.spyOn(executionService, 'getExecution').mockResolvedValue(readbackMismatchExecution);
+
+    await renderPage();
+    await waitFor(
+      () => container.textContent.includes('Operasi Terkirim, Namun Struktur Moodle Belum Cocok'),
+      'Readback-only failure banner',
+    );
+
+    expect(container.textContent).toContain('Seluruh 61 operasi berhasil dikirim ke Moodle');
+    expect(container.textContent).toContain('nama section berbeda pada Minggu 12, 13, 15');
+    expect(container.textContent).not.toContain('Ulangi Operasi Gagal');
+
+    const verifyLink = [...container.querySelectorAll('a')].find((a) =>
+      a.textContent.includes('Periksa & Perbaiki di Verifikasi →'),
+    );
+    expect(verifyLink?.getAttribute('href')).toBe('/course/2/ai/verification');
+
+    const detailBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Lihat Rincian ↓'),
+    );
+    expect(detailBtn).toBeTruthy();
   });
 });

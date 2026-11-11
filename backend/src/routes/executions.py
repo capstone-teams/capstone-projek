@@ -1,4 +1,4 @@
-"""Endpoint eksekusi Moodle berbasis workflow (BE-17.2, DL-012).
+"""Endpoint eksekusi Moodle berbasis workflow (BE-17.2, BE-22.2, DL-012).
 
 Router ini hanya menangani urusan HTTP: kontrak endpoint, dependency, dan
 pemetaan domain → DTO. Pemeriksaan prasyarat, pembuatan ``MoodleExecution``, dan
@@ -7,7 +7,7 @@ penulisan event berada di :mod:`src.services.execution`, sedangkan tahap
 
 | Method | Path                                                              | Keterangan                    |
 | ------ | ----------------------------------------------------------------- | ----------------------------- |
-| POST   | ``/workflows/{workflow_id}/executions``                           | mulai eksekusi ``STRUCTURE``  |
+| POST   | ``/workflows/{workflow_id}/executions``                           | mulai ``STRUCTURE``/``FULL``  |
 | GET    | ``/workflows/{workflow_id}/executions``                           | riwayat eksekusi              |
 | GET    | ``/workflows/{workflow_id}/executions/{execution_id}``            | status, operasi, read-back    |
 | POST   | ``/workflows/{workflow_id}/executions/{execution_id}/retry``      | ulangi operasi gagal          |
@@ -17,6 +17,12 @@ Seluruh endpoint instructor-only dan dibatasi workflow milik dosen yang login
 seperti tidak ada, dan mahasiswa selalu 403. Penolakan prasyarat memakai
 ``409 INVALID_REQUEST`` dengan kode alasan pada ``error.details``
 (``field = "reason"``), mengikuti BE-17.1.
+
+Cakupan ``FULL`` (BE-22.2) memakai prasyarat dan alur yang sama dengan
+``STRUCTURE``; bedanya detail eksekusi memuat satu operasi per jenis konten per
+minggu (learning material, learning resource, assignment, quiz), termasuk
+operasi ``SKIPPED`` untuk jenis yang nonaktif atau belum disetujui. Verifikasi
+hasil eksekusi ada di :mod:`src.routes.verifications`.
 """
 
 from __future__ import annotations
@@ -45,7 +51,6 @@ from src.services.dependencies import (
     require_roles,
 )
 from src.services.execution import ExecutionRecord, ExecutionService
-from src.services.execution.errors import ExecutionStateError
 from src.services.user.domain import User
 from src.services.user.enums import UserRole
 from src.services.user.validation import ID_LENGTH, SHORTUUID_PATTERN
@@ -107,6 +112,8 @@ def _to_operation(operation) -> ExecutionOperationResponse:
         status=OperationStatus(operation.status.value),
         idempotency_key=operation.idempotency_key,
         week_number=operation.week_number,
+        content_id=operation.content_id,
+        title=operation.title,
         moodle_object_id=operation.moodle_object_id,
         error_message=operation.error_message,
         retry_count=operation.retry_count,
@@ -131,7 +138,7 @@ def _to_response(execution: ExecutionRecord) -> ExecutionResponse:
 
 
 def _to_detail(execution: ExecutionRecord) -> ExecutionDetailResponse:
-    """Petakan eksekusi domain ke detail: operasi per minggu + read-back."""
+    """Petakan eksekusi domain ke detail: operasi per minggu/konten + read-back."""
     return ExecutionDetailResponse(
         **_to_response(execution).model_dump(),
         readback=execution.readback,
@@ -153,22 +160,20 @@ async def start_execution(
     service: ExecutionService = Depends(get_execution_service),
     runner: ExecutionRunner = Depends(get_execution_runner),
 ) -> ExecutionResponse:
-    """Mulai eksekusi struktur course plan ke Moodle (issue BE-17.2).
+    """Mulai eksekusi course plan ke Moodle (BE-17.2, BE-22.2).
 
-    Response ``202`` berisi ``execution_id`` dan status awal ``PENDING``;
-    client memantau status workflow (§16) dan detail eksekusi sampai
-    ``SUCCESS``/``FAILED``. Prasyarat yang tidak terpenuhi ditolak ``409``
-    dengan kode alasan, sebelum pekerjaan dijadwalkan.
+    ``STRUCTURE`` membuat section mingguan; ``FULL`` membuat section beserta
+    seluruh konten ``APPROVED``. Response ``202`` berisi ``execution_id`` dan
+    status awal ``PENDING``; client memantau status workflow (§16) dan detail
+    eksekusi sampai ``SUCCESS``/``FAILED``. Prasyarat yang tidak terpenuhi
+    ditolak ``409`` dengan kode alasan, sebelum pekerjaan dijadwalkan.
     """
-    if payload.scope is not ExecutionScope.STRUCTURE:
-        raise ExecutionStateError(
-            f"cakupan {payload.scope.value} belum tersedia",
-            public_message="Cakupan eksekusi FULL belum tersedia pada milestone ini.",
-        )
-
-    execution = await service.start_structure(
-        workflow_id=workflow_id, owner_id=current_user.id
+    start = (
+        service.start_full
+        if payload.scope is ExecutionScope.FULL
+        else service.start_structure
     )
+    execution = await start(workflow_id=workflow_id, owner_id=current_user.id)
     background.add_task(
         runner,
         workflow_id=workflow_id,
@@ -208,10 +213,11 @@ async def read_execution(
     current_user: User = Depends(instructor_only),
     service: ExecutionService = Depends(get_execution_service),
 ) -> ExecutionDetailResponse:
-    """Detail eksekusi: status, ringkasan, operasi per minggu, dan read-back.
+    """Detail eksekusi: status, ringkasan, operasi, dan read-back.
 
-    Setiap operasi menampilkan ``moodle_object_id`` bila berhasil dan
-    ``error_message`` publik bila gagal (acceptance criteria BE-17.2).
+    Setiap operasi menampilkan minggu, jenis, judul, status,
+    ``moodle_object_id`` bila berhasil, dan ``error_message`` publik bila gagal
+    atau alasan bila ``SKIPPED`` (BE-17.2, BE-22.2).
     """
     execution = await service.get_execution(
         workflow_id=workflow_id,

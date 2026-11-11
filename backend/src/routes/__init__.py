@@ -29,6 +29,7 @@ from src.routes.health import router as health_router
 from src.routes.instructors import router as instructors_router
 from src.routes.moodle import router as moodle_router
 from src.routes.rps import router as rps_router
+from src.routes.verifications import router as verifications_router
 from src.routes.workflows import router as workflows_router
 
 # Base URL endpoint bisnis, mengikuti dokumen design-api.
@@ -43,6 +44,7 @@ api_router.include_router(rps_router)
 api_router.include_router(course_plans_router)
 api_router.include_router(contents_router)
 api_router.include_router(executions_router)
+api_router.include_router(verifications_router)
 api_router.include_router(courses_router)
 api_router.include_router(workflows_router)
 

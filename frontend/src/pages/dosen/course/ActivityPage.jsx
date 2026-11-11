@@ -1,8 +1,16 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { useApi } from '../../../hooks/useApi';
+import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { listAssignParticipants } from '../../../services/moodle/moodleApi';
 import { Badge, Card, ErrorAlert, Spinner } from '../../../components/ui';
 import ActivityView from '../../../components/moodle/course/ActivityView';
+import {
+  ActivityRegenerateBanner,
+  ActivityRegenerateButton,
+  ActivityRegenerateModal,
+} from '../../../components/ai/course/ActivityRegenerateControl';
+import { useActivityRegeneration } from '../../../hooks/useActivityRegeneration';
 
 function timeRemaining(due, now) {
   if (!due) return '-';
@@ -73,7 +81,20 @@ function TeacherSummary({ assign }) {
   );
 }
 
-/** Aktivitas untuk dosen: tugas menampilkan ringkasan pengumpulan seluruh mahasiswa. */
+/** Aktivitas untuk dosen: tugas menampilkan ringkasan pengumpulan seluruh mahasiswa, serta aksi regenerasi AI. */
 export default function ActivityPage() {
-  return <ActivityView renderAssign={(assign) => <TeacherSummary assign={assign} />} />;
+  const { cmid } = useParams();
+  const { course } = useMoodleCourse();
+  const regen = useActivityRegeneration(course, cmid);
+
+  return (
+    <>
+      <ActivityView
+        headerActions={<ActivityRegenerateButton state={regen} />}
+        beforeContent={course?.id ? <ActivityRegenerateBanner courseId={course.id} state={regen} /> : null}
+        renderAssign={(assign) => <TeacherSummary assign={assign} />}
+      />
+      <ActivityRegenerateModal state={regen} />
+    </>
+  );
 }

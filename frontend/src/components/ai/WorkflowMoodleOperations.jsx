@@ -15,7 +15,8 @@ const REFRESH_DEBOUNCE_MS = 300;
 const meta = (table, status) => table[status] ?? { label: status ?? '-', tone: 'neutral' };
 
 /**
- * Detail event OPERASI_MOODLE (BE-17.1): jenis operasi, minggu, dan status setiap operasi eksekusi terbaru.
+ * Detail event OPERASI_MOODLE (BE-17.1, FULL BE-21.1): cakupan eksekusi serta jenis operasi (section maupun activity),
+ * minggu, dan status setiap operasi eksekusi terbaru.
  * Payload event monitoring tidak membawa rincian operasi, jadi rinciannya dibaca dari
  * GET /workflows/{id}/executions/{execution_id} dan dimuat ulang setiap ada event eksekusi baru.
  */
@@ -37,6 +38,11 @@ export default function WorkflowMoodleOperations({ workflowId, events = [] }) {
       <ErrorAlert error={execution.error} />
       {data && (
         <>
+          {data.scope && (
+            <p className="mb-1 text-sm">
+              <strong>Cakupan:</strong> {data.scope === 'FULL' ? 'FULL (struktur dan seluruh konten)' : 'Struktur mingguan'}
+            </p>
+          )}
           {summary?.total > 0 && (
             <p className="mb-3 text-sm text-muted">
               {summary.success} berhasil · {summary.failed} gagal · {summary.skipped} dilewati dari {summary.total} operasi

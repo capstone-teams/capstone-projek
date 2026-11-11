@@ -1,9 +1,10 @@
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import { useApi } from '../../../hooks/useApi';
 import { usePolling } from '../../../hooks/usePolling';
 import { listRps } from '../../../services/rpsService';
 import { listWorkflows } from '../../../services/workflowService';
 import { STAGE_LABELS, isWorkflowFinished } from '../../../utils/workflowStatus';
+import { latestWorkflowPerRps } from '../../../utils/workflowList';
 
 // Keterangan di bawah nama RPS: tahap berjalan, atau hasil akhir untuk workflow yang sudah berhenti.
 const stageText = (workflow) => STAGE_LABELS[workflow.stage] ?? ({ COMPLETED: 'Selesai diproses', FAILED: 'Berhenti karena kesalahan' }[workflow.status] ?? 'Menunggu');
@@ -15,11 +16,18 @@ import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
 const POLL_MS = 5000;
 
 /**
- * Status workflow milik dosen (FE-10.1): daftar dari GET /workflows di kiri, detail tahap dan riwayat
- * event workflow terpilih di kanan. Workflow dipilih lewat ?workflow=<id>; tanpa itu yang terbaru.
+ * Status workflow milik dosen (FE-10.1): daftar dari GET /workflows di kiri, detail tahap dan riwayat event workflow
+ * terpilih di kanan. Di Generator AI sebuah kursus, daftar hanya berisi workflow kursus itu (satu kursus satu
+ * workflow; RPS baru di kursus itu menggantikannya), yaitu workflow yang dipakai layout kursus. Di luar konteks kursus,
+ * daftar berisi satu workflow terbaru per RPS. Tautan ke workflow lain tetap membuka detailnya.
  */
 export default function WorkflowStatusPage() {
   const [params] = useSearchParams();
+  // Konteks Generator AI kursus (AiCourseLayout): workflow aktif kursus ini.
+  const courseContext = useOutletContext();
+  const inCourse = !!courseContext?.course;
+  const courseWorkflowId = courseContext?.workflowId ?? null;
+  const courseWorkflowLoading = inCourse && !!courseContext?.workflowLoading;
   // Nama berkas RPS hanya pelengkap; kegagalannya tidak menghalangi daftar.
   const { data, error, loading, reload } = useApi(async () => {
     const [items, rps] = await Promise.all([listWorkflows(), listRps().then((result) => result.items).catch(() => [])]);
@@ -28,21 +36,26 @@ export default function WorkflowStatusPage() {
   const items = data?.items ?? [];
   usePolling(() => reload({ silent: true }), POLL_MS, items.some((workflow) => !isWorkflowFinished(workflow)));
 
-  if (loading && !data) return <Spinner label="Memuat daftar workflow…" />;
+  if ((loading && !data) || courseWorkflowLoading) return <Spinner label="Memuat daftar workflow…" />;
   if (error && !data) return <ErrorAlert error={error} />;
-  if (!items.length) {
-    return <EmptyState title="Belum ada workflow.">Workflow dibuat saat RPS diunggah dan diproses di tab Ringkasan.</EmptyState>;
+  const visible = inCourse ? items.filter((workflow) => workflow.id === courseWorkflowId) : latestWorkflowPerRps(items);
+  const requested = items.some((workflow) => workflow.id === params.get('workflow')) ? params.get('workflow') : null;
+  if (!visible.length && !requested) {
+    return (
+      <EmptyState title={inCourse ? 'Kursus ini belum punya workflow.' : 'Belum ada workflow.'}>
+        Workflow dibuat saat RPS diunggah dan diproses di tab RPS.
+      </EmptyState>
+    );
   }
-
-  const selectedId = items.some((workflow) => workflow.id === params.get('workflow')) ? params.get('workflow') : items[0].id;
+  const selectedId = requested ?? visible[0].id;
   const rpsName = (workflow) => data.rpsNames.get(workflow.rps_id);
 
   return (
     <div className="grid grid--2">
-      <Card title="Workflow Anda">
+      <Card title={inCourse ? 'Workflow kursus ini' : 'Workflow Anda'}>
         <ErrorAlert error={error} />
         <ul className="m-0 flex max-h-[70vh] list-none flex-col gap-2 overflow-y-auto p-0 pr-1" aria-label="Daftar workflow">
-          {items.map((workflow) => (
+          {visible.map((workflow) => (
             <li key={workflow.id}>
               <Link
                 to={`?workflow=${workflow.id}`}

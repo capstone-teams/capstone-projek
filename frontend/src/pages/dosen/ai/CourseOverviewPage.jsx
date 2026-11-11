@@ -1,91 +1,143 @@
 import { Link } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
-import { getAgentRuns } from '../../../services/courseService';
-import { generateWorkflowPlan } from '../../../services/coursePlanService';
-import { COURSE_ACTIONS_AVAILABLE } from '../../../services/config';
-import { useAction, useApi } from '../../../hooks/useApi';
-import { Alert, Badge, Card, ErrorAlert, ProgressBar, Spinner } from '../../../components/ui';
-import EventLog from '../../../components/ai/EventLog';
-import ActivityConfigForm from '../../../components/ai/course/ActivityConfigForm';
-import { RUN_TYPE_LABELS, isBusy } from '../../../utils/workflow';
-import { formatDateTime } from '../../../utils/format';
+import { useApi } from '../../../hooks/useApi';
+import { getRps } from '../../../services/rpsService';
+import { findLatestFinishedFullExecution, isVerificationPassed } from '../../../utils/verificationResult';
+import { Alert, Badge, Card, ProgressBar, Spinner } from '../../../components/ui';
+import RpsStatusBadge from '../../../components/ai/RpsStatusBadge';
+import WorkflowConnectionNote from '../../../components/ai/WorkflowConnectionNote';
+import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
+import {
+  AWAITED_ACTION,
+  AWAITED_ACTION_META,
+  STAGE_LABELS,
+  WORKFLOW_API_STATUS,
+  WORKFLOW_EVENT,
+  awaitedActionOf,
+  isWorkflowBusy,
+  needsInstructorAction,
+  workflowStatusMeta,
+} from '../../../utils/workflowStatus';
 
-// Langkah berikutnya yang perlu dilakukan dosen untuk tiap status.
-const NEXT_STEP = {
-  CREATED: { text: 'Minta agent menyusun rencana 16 minggu dari RPS.' },
-  DRAFT: { text: 'Rencana dan konten course telah dibuat. Buka rencana untuk memeriksa.', to: 'plan', cta: 'Buka rencana' },
-  WAITING_PLAN_REVIEW: { text: 'Rencana siap. Periksa lalu setujui atau minta revisi.', to: 'plan', cta: 'Review rencana' },
-  PLAN_APPROVED: { text: 'Rencana disetujui. Lanjut generate konten mingguan.', to: 'content', cta: 'Generate konten' },
-  WAITING_CONTENT_REVIEW: { text: 'Konten selesai divalidasi dan menunggu review Anda.', to: 'review', cta: 'Review konten' },
-  CONTENT_REJECTED: { text: 'Konten ditolak. Regenerasi minggu yang bermasalah.', to: 'content', cta: 'Perbaiki konten' },
-  APPROVED: { text: 'Konten disetujui dan siap dikirim ke Moodle.', to: 'publish', cta: 'Kirim ke Moodle' },
-  EXECUTED: { text: 'Konten sudah terkirim. Jalankan verifikasi di Moodle.', to: 'publish', cta: 'Verifikasi' },
-  COMPLETED: { text: 'Course selesai dibuat dan terverifikasi di Moodle.', to: 'publish', cta: 'Lihat hasil' },
-};
+function quickTarget(page, workflow) {
+  if (page !== 'plan' || !workflow?.id) return page;
+  const params = new URLSearchParams({ workflow: workflow.id });
+  if (workflow.rps_id) params.set('rps', workflow.rps_id);
+  return `plan?${params}`;
+}
 
 export default function CourseOverviewPage() {
-  const { course, workflow, workflowId, events, version, refresh } = useCourse();
-  // GET /courses/{id}/agent-runs belum ada di backend; riwayat run hanya dimuat bila tersedia.
-  const runs = useApi(() => (COURSE_ACTIONS_AVAILABLE && course?.id ? getAgentRuns(course.id) : null), [course?.id, version]);
-  const plan = useAction(() => generateWorkflowPlan(workflowId));
-  const busy = isBusy(course?.status) || workflow?.status === 'RUNNING';
-  const hasRps = Boolean(course?.rps_id);
-  const next = !hasRps
-    ? {
-        text: 'Kursus ini belum memiliki dokumen RPS. Silakan unggah dokumen RPS untuk memulai penyusunan rencana pembelajaran.',
-        to: 'rps',
-        cta: 'Unggah RPS',
-      }
-    : NEXT_STEP[course?.status];
-  const progress = workflow?.progress || course?.progress;
-  const stage = workflow?.stage || course?.stage;
+  const { course, moodleCourse, workflow, workflowId, events = [], contents = null, executions = null, verifications = null, connection } = useCourse() ?? {};
+  const activeWorkflow = workflow ?? null;
+  const rpsId = activeWorkflow?.rps_id ?? course?.rps_id ?? null;
+  const rps = useApi(() => (rpsId ? getRps(rpsId).catch(() => null) : null), [rpsId]);
 
-  const failureEvent = events?.slice().reverse().find(
-    (e) => e.event === 'WORKFLOW_FAILED' || e.reason || (e.message && e.message.toLowerCase().includes('gagal')),
-  );
-  const failureMessage = failureEvent?.message || failureEvent?.reason || course?.processing_error_message;
+  const targetCourse = moodleCourse ?? course;
+  const targetMoodleId = course?.moodle_course_id ?? moodleCourse?.id ?? course?.id;
+  const hasRps = Boolean(rpsId || activeWorkflow || workflowId);
+
+  const busy = isWorkflowBusy(activeWorkflow);
+  const waitingReview = needsInstructorAction(activeWorkflow);
+  const hasPartialContents = Array.isArray(contents)
+    && contents.length > 0
+    && contents.some((item) => item?.status !== 'APPROVED' && item?.status !== 'EXECUTED');
+  const awaitedAction = awaitedActionOf(activeWorkflow, events);
+  const resolvedAction = waitingReview
+    ? (hasPartialContents ? AWAITED_ACTION.REVIEW_CONTENT : awaitedAction)
+    : null;
+  const actionMeta = resolvedAction ? AWAITED_ACTION_META[resolvedAction] : null;
+  const statusMeta = activeWorkflow ? workflowStatusMeta(activeWorkflow) : null;
+
+  const failureEvent = activeWorkflow?.status === WORKFLOW_API_STATUS.FAILED
+    ? [...events].reverse().find((e) => e.event === WORKFLOW_EVENT.FAILED)
+    : null;
+  const failureMessage = failureEvent?.message || course?.processing_error_message || 'Workflow berhenti karena kesalahan.';
+
+  const latestVerification = Array.isArray(verifications) && verifications.length > 0 ? verifications[0] : null;
+  const verificationPassed = isVerificationPassed(latestVerification);
+  const workflowCompleted = activeWorkflow?.status === WORKFLOW_API_STATUS.COMPLETED || verificationPassed;
+  const hadFullExecution = Boolean(findLatestFinishedFullExecution(executions ?? []))
+    || events.some(
+      (ev) => ev?.event === WORKFLOW_EVENT.MOODLE_OPERATION && / - (Learning Material|Learning Resource|Assignment|Quiz) /.test(ev.message ?? ''),
+    );
 
   return (
     <div className="grid grid--2">
-      <div className="stack">
-        <Card title="Langkah berikutnya">
-          <ErrorAlert error={plan.error} onClose={plan.clearError} />
-          {failureMessage && (
-            <div className="mb-3">
-              <Alert tone="danger">
-                <strong>Pemberitahuan alur kerja:</strong> {failureMessage}
-              </Alert>
-            </div>
-          )}
-          {busy ? (
-            <>
-              <p>Agent sedang bekerja. Halaman ini diperbarui otomatis.</p>
-              {progress ? (
-                <ProgressBar completed={progress.completed} total={progress.total} label={stage ?? ''} />
-              ) : (
-                <Spinner label={stage ?? 'Memproses…'} />
-              )}
-            </>
-          ) : next ? (
+      <Card title="Langkah berikutnya">
+          {!hasRps ? (
             <div className="next-step">
-              <p>{next.text}</p>
-              {course?.status === 'CREATED' && hasRps ? (
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={!workflowId || plan.pending}
-                  onClick={() => plan.run().then(refresh).catch(() => {})}
-                >
-                  {plan.pending ? 'Meminta…' : 'Generate rencana'}
-                </button>
+              <p>Kursus ini belum memiliki dokumen RPS. Silakan unggah dokumen RPS untuk memulai penyusunan rencana pembelajaran.</p>
+              <Link to="rps" className="btn btn--primary">Unggah RPS</Link>
+            </div>
+          ) : !activeWorkflow ? (
+            <div className="next-step">
+              <p>RPS terhubung ke kursus ini. Buka tab RPS untuk memeriksa hasil analisis dan memulai course planning.</p>
+              <Link to="rps" className="btn btn--primary">Buka tab RPS</Link>
+            </div>
+          ) : activeWorkflow.status === WORKFLOW_API_STATUS.FAILED ? (
+            <div className="stack">
+              <Alert tone="danger" title="Workflow berhenti karena kesalahan">{failureMessage}</Alert>
+              <div className="flex flex-wrap gap-2">
+                <Link to="rps" className="btn btn--primary">Buka tab RPS</Link>
+                <Link to="workflows" className="btn btn--ghost">Pantau workflow</Link>
+              </div>
+            </div>
+          ) : workflowCompleted ? (
+            <div className="next-step">
+              <Alert tone="success" title="Seluruh tahap selesai">Generator AI telah menyelesaikan seluruh tahapan untuk kursus ini.</Alert>
+              <div className="flex flex-wrap gap-2">
+                <Link to="verification" className="btn btn--primary">Lihat hasil verifikasi</Link>
+                <Link to="publish" className="btn btn--ghost">Lihat hasil publikasi</Link>
+              </div>
+            </div>
+          ) : busy ? (
+            <div className="stack">
+              <div className="flex flex-wrap items-center gap-2">
+                <WorkflowStatusBadge workflow={activeWorkflow} />
+                {statusMeta?.description && <span className="text-sm text-muted">{statusMeta.description}</span>}
+              </div>
+              {activeWorkflow.progress?.total > 0 ? (
+                <ProgressBar
+                  completed={activeWorkflow.progress.completed}
+                  total={activeWorkflow.progress.total}
+                  label={STAGE_LABELS[activeWorkflow.stage] ?? 'Memproses…'}
+                />
               ) : (
-                <Link to={next.to} className="btn btn--primary">
-                  {next.cta}
-                </Link>
+                <Spinner label={STAGE_LABELS[activeWorkflow.stage] ?? 'Memproses…'} />
               )}
+              <div>
+                <Link to="workflows" className="btn btn--ghost btn--sm">Pantau workflow</Link>
+              </div>
+            </div>
+          ) : waitingReview && actionMeta ? (
+            <div className="next-step">
+              <p>
+                <strong>{actionMeta.title}</strong> — {actionMeta.description}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Link to={quickTarget(actionMeta.page, activeWorkflow)} className="btn btn--primary">
+                  {actionMeta.linkLabel}
+                </Link>
+                {actionMeta.secondary && (
+                  <Link to={quickTarget(actionMeta.secondary.page, activeWorkflow)} className="btn btn--ghost">
+                    {actionMeta.secondary.label}
+                  </Link>
+                )}
+              </div>
+            </div>
+          ) : hadFullExecution ? (
+            <div className="next-step">
+              <p>Eksekusi struktur dan konten ke Moodle sudah selesai. Lanjutkan dengan verifikasi kesesuaian course atau tinjau riwayat eksekusi.</p>
+              <div className="flex flex-wrap gap-2">
+                <Link to="verification" className="btn btn--primary">Verifikasi hasil di Moodle</Link>
+                <Link to="publish" className="btn btn--ghost">Buka halaman Publikasi</Link>
+              </div>
             </div>
           ) : (
-            <p className="muted">Tidak ada aksi untuk status ini.</p>
+            <div className="next-step">
+              <p>Pantau progres terbaru dan riwayat eksekusi workflow kursus ini.</p>
+              <Link to="workflows" className="btn btn--ghost">Pantau workflow</Link>
+            </div>
           )}
         </Card>
 
@@ -93,47 +145,32 @@ export default function CourseOverviewPage() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle pb-3 text-xs">
             <span className="text-muted">Target Moodle:</span>
             <span className="font-semibold text-ink" aria-label="Target Moodle">
-              {course?.code ?? course?.shortname} — {course?.name ?? course?.fullname} (ID: {course?.moodle_course_id ?? course?.id})
+              {targetCourse?.code ?? targetCourse?.shortname ?? '-'} — {targetCourse?.name ?? targetCourse?.fullname ?? '-'} (ID: {targetMoodleId ?? '-'})
             </span>
           </div>
-          <ActivityConfigForm course={course} onSaved={refresh} />
-          {course?.additional_prompt && (
-            <div className="quote">
-              <span className="field__label">Prompt tambahan</span>
-              <p>{course.additional_prompt}</p>
-            </div>
-          )}
+          {activeWorkflow && <WorkflowConnectionNote workflow={activeWorkflow} connection={connection} />}
+          <dl className="dl mt-2">
+            <dt>Status workflow</dt>
+            <dd>{activeWorkflow ? <WorkflowStatusBadge workflow={activeWorkflow} /> : <Badge>Belum ada workflow</Badge>}</dd>
+            <dt>RPS aktif</dt>
+            <dd>
+              {rps.data ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  <Link to="rps">{rps.data.filename ?? rpsId}</Link>
+                  {rps.data.status && <RpsStatusBadge status={rps.data.status} />}
+                </span>
+              ) : rpsId ? (
+                <Link to="rps">Lihat detail RPS</Link>
+              ) : (
+                <span className="text-muted">Belum ada RPS</span>
+              )}
+            </dd>
+          </dl>
+          <div className="mt-4 border-t border-line-subtle pt-3 text-sm text-muted">
+            Preferensi pengajaran dan generator konten diatur di{' '}
+            <Link to="/user/profile" className="font-semibold text-primary underline">Profil dosen</Link>.
+          </div>
         </Card>
-      </div>
-
-      <div className="stack">
-        <Card title="Aktivitas agent">
-          <EventLog events={events} limit={15} />
-        </Card>
-
-        {COURSE_ACTIONS_AVAILABLE && (
-        <Card title="Riwayat agent run">
-          <ErrorAlert error={runs.error} />
-          {runs.loading && !runs.data ? (
-            <Spinner />
-          ) : runs.data?.runs?.length ? (
-            <ul className="list">
-              {runs.data.runs.map((r) => (
-                <li key={r.id} className="list__split">
-                  <span>
-                    {RUN_TYPE_LABELS[r.type] ?? r.type}
-                    <small className="muted"> · {formatDateTime(r.started_at)}</small>
-                  </span>
-                  <Badge tone={r.status === 'completed' ? 'success' : r.status === 'running' ? 'info' : 'neutral'}>{r.status}</Badge>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">Belum ada agent run.</p>
-          )}
-        </Card>
-        )}
-      </div>
     </div>
   );
 }

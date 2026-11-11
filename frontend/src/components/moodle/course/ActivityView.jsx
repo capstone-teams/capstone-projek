@@ -14,10 +14,12 @@ function PageContent({ course, mod }) {
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
   const page = data.find((p) => String(p.coursemodule) === String(mod.id));
-  if (!page) return <EmptyState title="Halaman tidak ditemukan." />;
+  // Lewat Backend Gateway isi Page sudah ikut di modul (GET /integrations/moodle/courses/{id}/contents).
+  const html = page?.content ?? mod.content;
+  if (!html) return <EmptyState title="Halaman tidak ditemukan." />;
   return (
     <Card>
-      <MoodleHtml html={page.content} />
+      <MoodleHtml html={html} />
     </Card>
   );
 }
@@ -27,6 +29,14 @@ function AssignContent({ course, mod, renderAssign }) {
   if (loading && !data) return <Spinner />;
   if (error) return <ErrorAlert error={error} />;
   const assign = data.find((a) => String(a.cmid) === String(mod.id));
+  // Tanpa sesi Moodle di browser: tampilkan instruksi tugas dari Backend Gateway.
+  if (!assign && mod.description) {
+    return (
+      <Card>
+        <MoodleHtml html={mod.description} />
+      </Card>
+    );
+  }
   if (!assign) return <EmptyState title="Tugas tidak ditemukan." />;
 
   return (
@@ -70,8 +80,9 @@ function ExternalContent({ mod }) {
 /**
  * Halaman aktivitas yang sama untuk dosen dan mahasiswa: breadcrumb, judul, tanggal, dan isi
  * halaman/tautan/file. Bagian bawah tugas berbeda per peran dan dirender lewat `renderAssign(assign, mod)`.
+ * Dosen dapat meneruskan `headerActions` dan `beforeContent` (mis. kontrol regenerasi konten AI).
  */
-export default function ActivityView({ renderAssign }) {
+export default function ActivityView({ renderAssign, headerActions = null, beforeContent = null }) {
   const { cmid } = useParams();
   const { course, sections } = useMoodleCourse();
   const section = sections.find((s) => (s.modules ?? []).some((m) => String(m.id) === String(cmid)));
@@ -86,10 +97,14 @@ export default function ActivityView({ renderAssign }) {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
-        <ActivityIcon modname={mod.modname} src={mod.modicon} />
-        <h2 className="text-2xl">{mod.name}</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <ActivityIcon modname={mod.modname} src={mod.modicon} />
+          <h2 className="text-2xl wrap-anywhere">{mod.name}</h2>
+        </div>
+        {headerActions && <div className="flex flex-wrap items-center gap-2">{headerActions}</div>}
       </div>
+      {beforeContent}
       {mod.dates?.length > 0 && mod.modname !== 'assign' && (
         <div className="mb-3 flex flex-wrap gap-x-6 text-sm">
           {mod.dates.map((d) => (

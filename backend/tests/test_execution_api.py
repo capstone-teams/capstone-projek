@@ -1,5 +1,9 @@
 """Test endpoint eksekusi Moodle berbasis workflow (BE-17.2).
 
+Cakupan ``FULL`` dan endpoint verifikasi (BE-22.2) diuji di
+``test_execution_verification_api.py``; prasyarat di sini berlaku untuk kedua
+cakupan.
+
 Membuktikan acceptance criteria BE-17.2:
 
 - eksekusi dapat dimulai, dipantau, dan diulang melalui endpoint workflow;
@@ -323,6 +327,7 @@ async def test_retry_reruns_only_failed_operations(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["STRUCTURE", "FULL"])
 @pytest.mark.parametrize(
     ("variant", "reason"),
     [
@@ -331,7 +336,7 @@ async def test_retry_reruns_only_failed_operations(
     ],
 )
 async def test_unmet_prerequisite_is_invalid_request_with_reason(
-    db_session, client, headers, instructor_id, storage, variant, reason
+    db_session, client, headers, instructor_id, storage, variant, reason, scope
 ):
     if variant == "plan_not_approved":
         workflow, _ = await _prepare_workflow(
@@ -345,29 +350,13 @@ async def test_unmet_prerequisite_is_invalid_request_with_reason(
     response = await client.post(
         _execution_url(workflow.id or ""),
         headers=headers,
-        json={"scope": "STRUCTURE"},
+        json={"scope": scope},
     )
 
     assert response.status_code == 409
     error = response.json()["error"]
     assert error["code"] == "INVALID_REQUEST"
     assert error["details"] == [{"field": "reason", "message": reason}]
-
-
-@pytest.mark.asyncio
-async def test_full_scope_is_not_available_yet(
-    db_session, client, headers, instructor_id, storage
-):
-    workflow, _ = await _prepare_workflow(db_session, instructor_id, storage)
-
-    response = await client.post(
-        _execution_url(workflow.id or ""),
-        headers=headers,
-        json={"scope": "FULL"},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
 
 # --- Otorisasi ---------------------------------------------------------------

@@ -221,6 +221,36 @@ describe('FE-17.2 detail konten', () => {
     expect(node.textContent).toContain('Menampilkan versi sebelumnya');
     expect(node.textContent).toContain('Versi pertama materi');
   });
+
+  it('panel detail konten bersifat sticky di desktop, dapat di-approve langsung dari detail, dan menutup saat Escape / backdrop', async () => {
+    contents.approveContents.mockResolvedValue({});
+    await render();
+    await open('Normalisasi Basis Data');
+
+    const drawer = node.querySelector('[data-testid="content-detail-drawer"]');
+    expect(drawer).not.toBeNull();
+    expect(drawer.className).toContain('xl:sticky');
+    expect(drawer.className).toContain('max-xl:fixed');
+    expect(drawer.parentElement.className).toContain('xl:items-start');
+
+    // Aksi Setujui langsung dari panel detail konten
+    contents.listWorkflowContents.mockResolvedValue(listItems().map((i) => (i.id === 'm3' ? { ...i, status: 'APPROVED' } : i)));
+    await act(async () => byText('button', 'Setujui', drawer).click());
+    await settle();
+    expect(contents.approveContents).toHaveBeenCalledWith('wf-1', ['m3']);
+
+    // Tekan Escape saat modal tidak terbuka menutup panel detail
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    expect(node.querySelector('[data-testid="content-detail-drawer"]')).toBeNull();
+
+    // Buka lagi dan klik backdrop drawer menutup panel detail
+    await open('Database Normalization Explained');
+    const reopened = node.querySelector('[data-testid="content-detail-drawer"]');
+    await act(async () => reopened.click());
+    expect(node.querySelector('[data-testid="content-detail-drawer"]')).toBeNull();
+  });
 });
 
 describe('FE-17.3 approve, reject, dan regenerasi', () => {
@@ -275,10 +305,10 @@ describe('FE-17.3 approve, reject, dan regenerasi', () => {
     expect(contents.regenerateContents).toHaveBeenCalledWith('wf-1', { scope: 'COURSE', weekNumber: undefined, contentId: undefined, notes: 'Sesuaikan dengan RPS terbaru.' });
   });
 
-  it('seluruh konten disetujui menampilkan langkah berikutnya ke eksekusi FULL', async () => {
+  it('seluruh konten disetujui menampilkan langkah berikutnya ke Eksekusi Moodle', async () => {
     contents.listWorkflowContents.mockResolvedValue(listItems().map((i) => ({ ...i, status: 'APPROVED', validation: passed })));
     await render();
-    const next = byText('a', 'Lanjut ke eksekusi FULL');
+    const next = byText('a', 'Lanjut ke Eksekusi Moodle →');
     expect(next.getAttribute('href')).toBe('/course/48/ai/publish');
   });
 });

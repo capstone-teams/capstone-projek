@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +58,21 @@ class SqlMoodleMappingRepository:
 
     async def exists(self, entity_type: str, internal_id: str) -> bool:
         return await self.get_moodle_id(entity_type, internal_id) is not None
+
+    async def delete(self, entity_type: str, internal_id: str) -> bool:
+        """Hapus pemetaan yang sudah tidak valid, mis. objek Moodle dihapus manual.
+
+        Dipakai Verification Service (BE-21.2) sebelum operasi dijalankan ulang,
+        supaya objek dibuat kembali dan pemetaan baru dapat disimpan.
+        """
+        result = await self._session.execute(
+            delete(MoodleEntityMapping).where(
+                MoodleEntityMapping.entity_type == entity_type,
+                MoodleEntityMapping.internal_id == internal_id,
+            )
+        )
+        await self._session.commit()
+        return bool(result.rowcount)
 
 
 def _conflict(mapping: MoodleMapping, existing: int | None) -> DuplicateMappingError:

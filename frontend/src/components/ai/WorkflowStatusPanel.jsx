@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { Alert, ProgressBar } from '../ui';
 import WorkflowStageList from './WorkflowStageList';
+import { CONTENT_KIND_LABELS } from '../../services/contentService';
+import { parseContentMessage } from '../../utils/contentEvents';
 import WorkflowStatusBadge from './WorkflowStatusBadge';
 import {
   AWAITED_ACTION_META,
@@ -11,6 +13,12 @@ import {
   needsInstructorAction,
   workflowStatusMeta,
 } from '../../utils/workflowStatus';
+
+/** Judul percobaan ulang; untuk konten (RETRY_FIX) memuat minggu dan jenis konten dari pesan backend. */
+function retryTitle(event) {
+  const content = parseContentMessage(event.message);
+  return content?.kind ? `Mencoba ulang: Minggu ${content.week} · ${CONTENT_KIND_LABELS[content.kind]}` : 'Mencoba ulang';
+}
 
 /** Tautan cepat ke tab Generator AI tujuan; Plan Review membawa workflow dan RPS-nya agar rencana yang tepat terbuka. */
 function quickLink(base, page, workflow) {
@@ -47,14 +55,21 @@ export default function WorkflowStatusPanel({ workflow, events = [], linkBase })
         <Alert tone="warning" title={action ? `Menunggu tindakan Anda: ${action.title}` : 'Menunggu tindakan Anda'}>
           <p>{action?.description ?? 'Workflow berhenti sampai Anda memeriksa hasilnya dan menyetujui atau menolaknya.'}</p>
           {action && linkBase && (
-            <Link to={quickLink(linkBase, action.page, workflow)} relative="path" className="btn btn--primary btn--sm mt-2">
-              {action.linkLabel}
-            </Link>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Link to={quickLink(linkBase, action.page, workflow)} relative="path" className="btn btn--primary btn--sm">
+                {action.linkLabel}
+              </Link>
+              {action.secondary && (
+                <Link to={quickLink(linkBase, action.secondary.page, workflow)} relative="path" className="btn btn--ghost btn--sm">
+                  {action.secondary.label}
+                </Link>
+              )}
+            </div>
           )}
         </Alert>
       )}
       {retry && (
-        <Alert tone="warning" title="Mencoba ulang">{retry.message ?? 'Tahap gagal sebagian dan sedang diperbaiki otomatis.'}</Alert>
+        <Alert tone="warning" title={retryTitle(retry)}>{retry.message ?? 'Tahap gagal sebagian dan sedang diperbaiki otomatis.'}</Alert>
       )}
       {workflow.status === 'FAILED' && (
         <Alert tone="danger" title="Workflow gagal">{failure?.message ?? 'Workflow berhenti karena kesalahan.'}</Alert>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Alert } from '../../components/ui';
-import { AuthField, AuthLayout, AuthSubmitButton, GoogleLoginButton, PasswordField } from '../../components/auth';
+import { AuthField, AuthLayout, AuthSubmitButton, PasswordField } from '../../components/auth';
 import { SESSION_NOTICE, homePathFor } from '../../types/auth';
 import { MSG_LOGIN_FAILED, logTechnical } from '../../utils/userMessages';
 
@@ -32,7 +32,6 @@ export default function LoginPage() {
   const [form, setForm] = useState({ username: '', password: '' });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
-  const [info, setInfo] = useState('');
 
   // Setelah login: dosen ke dashboard, mahasiswa ke halaman course (role dari GET /auth/me).
   if (user) return <Navigate to={homePathFor(user.role)} replace />;
@@ -43,7 +42,6 @@ export default function LoginPage() {
     e.preventDefault();
     setPending(true);
     setError(null);
-    setInfo('');
     try {
       const username = form.username.trim();
       let session;
@@ -66,16 +64,10 @@ export default function LoginPage() {
     }
   };
 
-  const onGoogleLogin = () => {
-    setError(null);
-    setInfo('Login menggunakan Google belum tersedia. Hubungi admin untuk mengaktifkan integrasi Google OAuth.');
-  };
-
   return (
     <AuthLayout heroTitle={<>Persiapan pembelajaran<br />berbasis RPS</>} title="Masuk ke akun Anda">
       {error && <Alert tone="danger" title={error.title}>{error.message}</Alert>}
-      {info && <Alert tone="info">{info}</Alert>}
-      {!error && !info && sessionNotice === SESSION_NOTICE.EXPIRED && <Alert tone="info" title="Sesi berakhir">Sesi Anda telah berakhir. Silakan masuk kembali.</Alert>}
+      {!error && sessionNotice === SESSION_NOTICE.EXPIRED && <Alert tone="info" title="Sesi berakhir">Sesi Anda telah berakhir. Silakan masuk kembali.</Alert>}
       <form onSubmit={onSubmit} aria-busy={pending}>
         <AuthField id="username" label="Username" value={form.username} onChange={update('username')} autoComplete="username" placeholder="ID Number (username) / email" required autoFocus readOnly={pending} />
         <PasswordField id="password" label="Kata sandi" value={form.password} onChange={update('password')} autoComplete="current-password" placeholder="Password" required readOnly={pending} />
@@ -83,7 +75,6 @@ export default function LoginPage() {
           <Link to="/forgot-password">Lupa password?</Link>
         </div>
         <AuthSubmitButton disabled={pending}>{pending ? 'Memproses…' : 'Masuk'}</AuthSubmitButton>
-        <GoogleLoginButton onClick={onGoogleLogin} />
       </form>
     </AuthLayout>
   );

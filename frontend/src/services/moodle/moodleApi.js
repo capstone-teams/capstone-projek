@@ -26,7 +26,7 @@ async function loadGatewayCourses() {
       category: c.category ?? null,
     }));
   }
-  const legacyRes = await api.get('/courses').catch(() => null);
+  const legacyRes = await api.get('/courses', { ignoreForbidden: true }).catch(() => null);
   const items = legacyRes?.items ?? legacyRes?.courses ?? [];
   if (!items.length && moodleError) throw moodleError;
   return items;
@@ -61,6 +61,7 @@ function fromMoodleSection(section) {
       name: module.name,
       modname: module.modname,
       description: module.description ?? '',
+      url: module.url ?? null,
       content: module.content ?? null,
       visible: module.visible === false ? 0 : 1,
       uservisible: true,

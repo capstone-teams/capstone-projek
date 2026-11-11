@@ -212,6 +212,8 @@ describe('FE-05 halaman Rencana dengan API course plan per workflow', () => {
     plans.listWorkflowPlanVersions.mockResolvedValue([{ version: 2, status: 'DRAFT' }, { version: 1, status: 'REJECTED' }]);
     plans.getWorkflowPlanVersion.mockResolvedValue(plan({ version: 1, status: 'REJECTED', weeks: [{ week_number: 1, title: 'Versi lama' }] }));
     await render();
+    expect(node.querySelector('[aria-label="Riwayat versi"] li')).toBeNull();
+    await act(async () => button('Lihat riwayat (2)').click());
     await act(async () => button('Lihat versi 1').click());
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(plans.getWorkflowPlanVersion).toHaveBeenCalledWith('wf-1', 1);
@@ -222,11 +224,16 @@ describe('FE-05 halaman Rencana dengan API course plan per workflow', () => {
     expect(node.textContent).toContain('Rencana course · versi 2');
   });
 
-  it('versi APPROVED menampilkan konfirmasi dan langkah berikutnya tanpa aksi review', async () => {
+  it('versi APPROVED menggabungkan keterangan validasi & persetujuan dalam 1 banner tanpa aksi review', async () => {
     context.workflow = { ...waitingReview, status: 'COMPLETED', stage: null };
-    plans.getWorkflowPlan.mockResolvedValue(plan({ status: 'APPROVED' }));
+    plans.getWorkflowPlan.mockResolvedValue(plan({ version: 1, status: 'APPROVED' }));
+    plans.listWorkflowPlanVersions.mockResolvedValue([{ version: 1, status: 'APPROVED' }]);
     await render();
+    expect(node.querySelector('[aria-label="Riwayat versi"]')).toBeNull();
+    expect(node.querySelectorAll('[role="status"]')).toHaveLength(1);
     expect(node.textContent).toContain('Rencana course telah disetujui');
+    expect(node.textContent).toContain('Lolos validasi akademik');
+    expect(node.textContent).not.toContain('Rencana memenuhi seluruh pemeriksaan akademik.');
     expect(button('Setujui rencana')).toBeUndefined();
     expect(button('Regenerasi rencana')).toBeUndefined();
   });
@@ -275,6 +282,8 @@ describe('FE-12.2 aksi review dan riwayat versi course plan', () => {
     ]);
     await render();
     const history = node.querySelector('[aria-label="Riwayat versi"]');
+    expect(history.querySelectorAll('li')).toHaveLength(0);
+    await act(async () => button('Lihat riwayat (3)').click());
     const rows = [...history.querySelectorAll('li')];
     expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual(['Versi 3', 'Versi 2', 'Versi 1']);
     expect(rows[0].textContent).toContain('Draft');
@@ -282,6 +291,25 @@ describe('FE-12.2 aksi review dan riwayat versi course plan', () => {
     expect(rows[0].querySelector('button').textContent).toBe('Sedang ditampilkan');
     expect(rows[1].textContent).toContain('Ditolak');
     expect(rows[1].textContent).toContain('Catatan revisi: Minggu 5-8 terlalu padat.');
+  });
+
+  it('temuan validasi lebih dari 3 terlipat ringkas secara default dan dapat dibuka', async () => {
+    plans.getWorkflowPlan.mockResolvedValue(plan({
+      validation: {
+        passed: false,
+        issues: [
+          { week: 1, message: 'Temuan minggu 1.' },
+          { week: 2, message: 'Temuan minggu 2.' },
+          { week: 3, message: 'Temuan minggu 3.' },
+          { week: 4, message: 'Temuan minggu 4.' },
+        ],
+      },
+    }));
+    await render();
+    expect(node.textContent).toContain('Terdapat 4 temuan validasi');
+    expect(node.querySelector('[aria-label="Temuan validasi"]').textContent).not.toContain('Temuan minggu 4.');
+    await act(async () => button('Lihat detail (4 temuan)').click());
+    expect(node.querySelector('[aria-label="Temuan validasi"]').textContent).toContain('Temuan minggu 4.');
   });
 
   it('setelah regenerasi versi baru tampil dan versi sebelumnya tetap dapat dibuka', async () => {
@@ -301,6 +329,7 @@ describe('FE-12.2 aksi review dan riwayat versi course plan', () => {
     expect(node.textContent).toContain('Rencana course · versi 2');
     expect(node.textContent).toContain('Versi baru');
 
+    await act(async () => button('Lihat riwayat (2)').click());
     await act(async () => button('Lihat versi 1').click());
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(plans.getWorkflowPlanVersion).toHaveBeenCalledWith('wf-1', 1);

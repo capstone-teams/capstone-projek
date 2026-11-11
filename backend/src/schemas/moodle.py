@@ -73,7 +73,10 @@ class MoodleModuleResponse(BaseModel):
     modname: str
     visible: bool
     description: str
-    content: str | None = None
+    url: str | None = Field(
+        default=None, description="Alamat tujuan untuk module URL (learning resource)."
+    )
+    content: str | None = Field(default=None, description="Isi HTML untuk module Page.")
 
 
 class MoodleSectionResponse(BaseModel):
