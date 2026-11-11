@@ -18,6 +18,7 @@ import {
 } from '../../../utils/workflowStatus';
 import { Alert, Badge, Card, ErrorAlert, Modal, Spinner } from '../../ui';
 import InstructionModal from '../InstructionModal';
+import ContentDetailView from './ContentDetailView';
 
 const MATRIX_COLUMNS = [
   CONTENT_KIND.LEARNING_MATERIAL,
@@ -91,7 +92,7 @@ function summarizeColumnStats(rows) {
   return stats;
 }
 
-function MatrixCell({ cell, week, busy, onInspectError, onRegenerate }) {
+function MatrixCell({ cell, week, busy, onInspectError, onRegenerate, onPreview }) {
   const kindLabel = CONTENT_KIND_LABELS[cell.kind] ?? cell.kind;
   const record = cell.record;
 
@@ -115,18 +116,31 @@ function MatrixCell({ cell, week, busy, onInspectError, onRegenerate }) {
       return <Badge tone="info">Diproses</Badge>;
     case CONTENT_CELL_STATUS.RETRYING:
       return <Badge tone="warning">↻ Retry/Fix</Badge>;
-    case CONTENT_CELL_STATUS.COMPLETED:
-      return (
-        <div
-          className="inline-flex items-center gap-1.5 whitespace-nowrap"
-          title={record?.title || undefined}
-        >
+    case CONTENT_CELL_STATUS.COMPLETED: {
+      const body = (
+        <>
           <Badge tone="success">✓ Selesai</Badge>
           {record?.version != null && (
             <span className="text-[11px] font-medium text-muted">v{record.version}</span>
           )}
-        </div>
+        </>
       );
+      // Isi konten dapat dibuka langsung dari matriks (detail dari GET .../contents/{id}).
+      if (!record?.id) {
+        return <div className="inline-flex items-center gap-1.5 whitespace-nowrap">{body}</div>;
+      }
+      return (
+        <button
+          type="button"
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded whitespace-nowrap hover:opacity-80"
+          title={record.title ? `Buka: ${record.title}` : 'Buka isi konten'}
+          aria-label={`Buka isi Minggu ${week.week_number} ${kindLabel}`}
+          onClick={() => onPreview(record, week)}
+        >
+          {body}
+        </button>
+      );
+    }
     case CONTENT_CELL_STATUS.FAILED:
       return (
         <div className="flex flex-col items-start gap-1.5">
@@ -188,6 +202,7 @@ export default function ContentGenerationMatrix({
   const [errorModal, setErrorModal] = useState(null); // { record, week, loading, error, detail }
   const [regenTarget, setRegenTarget] = useState(null); // { record, week }
   const [regenNotice, setRegenNotice] = useState(null);
+  const [preview, setPreview] = useState(null); // { record, week, loading, error, detail }
 
   const effectivePlan = plan?.weeks?.length ? plan : fallbackPlanFromContents(contents);
   const rows = deriveContentMatrixRows(effectivePlan, contents, events, workflow);
@@ -231,6 +246,17 @@ export default function ContentGenerationMatrix({
     }
   };
 
+  const openPreview = async (record, week) => {
+    const requestId = record.id;
+    setPreview({ record, week, loading: true, error: null, detail: null });
+    try {
+      const detail = await getWorkflowContent(workflowId, record.id);
+      setPreview((current) => (current?.record?.id === requestId ? { record, week, loading: false, error: null, detail } : current));
+    } catch (error) {
+      setPreview((current) => (current?.record?.id === requestId ? { record, week, loading: false, error, detail: null } : current));
+    }
+  };
+
   const errorMessages = extractContentErrors(errorModal?.detail);
   const errorKindLabel = errorModal ? (CONTENT_KIND_LABELS[errorModal.record.kind] ?? errorModal.record.kind) : '';
   const regenKindLabel = regenTarget ? (CONTENT_KIND_LABELS[regenTarget.record.kind] ?? regenTarget.record.kind) : '';
@@ -243,6 +269,11 @@ export default function ContentGenerationMatrix({
           <Badge tone="success">{completedCount} selesai</Badge>
           <Badge tone={failedCount > 0 ? 'danger' : 'neutral'}>{failedCount} gagal</Badge>
           {activeCount > 0 && <Badge tone="info">{activeCount} diproses</Badge>}
+          {contents.length > 0 && !waitingForReview && (
+            <Link to="../review" relative="path" className="btn btn--ghost btn--xs">
+              Review →
+            </Link>
+          )}
         </div>
       )}
     >
@@ -362,6 +393,7 @@ export default function ContentGenerationMatrix({
                                 busy={busy}
                                 onInspectError={(record, wk) => openErrorModal(record, wk)}
                                 onRegenerate={(record, wk) => setRegenTarget({ record, week: wk })}
+                                onPreview={(record, wk) => openPreview(record, wk)}
                               />
                             </td>
                           ))
@@ -375,6 +407,28 @@ export default function ContentGenerationMatrix({
           </div>
         )}
       </div>
+
+      {/* Modal isi konten (sel Selesai) */}
+      <Modal
+        open={Boolean(preview)}
+        wide
+        title={preview ? `Minggu ${preview.week.week_number} — ${CONTENT_KIND_LABELS[preview.record.kind] ?? preview.record.kind}` : ''}
+        onClose={() => setPreview(null)}
+        footer={preview && (
+          <>
+            <button type="button" className="btn btn--ghost" onClick={() => setPreview(null)}>Tutup</button>
+            <Link to="../review" relative="path" className="btn btn--primary">Review &amp; setujui di halaman Review</Link>
+          </>
+        )}
+      >
+        {preview && (
+          <div className="max-h-[65vh] overflow-y-auto pr-1">
+            {preview.loading && <Spinner label="Memuat isi konten…" />}
+            <ErrorAlert error={preview.error} />
+            {preview.detail && <ContentDetailView content={preview.detail} />}
+          </div>
+        )}
+      </Modal>
 
       {/* Modal Detail Error Item Gagal */}
       <Modal

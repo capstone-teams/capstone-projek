@@ -252,10 +252,10 @@ describe('FE-16.2 Matriks Progres & Regenerasi Item', () => {
     expect(container.textContent).toContain('Minggu 8');
     expect(container.textContent).toContain('Ujian / Tidak berlaku');
 
-    // Sel Selesai tidak punya tombol pratinjau isi konten
+    // Sel Selesai dapat diklik untuk membuka isi konten
     expect(container.textContent).toContain('✓ Selesai');
     expect(container.textContent).toContain('v1');
-    expect(container.querySelector('button[aria-label*="Materi pembelajaran"]')).toBeNull();
+    expect(container.querySelector('button[aria-label^="Buka isi Minggu 1"]')).not.toBeNull();
 
     // Minggu 2 yang belum selesai menampilkan Menunggu
     expect(container.textContent).toContain('Menunggu');
@@ -264,6 +264,20 @@ describe('FE-16.2 Matriks Progres & Regenerasi Item', () => {
     const reviewLink = [...container.querySelectorAll('a')].find((a) => a.textContent.includes('Buka Halaman Review'));
     expect(reviewLink).toBeTruthy();
     expect(reviewLink.getAttribute('href')).toBe('/course/48/ai/review');
+
+    // Klik sel Selesai membuka isi materi dari GET .../contents/{id}
+    contentService.getWorkflowContent.mockResolvedValueOnce({
+      id: 'c-ok-1',
+      kind: 'LEARNING_MATERIAL',
+      week_number: 1,
+      title: 'Konsep Basis Data',
+      version: 1,
+      content_data: { sections: [{ heading: 'Pengantar', body_markdown: 'Basis data adalah kumpulan data terorganisasi.' }] },
+      validation: { status: 'PASSED', score: 1, retry_count: 0 },
+    });
+    await act(async () => container.querySelector('button[aria-label^="Buka isi Minggu 1"]').click());
+    expect(contentService.getWorkflowContent).toHaveBeenCalledWith('wf-1', 'c-ok-1');
+    await waitFor(() => container.textContent.includes('Basis data adalah kumpulan data terorganisasi.'), 'Isi materi');
   });
 
   it('memperbarui status sel matriks secara real-time saat event AKTIVITAS_AGENT dan RETRY_FIX tiba', async () => {
