@@ -1788,11 +1788,13 @@ Implementasi final ditentukan pada backend design.
 | Execute to Moodle            |   Yes |        No |
 | Monitor Workflow             |   Yes |        No |
 | View Verification Result     |   Yes |        No |
-| Submit Student Verification  |    No |       Yes |
-| View Student Verification    |   Yes |        No |
+| Submit Student Verification¹ |    No |       Yes |
+| View Student Verification¹   |   Yes |        No |
 | Access Result Course (§13.5) |   Yes |       Yes |
 
 Role mengikuti enumeration `Role` pada proposal: `DOSEN` dan `MAHASISWA` (DL-011).
+
+¹ *Verification feedback* berprioritas **Could** (Proposal §3.2.5) dan belum memiliki endpoint. Verifikasi dari sisi mahasiswa saat ini dibuktikan dengan `scripts.verify_student_access` (moodle-setup-guide §10.4) dan test live BE-16.3/BE-21.3: mahasiswa terdaftar membuka course serta seluruh activity, mahasiswa lain ditolak. Mahasiswa melihat hasil course melalui §13.5.
 
 ---
 
@@ -1976,4 +1978,4 @@ Hal yang masih perlu ditentukan:
 | 0.1     | 2026-09-02 | Initial API Specification | Project Team |
 | 0.2     | 2026-10-21 | Kontrak Sprint 2 pada OpenAPI: enum role kanonik, RPS list/analysis/reanalyze, instructor setup, workflow & event WS (BE-06.4) | Project Team |
 | 0.6     | 2026-11-11 | Eksekusi `FULL` dengan operasi per konten (§16.5, §16.7) dan endpoint verifikasi berbasis workflow §16.9–§16.11 menggantikan §13–§14 (BE-22.2) | Project Team |
-| 0.7     | 2026-11-11 | Akses course untuk mahasiswa (§13.5) dan bagian Student Access pada OpenAPI | Project Team |
+| 0.7     | 2026-11-11 | Akses course untuk mahasiswa (§13.5), bagian Student Access pada OpenAPI, dan catatan status Student Verification pada §22 | Project Team |
