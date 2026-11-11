@@ -14,6 +14,12 @@ name: Deploy main
 on:
   push:
     branches: [main]
+    # Hanya perubahan backend/compose yang me-restart container di server.
+    # Perubahan frontend dideploy Vercel, jadi tidak perlu menyentuh backend.
+    paths:
+      - "backend/**"
+      - "docker-compose.yml"
+      - "docker-compose.override.yml"
 
 permissions:
   contents: read
