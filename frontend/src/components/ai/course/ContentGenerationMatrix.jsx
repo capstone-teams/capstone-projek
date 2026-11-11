@@ -62,6 +62,35 @@ function fallbackPlanFromContents(contents = []) {
   return { weeks };
 }
 
+function stripWeekPrefix(title, weekNumber) {
+  if (!title) return '';
+  const pattern = new RegExp(`^Minggu\\s+${weekNumber}\\s*[:-]\\s*`, 'i');
+  const cleaned = String(title).replace(pattern, '').trim();
+  return cleaned || String(title);
+}
+
+function summarizeColumnStats(rows) {
+  const stats = Object.fromEntries(
+    MATRIX_COLUMNS.map((kind) => [kind, { completed: 0, failed: 0, active: 0, pending: 0, scheduled: 0 }]),
+  );
+  rows.forEach(({ exam, cells }) => {
+    if (exam) return;
+    MATRIX_COLUMNS.forEach((kind) => {
+      const cell = cells[kind];
+      if (!cell || cell.status === CONTENT_CELL_STATUS.SKIPPED || cell.status === CONTENT_CELL_STATUS.EXAM) return;
+      stats[kind].scheduled += 1;
+      if (cell.status === CONTENT_CELL_STATUS.COMPLETED) stats[kind].completed += 1;
+      else if (cell.status === CONTENT_CELL_STATUS.FAILED) stats[kind].failed += 1;
+      else if (cell.status === CONTENT_CELL_STATUS.PROCESSING || cell.status === CONTENT_CELL_STATUS.RETRYING) {
+        stats[kind].active += 1;
+      } else if (cell.status === CONTENT_CELL_STATUS.PENDING) {
+        stats[kind].pending += 1;
+      }
+    });
+  });
+  return stats;
+}
+
 function MatrixCell({ cell, week, busy, onInspectError, onRegenerate }) {
   const kindLabel = CONTENT_KIND_LABELS[cell.kind] ?? cell.kind;
   const record = cell.record;
@@ -70,10 +99,14 @@ function MatrixCell({ cell, week, busy, onInspectError, onRegenerate }) {
     case CONTENT_CELL_STATUS.SKIPPED:
       return (
         <span
-          className="text-xs text-muted"
-          title={cell.reason === 'week_type' ? `${kindLabel} tidak berlaku untuk tipe minggu ini` : `${kindLabel} tidak dijadwalkan`}
+          className="inline-block text-xs text-muted"
+          title={
+            cell.reason === 'week_type'
+              ? `${kindLabel} tidak berlaku pada tipe minggu ini`
+              : `${kindLabel} tidak dijadwalkan`
+          }
         >
-          -
+          —
         </span>
       );
     case CONTENT_CELL_STATUS.PENDING:
@@ -84,10 +117,13 @@ function MatrixCell({ cell, week, busy, onInspectError, onRegenerate }) {
       return <Badge tone="warning">↻ Retry/Fix</Badge>;
     case CONTENT_CELL_STATUS.COMPLETED:
       return (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div
+          className="inline-flex items-center gap-1.5 whitespace-nowrap"
+          title={record?.title || undefined}
+        >
           <Badge tone="success">✓ Selesai</Badge>
           {record?.version != null && (
-            <span className="text-xs text-muted">v{record.version}</span>
+            <span className="text-[11px] font-medium text-muted">v{record.version}</span>
           )}
         </div>
       );
@@ -126,7 +162,7 @@ function MatrixCell({ cell, week, busy, onInspectError, onRegenerate }) {
         </div>
       );
     default:
-      return <Badge tone="neutral">-</Badge>;
+      return <span className="text-xs text-muted">—</span>;
   }
 }
 
@@ -171,6 +207,10 @@ export default function ContentGenerationMatrix({
       else if (status === CONTENT_CELL_STATUS.PROCESSING || status === CONTENT_CELL_STATUS.RETRYING) activeCount += 1;
     });
   });
+
+  const columnStats = summarizeColumnStats(rows);
+  const quizScheduled = columnStats[CONTENT_KIND.QUIZ]?.scheduled ?? 0;
+  const hasExamRows = rows.some(({ exam, week }) => exam || isExamWeek(week));
 
   const openErrorModal = async (record, week) => {
     const requestId = record.id;
@@ -247,59 +287,91 @@ export default function ContentGenerationMatrix({
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted">Belum ada data minggu atau konten yang diproses.</p>
         ) : (
-          <div className="table-wrap rounded-lg border border-line" role="region" aria-label="Matriks progres konten mingguan" tabIndex={0}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col" className="min-w-[200px]">Minggu</th>
-                  {MATRIX_COLUMNS.map((kind) => (
-                    <th key={kind} scope="col" className="min-w-[140px]">
-                      {CONTENT_KIND_LABELS[kind]}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ week, exam, cells }) => {
-                  const typeLabel = weekTypeLabel(week);
-                  const examWeek = exam || isExamWeek(week);
-                  return (
-                    <tr key={week.week_number} className={examWeek ? 'bg-surface/60' : undefined}>
-                      <th scope="row" className="text-left font-medium">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-semibold text-ink">Minggu {week.week_number}</span>
-                          {typeLabel && (
-                            <Badge tone={examWeek ? 'neutral' : 'info'}>{typeLabel}</Badge>
-                          )}
-                        </div>
-                        {week.title && (
-                          <div className="mt-0.5 max-w-[220px] truncate text-xs font-normal text-muted" title={week.title}>
-                            {week.title}
+          <div className="space-y-2.5">
+            {(quizScheduled === 0 || hasExamRows) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-line bg-surface px-3 py-2 text-xs text-muted">
+                <span>
+                  <strong className="text-ink">—</strong> Tidak dijadwalkan / tidak berlaku
+                </span>
+                {quizScheduled === 0 && (
+                  <span>
+                    <strong className="text-ink">Kuis:</strong> hanya dihasilkan pada minggu bertipe Kuis di RPS (kursus ini belum memiliki minggu Kuis).
+                  </span>
+                )}
+                {hasExamRows && (
+                  <span>
+                    <strong className="text-ink">UTS/UAS:</strong> section dibuat di Moodle tanpa aktivitas otomatis.
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="table-wrap max-h-[70vh] overflow-y-auto rounded-lg border border-line bg-white" role="region" aria-label="Matriks progres konten mingguan" tabIndex={0}>
+              <table className="table">
+                <thead className="sticky top-0 z-10 bg-surface">
+                  <tr>
+                    <th scope="col" className="min-w-[240px]">Minggu &amp; Topik</th>
+                    {MATRIX_COLUMNS.map((kind) => {
+                      const stat = columnStats[kind];
+                      return (
+                        <th key={kind} scope="col" className="min-w-[130px]">
+                          <div>{CONTENT_KIND_LABELS[kind]}</div>
+                          <div className="mt-0.5 text-[11px] font-normal text-muted">
+                            {stat.scheduled > 0
+                              ? `${stat.completed}/${stat.scheduled} selesai${stat.failed > 0 ? ` · ${stat.failed} gagal` : ''}`
+                              : '0 dijadwalkan'}
                           </div>
-                        )}
-                      </th>
-                      {examWeek ? (
-                        <td colSpan={MATRIX_COLUMNS.length} className="text-center text-xs text-muted">
-                          Ujian / Tidak berlaku
-                        </td>
-                      ) : (
-                        MATRIX_COLUMNS.map((kind) => (
-                          <td key={kind}>
-                            <MatrixCell
-                              cell={cells[kind]}
-                              week={week}
-                              busy={busy}
-                              onInspectError={(record, wk) => openErrorModal(record, wk)}
-                              onRegenerate={(record, wk) => setRegenTarget({ record, week: wk })}
-                            />
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ week, exam, cells }) => {
+                    const typeLabel = weekTypeLabel(week);
+                    const examWeek = exam || isExamWeek(week);
+                    const topicTitle = stripWeekPrefix(week.title, week.week_number);
+                    return (
+                      <tr key={week.week_number} className={examWeek ? 'bg-warning-light/25' : undefined}>
+                        <th scope="row" className="text-left font-medium">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-semibold text-ink">Minggu {week.week_number}</span>
+                            {typeLabel && (
+                              <Badge tone={examWeek ? 'warning' : 'info'}>{typeLabel}</Badge>
+                            )}
+                          </div>
+                          {topicTitle && (
+                            <div className="mt-0.5 line-clamp-2 max-w-[340px] text-xs font-normal text-muted" title={week.title}>
+                              {topicTitle}
+                            </div>
+                          )}
+                        </th>
+                        {examWeek ? (
+                          <td colSpan={MATRIX_COLUMNS.length} className="text-xs text-muted align-middle">
+                            <div className="flex flex-wrap items-center gap-2 py-0.5">
+                              <Badge tone="neutral">Ujian / Tidak berlaku</Badge>
+                              <span>Section Moodle disiapkan; aktivitas ujian dikelola dosen.</span>
+                            </div>
                           </td>
-                        ))
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        ) : (
+                          MATRIX_COLUMNS.map((kind) => (
+                            <td key={kind} className="align-middle">
+                              <MatrixCell
+                                cell={cells[kind]}
+                                week={week}
+                                busy={busy}
+                                onInspectError={(record, wk) => openErrorModal(record, wk)}
+                                onRegenerate={(record, wk) => setRegenTarget({ record, week: wk })}
+                              />
+                            </td>
+                          ))
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

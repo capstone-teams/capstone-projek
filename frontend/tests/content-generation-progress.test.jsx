@@ -389,4 +389,55 @@ describe('FE-16.2 Matriks Progres & Regenerasi Item', () => {
     const regenBtn = container.querySelector('button[aria-label*="Regenerasi Minggu 1 Sumber belajar"]');
     expect(regenBtn.disabled).toBe(true);
   });
+
+  it('tidak menyembunyikan Kuis bila backend mengembalikan record QUIZ pada minggu reguler dan merapikan awalan Minggu pada judul', async () => {
+    const regularOnlyPlan = {
+      id: 'plan-reg',
+      weeks: [
+        { week_number: 1, title: 'Minggu 1: Dasar Web', week_type: 'regular' },
+        { week_number: 8, title: 'Minggu 8: Ujian Tengah Semester', week_type: 'uts' },
+      ],
+    };
+
+    // Bila backend tidak menghasilkan QUIZ sama sekali pada minggu reguler -> info alasan tampil jelas
+    await renderMatrix({
+      plan: regularOnlyPlan,
+      workflow: { id: 'wf-1', status: 'RUNNING', stage: 'instructor_review' },
+      contents: [
+        {
+          id: 'm1',
+          kind: 'LEARNING_MATERIAL',
+          week_number: 1,
+          version: 1,
+          validation: { status: 'PASSED' },
+          updated_at: '2026-11-10T10:01:00Z',
+        },
+      ],
+      events: [],
+    });
+    expect(container.textContent).toContain('0 dijadwalkan');
+    expect(container.textContent).toContain('kursus ini belum memiliki minggu Kuis');
+    expect(container.textContent).toContain('Dasar Web');
+    expect(container.textContent).not.toContain('Minggu 1: Dasar Web');
+
+    // Bila backend mengembalikan record QUIZ pada minggu reguler -> tetap tampil ✓ Selesai, tidak tertimpa '-'
+    await renderMatrix({
+      plan: regularOnlyPlan,
+      workflow: { id: 'wf-1', status: 'RUNNING', stage: 'instructor_review' },
+      contents: [
+        {
+          id: 'q1',
+          kind: 'QUIZ',
+          week_number: 1,
+          title: 'Kuis Dasar Web',
+          version: 1,
+          validation: { status: 'PASSED' },
+          updated_at: '2026-11-10T10:02:00Z',
+        },
+      ],
+      events: [],
+    });
+    expect(container.textContent).toContain('1/1 selesai');
+    expect(container.textContent).toContain('✓ Selesai');
+  });
 });
