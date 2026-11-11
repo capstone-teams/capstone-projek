@@ -529,6 +529,11 @@ async def _run_content_validation(ctx: WorkflowContext) -> None:
     ):
         raise RuntimeError("tahap validasi konten memerlukan hasil generation")
 
+    # Run lanjutan tanpa target baru: seluruh konten sudah tersimpan sebelum
+    # server berhenti, jadi tinggal menyelesaikan statusnya.
+    if not ctx.prepared_content.targets:
+        return
+
     await ctx.content_service.store(
         ctx.workflow, ctx.prepared_content, ctx.generation_outcomes
     )

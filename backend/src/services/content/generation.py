@@ -370,6 +370,15 @@ class ContentGenerationService:
             )
 
         if not targets:
+            if job.scope is None:
+                # Run lanjutan setelah server mulai ulang: seluruh konten sudah
+                # tersimpan, jadi tidak ada panggilan model yang perlu diulang.
+                return PreparedGeneration(
+                    course_plan_id=plan.id,
+                    targets=(),
+                    regenerate=False,
+                    notes=notes,
+                )
             raise ContentStateError(
                 "tidak ada konten yang cocok untuk digenerate",
                 public_message=(
@@ -403,11 +412,17 @@ class ContentGenerationService:
                     ctx.week_data.week_type.lower(), ()
                 ):
                     continue
+                existing = await self._repository.get_latest(
+                    content_key_for(workflow.id or "", ctx.week_number, kind)
+                )
                 previous = None
                 if regenerate:
-                    previous = await self._repository.get_latest(
-                        content_key_for(workflow.id or "", ctx.week_number, kind)
-                    )
+                    previous = existing
+                elif existing is not None:
+                    # Generate awal yang dilanjutkan: konten yang sudah tersimpan
+                    # tidak dibuat ulang, sehingga run yang terputus melanjutkan
+                    # sisa minggu/jenis saja.
+                    continue
                 targets.append(GenerationTarget(ctx=ctx, kind=kind, previous=previous))
         return targets
 
