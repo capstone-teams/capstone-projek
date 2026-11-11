@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { useApi } from '../../../hooks/useApi';
@@ -37,6 +37,16 @@ export default function MoodleCourseLayout() {
   useEffect(() => {
     if (typeof courseId === 'number') logCourseView(courseId);
   }, [courseId]);
+
+  // Eksekusi Moodle dari tab Generator AI menambah atau mengganti activity kursus. Layout ini tidak dimuat ulang
+  // saat berpindah tab, jadi isi kursus diambil ulang begitu dosen keluar dari tab AI agar activity baru langsung
+  // tampil dan dapat dibuka.
+  const inAiTab = /^\/course\/[^/]+\/ai(\/|$)/.test(pathname);
+  const wasInAiTab = useRef(inAiTab);
+  useEffect(() => {
+    if (wasInAiTab.current && !inAiTab) reload({ silent: true });
+    wasInAiTab.current = inAiTab;
+  }, [inAiTab, reload]);
 
   if (loading && !data) return <PageContainer><Spinner /></PageContainer>;
   if (error || !data?.course) return <PageContainer>

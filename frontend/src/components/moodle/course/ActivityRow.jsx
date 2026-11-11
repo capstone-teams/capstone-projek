@@ -4,6 +4,7 @@ import ActivityIcon from '../ActivityIcon';
 import MoodleHtml from '../MoodleHtml';
 import { ActivityEditMenu, InlineNameEditor } from '../editing';
 import { formatUnixDateTime } from '../../../utils/format';
+import { htmlToText, readingMinutes } from '../../../utils/htmlText';
 import { COURSE_CARD } from './courseCard';
 
 const MOD_LABELS = {
@@ -107,6 +108,36 @@ export default function ActivityRow({ courseId, mod, isTeacher, editMode, sectio
       {Boolean(mod.description) && (!INLINE_HIDDEN_MODNAMES.has(mod.modname) || mod.showdescription === 1) && (
         <MoodleHtml html={mod.description} className="mt-3 rounded bg-surface p-3 text-sm" />
       )}
+      {mod.modname === 'page' && mod.uservisible !== false && mod.content && !editMode && (
+        <PagePreview courseId={courseId} mod={mod} />
+      )}
     </li>
+  );
+}
+
+// Materi lebih panjang dari ini dipotong di kartu dan dibaca utuh di halaman artikel.
+const PREVIEW_MAX_CHARS = 600;
+
+/**
+ * Pratinjau isi Page (materi mingguan) langsung di kartu pertemuan. Materi panjang dipotong dengan efek pudar dan
+ * tombol "Baca selengkapnya" yang membuka halaman artikel (`/course/:id/mod/:cmid`).
+ */
+function PagePreview({ courseId, mod }) {
+  const text = htmlToText(mod.content);
+  if (!text) return null;
+  const long = text.length > PREVIEW_MAX_CHARS;
+  return (
+    <div className="mt-3 border-t border-line-subtle pt-3">
+      <div className={long ? 'relative max-h-56 overflow-hidden' : undefined} data-testid="page-preview">
+        <MoodleHtml html={mod.content} className="text-sm text-ink" />
+        {long && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-white to-transparent" />}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+        <Link to={`/course/${courseId}/mod/${mod.id}`} className="font-semibold">
+          {long ? 'Baca selengkapnya →' : 'Buka halaman materi →'}
+        </Link>
+        <span className="text-muted">± {readingMinutes(text)} menit baca</span>
+      </div>
+    </div>
   );
 }

@@ -388,6 +388,40 @@
   .prose-moodle th {
     @apply border border-line px-2 py-1;
   }
+
+  /* Ilustrasi materi hasil Generator AI: diagram dan gambar berlisensi beserta atribusinya. */
+  .prose-moodle figure {
+    @apply my-5;
+  }
+  .prose-moodle figure img {
+    @apply mx-auto rounded-md border border-line-subtle bg-white;
+  }
+  .prose-moodle figcaption {
+    @apply mt-2 text-center text-xs text-muted;
+  }
+  .prose-moodle pre {
+    @apply my-3 overflow-x-auto rounded-md bg-surface p-3 text-sm;
+  }
+  .prose-moodle blockquote {
+    @apply my-3 border-l-4 border-primary/40 pl-4 text-ink-subtle;
+  }
+
+  /* Materi dibaca sebagai artikel (halaman Page). */
+  .prose-article {
+    @apply text-[17px] leading-relaxed text-ink;
+  }
+  .prose-article h2 {
+    @apply mt-10 mb-3 scroll-mt-20 text-2xl font-bold;
+  }
+  .prose-article h3 {
+    @apply mt-7 mb-2 scroll-mt-20 text-xl font-semibold;
+  }
+  .prose-article p {
+    @apply my-4;
+  }
+  .prose-article li {
+    @apply my-1.5;
+  }
 }
 
 /* Tema dan layout halaman aplikasi. */
