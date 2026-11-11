@@ -131,6 +131,14 @@ def _summarize_yaml(rps_yaml: str) -> str:
     if not isinstance(data, dict):
         raise ValueError("Struktur YAML tidak valid: isi harus berupa pasangan key-value.")
 
+    # Dokumen unggahan diserialisasi sebagai page_count + blocks
+    # (yaml_export.document_to_yaml), bukan RPS Structured Data; field
+    # weekly_plan/cpmk/assessments tidak ada di sana sehingga dihitung dari blok.
+    blocks = data.get("blocks")
+    if isinstance(blocks, list):
+        tables = sum(1 for block in blocks if isinstance(block, dict) and "table" in block)
+        return f"{data.get('page_count', 0)} halaman, {len(blocks)} blok, {tables} tabel"
+
     weeks = sum(
         len(item.get("weeks") or [])
         for item in (data.get("weekly_plan") or [])

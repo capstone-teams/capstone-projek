@@ -17,6 +17,7 @@ import yaml
 import pytest
 
 from src.schemas.rps_structured import RPSStructuredData
+from src.services.analysis.service import _summarize_yaml
 from src.services.rps.errors import RPSValidationError
 from src.services.rps.yaml_export import (
     LLM_FIELDS,
@@ -207,6 +208,14 @@ def test_the_extracted_document_is_serialized_with_pages_and_blocks():
     assert payload["blocks"]
     # Setiap blok membawa nomor halaman.
     assert all("page" in block for block in payload["blocks"])
+
+
+def test_the_summary_of_a_document_yaml_counts_pages_blocks_and_tables():
+    # YAML dokumen tidak punya field weekly_plan/cpmk/assessments; ringkasannya
+    # dulu selalu "0 minggu, 0 CPMK, 0 komponen penilaian" untuk setiap unggahan.
+    summary = _summarize_yaml(document_to_yaml(SOURCE_DOCUMENT))
+
+    assert summary == "3 halaman, 7 blok, 2 tabel"
 
 
 def test_blocks_are_ordered_by_page():
