@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { findCourseByMoodleId } from '../../../services/courseService';
 import { getWorkflowPlan } from '../../../services/coursePlanService';
 import { listWorkflowContents } from '../../../services/contentService';
 import { listExecutions } from '../../../services/executionService';
-import { useAction, useApi } from '../../../hooks/useApi';
+import { useApi } from '../../../hooks/useApi';
 import { useOnChange } from '../../../hooks/useOnChange';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
 import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
@@ -16,6 +16,7 @@ import {
   moodleCourseIdOf,
   saveActiveCourseBinding,
 } from '../../../services/workflowService';
+import { isWorkflowBusy } from '../../../utils/workflowStatus';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { Alert, Badge, ErrorAlert, ErrorBoundary, Spinner } from '../../../components/ui';
 import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
@@ -79,14 +80,20 @@ function CourseProjectLayout() {
 
   // Binding di browser mengikuti server begitu server punya course target untuk kursus ini, agar tidak ada
   // browser yang tetap memakai RPS lama sementara dosen lain melihat RPS yang berbeda.
+  // Jika browser baru saja mengunggah RPS dan masih menunggu sinkronisasi target, jangan timpa balik.
   useEffect(() => {
-    if (courseKeys.length && serverWorkflow?.id && activeBinding?.workflowId !== serverWorkflow.id) {
+    if (!courseKeys.length || !serverWorkflow?.id) return;
+    if (activeBinding?.pendingTargetSync && activeBinding.workflowId && activeBinding.workflowId !== serverWorkflow.id) {
+      return;
+    }
+    if (activeBinding?.workflowId !== serverWorkflow.id) {
       saveActiveCourseBinding(moodleId || courseIdParam, {
         workflowId: serverWorkflow.id,
         rpsId: serverWorkflow.rps_id,
+        pendingTargetSync: false,
       }, courseKeys);
     }
-  }, [moodleId, courseIdParam, serverWorkflow?.id, serverWorkflow?.rps_id, activeBinding?.workflowId, courseKeysKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [moodleId, courseIdParam, serverWorkflow?.id, serverWorkflow?.rps_id, activeBinding?.workflowId, activeBinding?.pendingTargetSync, courseKeysKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fallback metadata kursus dari Moodle jika belum tercatat di database internal /courses
   const baseCourse = dbCourse ?? (moodleCourse ? {
@@ -97,7 +104,9 @@ function CourseProjectLayout() {
     code: moodleCourse.shortname,
   } : null);
 
+  const pendingLocalWorkflowId = activeBinding?.pendingTargetSync ? activeBinding.workflowId : null;
   const effectiveWorkflowId = workflowParam
+    ?? pendingLocalWorkflowId
     ?? serverWorkflow?.id
     ?? activeBinding?.workflowId
     ?? activeWorkflow?.id
@@ -115,6 +124,7 @@ function CourseProjectLayout() {
   const workflowId = effectiveWorkflowId ?? projectRps.data?.workflow_id ?? null;
 
   const effectiveRpsId = rpsParam
+    ?? (activeBinding?.pendingTargetSync ? activeBinding.rpsId : serverWorkflow?.rps_id)
     ?? serverWorkflow?.rps_id
     ?? activeBinding?.rpsId
     ?? activeWorkflow?.rps_id
@@ -159,18 +169,85 @@ function CourseProjectLayout() {
     return reload({ silent: true });
   }, [reload, reloadWorkflow, reloadSnapshot, reloadActiveWf, setVersion]);
 
-  // Simpan workflow yang tampil sebagai course target kursus ini di server (bindWorkflowToCourse menelan galat PUT,
-  // jadi hasil kosong berarti gagal dan ditampilkan ke dosen).
-  const linkTarget = useAction(async () => {
-    const updated = await bindWorkflowToCourse(workflowId, moodleId, { rpsId: effectiveRpsId, aliases: courseKeys });
-    if (!updated) throw new Error('RPS belum dapat disimpan untuk kursus ini. Silakan coba lagi beberapa saat lagi.');
-    return updated;
-  }, { loadingLabel: 'Menyimpan RPS kursus…' });
+  const busy = isWorkflowBusy(effectiveWorkflow);
+  const prevBusyRef = useRef(busy);
+  const syncingRef = useRef(false);
+  const lastSyncAttemptKeyRef = useRef(null);
+  const [syncFailure, setSyncFailure] = useState(null);
+  const [retryingSync, setRetryingSync] = useState(false);
 
-  // RPS yang tampil hanya tersimpan di browser ini (course target belum tersimpan di server): dosen lain belum
-  // melihatnya. Menyimpan ulang memanggil PUT /workflows/{id}/moodle-target dan melepas workflow lama kursus ini.
-  const localOnly = !!moodleId && !!workflowId && !workflowParam && !activeWfQuery.loading && serverWorkflow?.id !== workflowId;
-  const saveTarget = linkTarget.run;
+  const isPendingBinding = Boolean(
+    activeBinding?.pendingTargetSync
+    && activeBinding?.workflowId
+    && activeBinding.workflowId === workflowId
+  );
+  const serverTargetId = effectiveWorkflow?.id === workflowId ? effectiveWorkflow.moodle_course_id : undefined;
+  const needsTargetSync = Boolean(
+    moodleId
+    && workflowId
+    && !workflowParam
+    && !activeWfQuery.loading
+    && effectiveWorkflow?.id === workflowId
+    && !busy
+    && (isPendingBinding || serverTargetId == null)
+    && (isPendingBinding || Number(serverTargetId) !== moodleId)
+  );
+  const syncAttemptKey = needsTargetSync
+    ? `${workflowId}:${moodleId}:${effectiveWorkflow?.updated_at ?? ''}:${effectiveWorkflow?.status ?? ''}:${effectiveWorkflow?.stage ?? ''}:${isPendingBinding ? 'pending' : 'null'}`
+    : null;
+
+  const syncCourseTarget = useCallback(async ({ manual = false } = {}) => {
+    if (!moodleId || !workflowId || syncingRef.current) return;
+    syncingRef.current = true;
+    if (manual) setRetryingSync(true);
+    try {
+      const updated = await bindWorkflowToCourse(workflowId, moodleId, {
+        rpsId: effectiveRpsId,
+        aliases: courseKeys,
+        throwOnError: true,
+      });
+      if (updated && Number(updated.moodle_course_id) === moodleId && !isWorkflowBusy(updated)) {
+        saveActiveCourseBinding(moodleId || courseIdParam, {
+          workflowId,
+          rpsId: effectiveRpsId ?? updated.rps_id,
+          pendingTargetSync: false,
+        }, courseKeys);
+      }
+      setSyncFailure(null);
+      reloadWorkflow();
+      reloadActiveWf({ silent: true });
+    } catch (err) {
+      setSyncFailure({ workflowId, error: err });
+    } finally {
+      syncingRef.current = false;
+      if (manual) setRetryingSync(false);
+    }
+  }, [moodleId, courseIdParam, workflowId, effectiveRpsId, courseKeysKey, reloadWorkflow, reloadActiveWf]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saat workflow baru selesai dari proses background, tarik detail workflow terbaru agar moodle_course_id
+  // yang mungkin tertimpa oleh task background langsung terdeteksi tanpa menunggu interval polling.
+  useEffect(() => {
+    const wasBusy = prevBusyRef.current;
+    prevBusyRef.current = busy;
+    if (wasBusy && !busy && workflowId) {
+      reloadWorkflow();
+      reloadActiveWf({ silent: true });
+    }
+  }, [busy, workflowId, reloadWorkflow, reloadActiveWf]);
+
+  // Sinkronkan course target di server secara otomatis setelah proses background workflow berhenti.
+  useEffect(() => {
+    if (!needsTargetSync || !syncAttemptKey || syncingRef.current) return;
+    if (lastSyncAttemptKeyRef.current === syncAttemptKey) return;
+    lastSyncAttemptKeyRef.current = syncAttemptKey;
+    syncCourseTarget();
+  }, [needsTargetSync, syncAttemptKey, syncCourseTarget]);
+
+  const syncError = needsTargetSync && syncFailure && syncFailure.workflowId === workflowId ? syncFailure.error : null;
+  const handleRetrySync = () => {
+    lastSyncAttemptKeyRef.current = null;
+    syncCourseTarget({ manual: true });
+  };
 
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
@@ -193,17 +270,20 @@ function CourseProjectLayout() {
         executions={progressSnapshot.data?.executions ?? null}
       />
 
-      {localOnly && (
-        <Alert tone="warning" title="RPS belum tersimpan untuk kursus ini">
-          <p>RPS ini baru tersimpan di browser Anda, sehingga dosen lain yang membuka kursus ini belum melihatnya.</p>
-          <ErrorAlert error={linkTarget.error} onClose={linkTarget.clearError} />
+      {syncError && (
+        <Alert
+          tone="danger"
+          title="Gagal menghubungkan RPS ke kursus di server"
+          onClose={() => setSyncFailure(null)}
+        >
+          <p>{syncError?.message || String(syncError)}</p>
           <button
             type="button"
-            className="btn btn--primary btn--sm mt-2"
-            disabled={linkTarget.pending}
-            onClick={() => saveTarget().then(refresh).catch(() => {})}
+            className="btn btn--secondary btn--sm mt-2"
+            disabled={retryingSync}
+            onClick={handleRetrySync}
           >
-            {linkTarget.pending ? 'Menyimpan…' : 'Simpan sebagai RPS kursus'}
+            {retryingSync ? 'Menghubungkan…' : 'Coba lagi'}
           </button>
         </Alert>
       )}

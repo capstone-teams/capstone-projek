@@ -280,4 +280,88 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
     expect(node.textContent).toContain('11231023@student.itk.ac.id');
     expect(node.textContent).toContain('Sistem Basis Data');
   });
+
+  it('AiCourseLayout otomatis menyinkronkan moodle_course_id setelah proses background selesai tanpa banner manual', async () => {
+    vi.spyOn(courseService, 'findCourseByMoodleId').mockResolvedValue(null);
+    vi.spyOn(workflowService, 'getActiveCourseBinding').mockReturnValue({
+      workflowId: 'wf-1',
+      rpsId: 'rps-1',
+      pendingTargetSync: true,
+    });
+    vi.spyOn(workflowService, 'findWorkflowForCourse').mockResolvedValue(wf({ moodle_course_id: null }));
+    const bindSpy = vi.spyOn(workflowService, 'bindWorkflowToCourse').mockResolvedValue(wf({ moodle_course_id: 48 }));
+    vi.spyOn(rpsService, 'getRps').mockResolvedValue({ id: 'rps-1', filename: 'RPS SBD.pdf', status: 'ANALYZED' });
+
+    const tree = () => (
+      <MemoryRouter initialEntries={['/course/48/ai']}>
+        <Routes>
+          <Route path="/course/:courseId/ai" element={<AiCourseLayout />}>
+            <Route index element={<CourseOverviewPage />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Saat analisis masih berjalan (busy), sinkronisasi menunggu tenang dan tidak memunculkan banner manual
+    monitorState.workflow = wf({ status: 'RUNNING', stage: 'rps_analysis', moodle_course_id: 48 });
+    monitorState.events = [ev('WORKFLOW_STAGE_STARTED', 'rps_analysis')];
+    await act(async () => root.render(tree()));
+    expect(bindSpy).not.toHaveBeenCalled();
+    expect(node.textContent).not.toContain('RPS belum tersimpan untuk kursus ini');
+    expect(node.textContent).not.toContain('Simpan sebagai RPS kursus');
+
+    // Setelah selesai analisis ke WAITING_FOR_REVIEW (tidak busy), target kursus otomatis diikat ulang
+    monitorState.workflow = wf({
+      status: 'RUNNING',
+      stage: 'instructor_review',
+      moodle_course_id: null,
+      updated_at: '2026-11-11T08:02:00Z',
+    });
+    monitorState.events = analyzed();
+    await act(async () => root.render(tree()));
+
+    expect(bindSpy).toHaveBeenCalledWith('wf-1', 48, expect.objectContaining({ rpsId: 'rps-1', throwOnError: true }));
+    expect(node.textContent).not.toContain('RPS belum tersimpan untuk kursus ini');
+    expect(node.textContent).not.toContain('Simpan sebagai RPS kursus');
+  });
+
+  it('AiCourseLayout hanya menampilkan Alert error dengan Coba lagi saat auto-sync ke server benar-benar gagal', async () => {
+    vi.spyOn(courseService, 'findCourseByMoodleId').mockResolvedValue(null);
+    vi.spyOn(workflowService, 'getActiveCourseBinding').mockReturnValue({
+      workflowId: 'wf-1',
+      rpsId: 'rps-1',
+      pendingTargetSync: false,
+    });
+    vi.spyOn(workflowService, 'findWorkflowForCourse').mockResolvedValue(wf({ moodle_course_id: null }));
+    const bindSpy = vi.spyOn(workflowService, 'bindWorkflowToCourse')
+      .mockRejectedValueOnce(new Error('Koneksi server terputus'))
+      .mockResolvedValueOnce(wf({ moodle_course_id: 48 }));
+    vi.spyOn(rpsService, 'getRps').mockResolvedValue({ id: 'rps-1', filename: 'RPS SBD.pdf', status: 'ANALYZED' });
+
+    monitorState.workflow = wf({ status: 'RUNNING', stage: 'instructor_review', moodle_course_id: null });
+    monitorState.events = analyzed();
+
+    await act(async () => root.render(
+      <MemoryRouter initialEntries={['/course/48/ai']}>
+        <Routes>
+          <Route path="/course/:courseId/ai" element={<AiCourseLayout />}>
+            <Route index element={<CourseOverviewPage />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    ));
+
+    expect(bindSpy).toHaveBeenCalledTimes(1);
+    expect(node.textContent).toContain('Gagal menghubungkan RPS ke kursus di server');
+    expect(node.textContent).toContain('Koneksi server terputus');
+
+    const retryBtn = [...node.querySelectorAll('button')].find((b) => b.textContent.includes('Coba lagi'));
+    expect(retryBtn).toBeTruthy();
+    await act(async () => {
+      retryBtn.click();
+    });
+
+    expect(bindSpy).toHaveBeenCalledTimes(2);
+    expect(node.textContent).not.toContain('Gagal menghubungkan RPS ke kursus di server');
+  });
 });

@@ -165,11 +165,18 @@ export default function CourseRpsPage() {
     setShowReplace(false);
     setActiveRpsId(newRps.id);
     const wfId = processing?.workflow_id || newRps.workflow_id;
+    const targetKey = moodleId || primaryKey;
+    const numericTarget = Number(targetKey);
+    const hasNumericTarget = Number.isInteger(numericTarget) && numericTarget > 0;
     if (primaryKey) {
-      saveActiveCourseBinding(primaryKey, { workflowId: wfId, rpsId: newRps.id }, courseKeys);
+      saveActiveCourseBinding(primaryKey, {
+        workflowId: wfId,
+        rpsId: newRps.id,
+        pendingTargetSync: Boolean(wfId && hasNumericTarget),
+      }, courseKeys);
       if (wfId) {
         try {
-          await bindWorkflowToCourse(wfId, moodleId || primaryKey, { rpsId: newRps.id, aliases: courseKeys });
+          await bindWorkflowToCourse(wfId, targetKey, { rpsId: newRps.id, aliases: courseKeys });
         } catch (err) {
           console.warn('Failed to bind workflow to course:', err);
         }
