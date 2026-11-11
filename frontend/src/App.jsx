@@ -29,6 +29,7 @@ import CoursePlanPage from './pages/dosen/ai/CoursePlanPage';
 import CourseContentPage from './pages/dosen/ai/CourseContentPage';
 import CourseReviewPage from './pages/dosen/ai/CourseReviewPage';
 import CoursePublishPage from './pages/dosen/ai/CoursePublishPage';
+import CourseVerificationPage from './pages/dosen/ai/CourseVerificationPage';
 // Mahasiswa
 import MahasiswaCourseViewPage from './pages/mahasiswa/course/CourseViewPage';
 import MahasiswaParticipantsPage from './pages/mahasiswa/course/ParticipantsPage';
@@ -86,6 +87,7 @@ export default function App() {
                     <Route path="content" element={<CourseContentPage />} />
                     <Route path="review" element={<CourseReviewPage />} />
                     <Route path="publish" element={<CoursePublishPage />} />
+                    <Route path="verification" element={<CourseVerificationPage />} />
                   </>
                 )}
               </Route>
