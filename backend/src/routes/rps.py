@@ -259,6 +259,18 @@ async def process_rps(
         schema_version=payload.schema_version if payload is not None else None,
     )
 
+    # Dokumen sudah dikonversi dan analisisnya sedang berjalan: jangan buat workflow
+    # dan run kedua (dua analisis bersamaan menggandakan panggilan LLM dan event).
+    if start.reused and service.analysis_in_progress(start.document):
+        response.status_code = status.HTTP_200_OK
+        return RPSProcessResponse(
+            rps_id=start.document.id or "",
+            status=start.document.status,
+            schema_version=start.document.schema_version,
+            reused=True,
+            workflow_id=start.document.workflow_id or "",
+        )
+
     workflow = await workflow_service.create_for_rps(
         owner_id=current_user.id,
         rps_id=start.document.id or "",
