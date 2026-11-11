@@ -241,8 +241,30 @@ export async function getAdministrationOptions(courseIds) {
   }
 }
 
+/** Peserta terdaftar. Gateway backend lebih dulu; Moodle langsung hanya bila VITE_MOODLE_URL dikonfigurasi. */
 export function getEnrolledUsers(courseId) {
-  return callWs('core_enrol_get_enrolled_users', { courseid: courseId }).catch(() => []);
+  return api
+    .get(`/integrations/moodle/courses/${courseId}/participants`)
+    .then((res) => res?.participants ?? [])
+    .catch(() =>
+      callWs('core_enrol_get_enrolled_users', { courseid: courseId })
+        .then((users) =>
+          (users ?? []).map((u) => ({
+            id: u.id,
+            fullname: u.fullname,
+            email: u.email ?? '',
+            profileimageurl: u.profileimageurl,
+            lastcourseaccess: u.lastcourseaccess,
+            roles: (u.roles ?? []).map((r) => ({ shortname: r.shortname, name: r.name ?? r.shortname })),
+          })),
+        )
+        .catch(() => []),
+    );
+}
+
+/** Daftarkan akun Moodle yang sudah ada (dicari lewat email/username) ke course. */
+export function addMoodleParticipant(courseId, { query, role = 'student' }) {
+  return api.post(`/integrations/moodle/courses/${courseId}/participants`, { query, role });
 }
 
 export async function getActionEvents({ from = Math.floor(Date.now() / 1000) - 14 * 86400, limit = 20 } = {}) {

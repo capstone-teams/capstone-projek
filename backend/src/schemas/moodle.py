@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
@@ -11,7 +13,11 @@ __all__ = [
     "MoodleCourseContentsResponse",
     "MoodleCourseListResponse",
     "MoodleCourseResponse",
+    "AddMoodleParticipantRequest",
     "MoodleModuleResponse",
+    "MoodleParticipantListResponse",
+    "MoodleParticipantResponse",
+    "MoodleParticipantRoleResponse",
     "MoodleSectionResponse",
     "MoodleStatusResponse",
     "SaveMoodleSectionRequest",
@@ -124,3 +130,35 @@ class SaveMoodleSectionRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=255)
     section_number: int | None = Field(default=None, ge=0)
+
+
+class MoodleParticipantRoleResponse(BaseModel):
+    shortname: str
+    name: str
+
+
+class MoodleParticipantResponse(BaseModel):
+    """Peserta course Moodle beserta perannya (dipakai halaman Peserta dosen)."""
+
+    id: int = Field(description="ID user di Moodle")
+    username: str
+    fullname: str
+    email: str = ""
+    roles: list[MoodleParticipantRoleResponse] = Field(default_factory=list)
+
+
+class MoodleParticipantListResponse(BaseModel):
+    participants: list[MoodleParticipantResponse]
+
+
+class AddMoodleParticipantRequest(BaseModel):
+    """Tambah peserta dari akun Moodle yang sudah ada (bukan membuat akun baru)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    query: str = Field(
+        min_length=1,
+        max_length=254,
+        description="Email atau username akun Moodle yang akan didaftarkan.",
+    )
+    role: Literal["student", "teacher"] = "student"

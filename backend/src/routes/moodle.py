@@ -20,8 +20,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Response, UploadFile, status
 
 from src.schemas.moodle import (
+    AddMoodleParticipantRequest,
     ApiErrorResponse,
     CreateMoodleCourseRequest,
+    MoodleParticipantListResponse,
+    MoodleParticipantResponse,
+    MoodleParticipantRoleResponse,
     MoodleCourseContentsResponse,
     MoodleCourseListResponse,
     MoodleCourseResponse,
@@ -54,7 +58,10 @@ from src.services.dependencies import (
 )
 from src.services.llm.base import LLMProviderError
 from src.services.llm.service import get_llm_service
-from src.services.moodle_integration_service import MoodleIntegrationService
+from src.services.moodle_integration_service import (
+    MoodleEnrolment,
+    MoodleIntegrationService,
+)
 from src.services.rps.errors import RPSDomainError
 from src.services.rps.service import RPSService
 from src.services.workflow.service import WorkflowService
@@ -399,3 +406,73 @@ async def rename_course_section(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section tidak ditemukan pada course ini.")
     result = await service.save_section(moodle_course_id, name=payload.name, section_id=section_id)
     return MoodleSectionResponse.model_validate(result.section)
+
+
+# --- Peserta course (BE-04.5) ------------------------------------------------
+
+#: Role permintaan → shortname Moodle yang dipakai UI (``teacher`` = role 3/editingteacher).
+_PARTICIPANT_ROLE_SHORTNAMES = {"teacher": "editingteacher", "student": "student"}
+
+
+def _participant_response(enrolment: MoodleEnrolment) -> MoodleParticipantResponse:
+    return MoodleParticipantResponse(
+        id=enrolment.user.moodle_user_id,
+        username=enrolment.user.username,
+        fullname=enrolment.user.fullname,
+        email=enrolment.user.email,
+        roles=[
+            MoodleParticipantRoleResponse(shortname=shortname, name=shortname)
+            for shortname in enrolment.roles
+        ],
+    )
+
+
+@router.get(
+    "/courses/{moodle_course_id}/participants",
+    response_model=MoodleParticipantListResponse,
+    summary="Peserta course Moodle",
+    dependencies=[Depends(instructor_only)],
+)
+async def list_participants(
+    moodle_course_id: MoodleCourseIdPath, service: ServiceDependency
+) -> MoodleParticipantListResponse:
+    """Peserta yang benar-benar terdaftar di Moodle, dibaca dengan token integrasi backend."""
+    enrolments = await service.get_enrolled_users(moodle_course_id)
+    return MoodleParticipantListResponse(
+        participants=[_participant_response(enrolment) for enrolment in enrolments]
+    )
+
+
+@router.post(
+    "/courses/{moodle_course_id}/participants",
+    response_model=MoodleParticipantResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Tambahkan peserta dari akun Moodle",
+    dependencies=[Depends(instructor_only)],
+)
+async def add_participant(
+    moodle_course_id: MoodleCourseIdPath,
+    payload: AddMoodleParticipantRequest,
+    service: ServiceDependency,
+) -> MoodleParticipantResponse:
+    """Daftarkan akun Moodle yang sudah ada ke course lewat ``enrol_manual_enrol_users``.
+
+    Pencarian memakai email atau username persis karena itulah yang diketahui
+    dosen. Enrolment manual idempoten: akun yang sudah terdaftar tidak menjadi
+    anggota ganda.
+    """
+    user = await service.find_user(payload.query)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "Akun Moodle dengan email atau username tersebut tidak ditemukan. "
+                "Pastikan akun sudah dibuat di Moodle."
+            ),
+        )
+    await service.enrol_users(moodle_course_id, [(user.moodle_user_id, payload.role)])
+    return _participant_response(
+        MoodleEnrolment(
+            user=user, roles=(_PARTICIPANT_ROLE_SHORTNAMES[payload.role],)
+        )
+    )

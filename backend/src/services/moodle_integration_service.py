@@ -444,6 +444,27 @@ class MoodleIntegrationService:
         )
         return _to_user(users[0]) if users else None
 
+    async def find_user(self, query: str) -> MoodleUser | None:
+        """Cari akun Moodle berdasarkan email atau username (persis).
+
+        Dipakai halaman Peserta untuk menambah anggota course: dosen mengetik
+        email atau username mahasiswa. ``None`` bila tidak ada yang cocok.
+        """
+        cleaned = query.strip().lower()
+        if not cleaned:
+            raise ValueError("kata kunci tidak boleh kosong")
+        for field in ("email", "username"):
+            users = _expect_list(
+                await self._client.call(
+                    GET_USERS_BY_FIELD_FUNCTION,
+                    {"field": field, "values": [cleaned]},
+                ),
+                GET_USERS_BY_FIELD_FUNCTION,
+            )
+            if users:
+                return _to_user(users[0])
+        return None
+
     async def create_user(
         self,
         *,
