@@ -335,6 +335,29 @@ class RPSDocument:
         self.processing_error = None
         self.status = RPSStatus.ANALYZED
 
+    def update_analysis(self, structured_data: dict[str, Any]) -> None:
+        """Ganti RPS Structured Data hasil analisis dengan versi yang diedit dosen.
+
+        Hanya berlaku setelah dokumen ``ANALYZED``: sebelum itu tidak ada data
+        yang boleh dikoreksi, dan dokumen yang belum atau sedang dianalisis tetap
+        dimiliki proses background. ``analyzed_at`` sengaja tidak diubah — ia
+        menandai kapan model menghasilkan data awal, sehingga koreksi manual
+        tidak menyamar sebagai hasil model.
+        """
+        if not self.is_analyzed:
+            raise RPSStateError(
+                f"rps {self.id} belum dianalisis sehingga belum dapat diedit "
+                f"(status: {self.status.value})"
+            )
+
+        data = _normalize_structured_data(structured_data)
+        if data is None:
+            raise RPSValidationError(
+                "structured_data", "wajib diisi dengan hasil analisis"
+            )
+
+        self.structured_data = data
+
     def fail_analysis(self, *, error_code: str | None = None, reason: str | None = None) -> None:
         """Tandai analisis gagal beserta alasan yang dapat dibaca client.
 

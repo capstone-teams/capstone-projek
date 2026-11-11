@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useCourse } from '../../../hooks/useCourse';
 import { useWorkflowMonitor } from '../../../hooks/useWorkflowMonitor';
-import { getRps, getRpsAnalysis, processRps, reanalyzeRps } from '../../../services/rpsService';
+import { getRps, getRpsAnalysis, processRps, reanalyzeRps, updateRpsAnalysis } from '../../../services/rpsService';
 import { generateWorkflowPlan, getWorkflowPlan } from '../../../services/coursePlanService';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { useAction, useApi } from '../../../hooks/useApi';
@@ -12,6 +12,7 @@ import { Card, ErrorAlert, Spinner } from '../../../components/ui';
 import RpsStatusBadge from '../../../components/ai/RpsStatusBadge';
 import ActivityConfigPanel from '../../../components/ai/course/ActivityConfigPanel';
 import RpsAnalysisDetails from '../../../components/ai/course/RpsAnalysisDetails';
+import RpsAnalysisEditor from '../../../components/ai/course/RpsAnalysisEditor';
 import RpsUploadForm from '../../../components/ai/RpsUploadForm';
 import { normalizeRpsAnalysis } from '../../../utils/rpsAnalysis';
 import { RPS_STATUS, isRpsInProgress, rpsStatusMeta } from '../../../utils/rpsStatus';
@@ -212,6 +213,13 @@ export default function CourseRpsPage() {
   const planning = !!coursePlanProgressOf(monitor.workflow, monitor.events);
   const workflowBusy = isWorkflowBusy(monitor.workflow);
   const reanalyzeAction = useAction(() => reanalyzeRps(rps.id), { loadingLabel: 'Memulai analisis ulang RPS…' });
+  // Koreksi manual hasil analisis (design-api §6.7): simpan lalu muat ulang data tersimpan.
+  const [editingAnalysis, setEditingAnalysis] = useState(false);
+  const saveAnalysisAction = useAction(async (data) => {
+    await updateRpsAnalysis(rps.id, data);
+    setEditingAnalysis(false);
+    await analysisQuery.reload({ silent: true });
+  }, { loadingLabel: 'Menyimpan koreksi RPS…' });
   const canReanalyzeAnalyzed = Boolean(analyzed && rps?.has_source_document !== false);
   const handleReanalyze = () => {
     if (!rps?.id || workflowBusy || planning || reanalyzeAction.pending) return;
@@ -303,6 +311,19 @@ export default function CourseRpsPage() {
               {reanalyzeAction.pending ? 'Menganalisis ulang…' : 'Analisis ulang'}
             </button>
           )}
+          {analysis && !editingAnalysis && (
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              disabled={workflowBusy || planning || saveAnalysisAction.pending}
+              onClick={() => {
+                saveAnalysisAction.clearError();
+                setEditingAnalysis(true);
+              }}
+            >
+              Edit hasil analisis
+            </button>
+          )}
           <CoursePlanningAction
             analyzed={analyzed}
             workflowId={workflowId}
@@ -327,7 +348,20 @@ export default function CourseRpsPage() {
         <ActivityConfigPanel mode="edit" />
       )}
 
-      {analysis ? (
+      {analysis && editingAnalysis ? (
+        <div id="hasil-analisis" className="scroll-mt-4">
+          <RpsAnalysisEditor
+            data={analysisQuery.data?.data}
+            saving={saveAnalysisAction.pending}
+            error={saveAnalysisAction.error}
+            onSave={saveAnalysisAction.run}
+            onCancel={() => {
+              saveAnalysisAction.clearError();
+              setEditingAnalysis(false);
+            }}
+          />
+        </div>
+      ) : analysis ? (
         <div id="hasil-analisis" className="scroll-mt-4">
           <RpsAnalysisDetails analysis={analysis} />
         </div>
