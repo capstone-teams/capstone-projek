@@ -377,8 +377,19 @@ async def test_endpoints_are_documented_in_openapi(client):
     for path, methods in expected.items():
         assert methods <= set(paths[path])
         for method in methods:
-            assert paths[path][method]["tags"] == ["Moodle Integration"]
+            assert paths[path][method]["tags"][0] == "Moodle Integration"
             assert paths[path][method]["summary"]
+    student_reads = {
+        (path, method)
+        for path, methods in paths.items()
+        for method, operation in methods.items()
+        if "Student Access" in operation.get("tags", [])
+    }
+    assert student_reads == {
+        (f"{BASE}/courses", "get"),
+        (f"{BASE}/courses/{{moodle_course_id}}", "get"),
+        (f"{BASE}/courses/{{moodle_course_id}}/contents", "get"),
+    }
     assert "502" in paths[f"{BASE}/status"]["get"]["responses"]
     assert TOKEN not in response.text
 

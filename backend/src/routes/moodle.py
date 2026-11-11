@@ -62,6 +62,8 @@ router = APIRouter(
 instructor_only = require_roles(UserRole.INSTRUCTOR)
 #: Pembaca course: dosen (seluruh course) dan mahasiswa (course tempat ia terdaftar).
 course_reader = require_roles(UserRole.INSTRUCTOR, UserRole.STUDENT)
+#: Section OpenAPI untuk endpoint yang juga dipakai mahasiswa (halaman course mahasiswa).
+STUDENT_ACCESS_TAG = "Student Access"
 
 MoodleCourseIdPath = Annotated[int, Path(ge=1, description="ID course di Moodle")]
 ServiceDependency = Annotated[MoodleIntegrationService, Depends(get_moodle_integration_service)]
@@ -88,6 +90,7 @@ async def get_status(service: ServiceDependency) -> MoodleStatusResponse:
     "/courses",
     response_model=MoodleCourseListResponse,
     summary="Daftar course Moodle",
+    tags=[STUDENT_ACCESS_TAG],
 )
 async def list_courses(
     user: ReaderDependency, service: ServiceDependency
@@ -108,6 +111,7 @@ async def list_courses(
     "/courses/{moodle_course_id}",
     response_model=MoodleCourseResponse,
     summary="Detail course Moodle",
+    tags=[STUDENT_ACCESS_TAG],
 )
 async def get_course(
     moodle_course_id: MoodleCourseIdPath,
@@ -128,6 +132,7 @@ async def get_course(
     "/courses/{moodle_course_id}/contents",
     response_model=MoodleCourseContentsResponse,
     summary="Section dan module course Moodle",
+    tags=[STUDENT_ACCESS_TAG],
 )
 async def get_course_contents(
     moodle_course_id: MoodleCourseIdPath,

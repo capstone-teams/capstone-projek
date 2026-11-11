@@ -4,7 +4,7 @@
 
 **Project:** Capstone Project — Institut Teknologi Kalimantan (ITK)
 **Document:** API Specification
-**Version:** 0.6
+**Version:** 0.7
 **Status:** Draft
 **Related Documents:**
 
@@ -934,6 +934,89 @@ Ketiga endpoint baca course juga dipakai frontend untuk halaman course mahasiswa
 
 Dosen tetap melihat seluruh course dan isi course apa adanya, termasuk yang tersembunyi. `status` dan endpoint write tetap khusus dosen.
 
+## 13.5 Student Course Access (Mahasiswa)
+
+Mahasiswa yang login ke aplikasi membuka course hasil eksekusi melalui tiga endpoint baca course pada §13.4. Pada Swagger (`/docs`) ketiganya juga tercantum di bagian **Student Access**. Frontend tidak memegang token Moodle; backend membaca Moodle dengan token integrasi lalu menerapkan ulang aturan akses mahasiswa.
+
+```http
+GET /api/v1/integrations/moodle/courses
+GET /api/v1/integrations/moodle/courses/{moodle_course_id}
+GET /api/v1/integrations/moodle/courses/{moodle_course_id}/contents
+```
+
+| Endpoint                                | Hasil untuk mahasiswa                                                        |
+| --------------------------------------- | ---------------------------------------------------------------------------- |
+| `GET courses`                           | Course yang terlihat dan tempat mahasiswa terdaftar di Moodle                |
+| `GET courses/{moodle_course_id}`        | Informasi course; `404` bila mahasiswa tidak terdaftar atau course tersembunyi |
+| `GET courses/{moodle_course_id}/contents` | Section mingguan dan activity yang terlihat beserta isinya                    |
+
+Isi activity pada `contents`:
+
+| `modname` | Field yang diisi                                         |
+| --------- | -------------------------------------------------------- |
+| `page`    | `content`: isi HTML materi                               |
+| `url`     | `url`: alamat resource                                   |
+| `assign`  | `description`: instruksi tugas                           |
+| `quiz`    | `description`: deskripsi kuis (soal dan jawaban tidak dikirim) |
+
+Contoh response `contents` untuk mahasiswa:
+
+```json
+{
+  "moodle_course_id": 42,
+  "sections": [
+    {
+      "moodle_section_id": 201,
+      "section_number": 1,
+      "name": "Minggu 1 - Pengantar Basis Data",
+      "summary": "<p><strong>Tujuan Pembelajaran</strong> ...</p>",
+      "visible": true,
+      "modules": [
+        {
+          "moodle_module_id": 311,
+          "name": "Konsep Basis Data Relasional",
+          "modname": "page",
+          "visible": true,
+          "description": "",
+          "url": null,
+          "content": "<h2>Konsep Basis Data Relasional</h2><p>...</p>"
+        },
+        {
+          "moodle_module_id": 312,
+          "name": "Artikel ERD",
+          "modname": "url",
+          "visible": true,
+          "description": "",
+          "url": "https://example.com/erd",
+          "content": null
+        },
+        {
+          "moodle_module_id": 313,
+          "name": "Tugas 1: Rancangan ERD",
+          "modname": "assign",
+          "visible": true,
+          "description": "<p>Buat ERD untuk studi kasus perpustakaan.</p>",
+          "url": null,
+          "content": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+Aturan akses:
+
+| Kondisi                                                        | Hasil                                     |
+| -------------------------------------------------------------- | ----------------------------------------- |
+| Username mahasiswa di aplikasi tidak ada di Moodle             | `GET courses` kosong                      |
+| Mahasiswa tidak terdaftar di course                            | `404 RESOURCE_NOT_FOUND`                  |
+| Course disembunyikan dosen                                     | Tidak muncul di daftar; detail `404`      |
+| Section atau activity disembunyikan dosen                      | Tidak dikirim pada `contents`             |
+| Role selain dosen dan mahasiswa                                | `403 AUTHORIZATION_DENIED`                |
+
+Prasyarat: username mahasiswa di aplikasi **sama** dengan username Moodle-nya, dan mahasiswa terdaftar sebagai student di course target (didaftarkan dosen di Moodle atau melalui `scripts.verify_student_access`). Pengumpulan tugas dan pengerjaan kuis dilakukan di Moodle karena membutuhkan sesi Moodle milik mahasiswa.
+
 ---
 
 # 14. Verification API
@@ -1707,7 +1790,7 @@ Implementasi final ditentukan pada backend design.
 | View Verification Result     |   Yes |        No |
 | Submit Student Verification  |    No |       Yes |
 | View Student Verification    |   Yes |        No |
-| Access Result Course         |   Yes |       Yes |
+| Access Result Course (§13.5) |   Yes |       Yes |
 
 Role mengikuti enumeration `Role` pada proposal: `DOSEN` dan `MAHASISWA` (DL-011).
 
@@ -1881,7 +1964,7 @@ Hal yang masih perlu ditentukan:
 | ------------ | -------------------------------------- |
 | Document     | API Specification                      |
 | Project      | Agentic AI untuk Mengisi Konten Moodle |
-| Version      | 0.6                                    |
+| Version      | 0.7                                    |
 | Status       | Draft                                  |
 | Owner        | Project Team                           |
 | Last Updated | 2026-11-11                             |
@@ -1893,3 +1976,4 @@ Hal yang masih perlu ditentukan:
 | 0.1     | 2026-09-02 | Initial API Specification | Project Team |
 | 0.2     | 2026-10-21 | Kontrak Sprint 2 pada OpenAPI: enum role kanonik, RPS list/analysis/reanalyze, instructor setup, workflow & event WS (BE-06.4) | Project Team |
 | 0.6     | 2026-11-11 | Eksekusi `FULL` dengan operasi per konten (§16.5, §16.7) dan endpoint verifikasi berbasis workflow §16.9–§16.11 menggantikan §13–§14 (BE-22.2) | Project Team |
+| 0.7     | 2026-11-11 | Akses course untuk mahasiswa (§13.5) dan bagian Student Access pada OpenAPI | Project Team |
