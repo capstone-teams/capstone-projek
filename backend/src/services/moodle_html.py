@@ -11,7 +11,7 @@ from __future__ import annotations
 import html
 import re
 
-__all__ = ["inline_markdown", "markdown_to_html", "paragraphs_html"]
+__all__ = ["figure_html", "inline_markdown", "markdown_to_html", "paragraphs_html"]
 
 _BULLET = re.compile(r"^[-*]\s+(.*)$")
 _NUMBERED = re.compile(r"^\d+[.)]\s+(.*)$")
@@ -104,3 +104,22 @@ def paragraphs_html(text: str) -> str:
     """Teks biasa menjadi paragraf HTML yang sudah di-escape (tanpa Markdown)."""
     parts = [part.strip() for part in text.strip().split("\n\n") if part.strip()]
     return "".join(f"<p>{html.escape(part)}</p>" for part in parts)
+
+def figure_html(image_url: str, caption: str, *, attribution: str | None = None, source_url: str | None = None) -> str:
+    """Gambar beserta keterangan dan atribusinya sebagai ``<figure>``.
+
+    Pemanggil wajib memastikan ``image_url`` berasal dari host yang diizinkan
+    (lihat :func:`src.services.content.illustrations.is_trusted_image_url`);
+    seluruh teks dan atribut tetap di-escape di sini.
+    """
+    parts = [html.escape(caption.strip())]
+    if attribution:
+        credit = html.escape(attribution.strip())
+        if source_url and source_url.startswith("https://"):
+            credit = f'<a href="{html.escape(source_url, quote=True)}">{credit}</a>'
+        parts.append(f"<small>{credit}</small>")
+    return (
+        f'<figure><img src="{html.escape(image_url, quote=True)}" alt="{html.escape(caption.strip(), quote=True)}" '
+        f'loading="lazy" style="max-width:100%;height:auto">'
+        f"<figcaption>{'<br>'.join(parts)}</figcaption></figure>"
+    )

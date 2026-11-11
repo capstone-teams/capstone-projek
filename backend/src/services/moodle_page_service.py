@@ -3,7 +3,7 @@
 Learning material dipublikasikan sebagai activity Page melalui plugin
 ``local_capstonebridge`` (BE-04.6) pada section sesuai nomor minggu. Isi page
 berupa HTML: dari ``LearningMaterialData`` (``contents.content_data``, Content
-Schema §11–§13) dirangkai menjadi Markdown dengan ``render_material_markdown``,
+Schema §11–§13) dirangkai menjadi HTML dengan ``render_material_html`` (termasuk ilustrasi),
 lalu dikonversi menjadi HTML yang sudah di-escape.
 
 Idempotency sama seperti operasi activity lain (BE-12):
@@ -23,9 +23,10 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.schemas.content import LearningMaterialData, render_material_markdown
+from src.schemas.content import LearningMaterialBody, LearningMaterialData
 from src.services.moodle_client import MoodleClient
-from src.services.moodle_html import markdown_to_html, paragraphs_html
+from src.services.content.illustrations import is_trusted_image_url
+from src.services.moodle_html import figure_html, markdown_to_html, paragraphs_html
 from src.services.moodle_mapping import IMoodleMappingRepository, MoodleMapping
 
 __all__ = [
@@ -73,7 +74,7 @@ class LearningMaterialPage:
             data = LearningMaterialData.model_validate(dict(content_data))
         except ValidationError as exc:
             raise InvalidLearningMaterialError(f"content_data learning material tidak valid: {exc}") from exc
-        return cls.from_markdown(content_id, title, render_material_markdown(data))
+        return cls(id=str(content_id), title=title, content_html=render_material_html(data))
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,34 @@ class PagePublishResult:
             "idempotency_key": self.idempotency_key,
             "created": self.created,
         }
+
+
+def render_material_html(body: LearningMaterialBody) -> str:
+    """HTML Page materi: tujuan, tiap section beserta ilustrasinya, lalu referensi.
+
+    Teks tetap melalui :func:`markdown_to_html` (seluruhnya di-escape). Ilustrasi
+    hanya dirender bila URL-nya dari host yang diizinkan.
+    """
+    parts: list[str] = []
+    if body.learning_objectives:
+        objectives = "\n".join(f"- {o}" for o in body.learning_objectives)
+        parts.append(markdown_to_html(f"## Tujuan Pembelajaran\n\n{objectives}"))
+    for section in body.sections:
+        parts.append(markdown_to_html(f"## {section.heading}\n\n{section.body_markdown}"))
+        illustration = section.illustration
+        if illustration is not None and is_trusted_image_url(illustration.image_url):
+            parts.append(
+                figure_html(
+                    illustration.image_url or "",
+                    illustration.caption,
+                    attribution=illustration.attribution,
+                    source_url=illustration.source_url,
+                )
+            )
+    if body.references:
+        refs = "\n".join(f"- [{r.title}]({r.url})" if r.url else f"- {r.title}" for r in body.references)
+        parts.append(markdown_to_html(f"## Referensi\n\n{refs}"))
+    return "".join(parts)
 
 
 def page_idempotency_key(content_id: str) -> str:

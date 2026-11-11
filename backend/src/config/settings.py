@@ -118,6 +118,11 @@ class Settings(BaseSettings):
     LLM_RETRY_MAX_WAIT: float | None = None
 
     content_generation_max_fix_attempts: int = 2
+    # Ilustrasi materi: diagram Mermaid dirender Kroki (dapat diarahkan ke instance
+    # Kroki sendiri) dan foto berlisensi bebas dari Wikimedia Commons.
+    ILLUSTRATIONS_ENABLED: bool = True
+    KROKI_BASE_URL: str = "https://kroki.io"
+    WIKIMEDIA_API_URL: str = "https://commons.wikimedia.org/w/api.php"
     # Jumlah retry tambahan course planning setelah output tidak sesuai schema
     # (BE-14.3). 0 berarti satu percobaan tanpa retry.
     COURSE_PLANNING_MAX_FIX_ATTEMPTS: int = 1

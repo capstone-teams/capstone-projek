@@ -123,9 +123,34 @@ class _DataMixin(_Strict):
 # ==========================================
 # 1. LEARNING MATERIAL  -> contents
 # ==========================================
+class IllustrationKind(str, Enum):
+    DIAGRAM = "DIAGRAM"  # diagram Mermaid, dirender menjadi SVG
+    PHOTO = "PHOTO"  # gambar berlisensi bebas dari Wikimedia Commons
+
+
+class MaterialIllustration(_Strict):
+    """Ilustrasi satu section materi.
+
+    LLM hanya mengisi ``kind``, ``caption``, dan ``mermaid`` (DIAGRAM) atau
+    ``image_query`` (PHOTO). ``image_url``, ``source_url``, dan ``attribution``
+    selalu diisi ulang backend (lihat :mod:`src.services.content.illustrations`),
+    sehingga URL dari LLM tidak pernah dipakai.
+    """
+
+    kind: IllustrationKind
+    caption: str = Field(min_length=1, max_length=300)
+    mermaid: str | None = None
+    image_query: str | None = None
+    image_url: str | None = None
+    source_url: str | None = None
+    attribution: str | None = None
+
+
 class MaterialSection(_Strict):
     heading: str = Field(min_length=1)
     body_markdown: str = Field(min_length=1)
+    # Default None agar content_data lama (sebelum ilustrasi) tetap valid; strict schema LLM tetap mewajibkannya.
+    illustration: MaterialIllustration | None = None
 
 
 class MaterialReference(_Strict):
