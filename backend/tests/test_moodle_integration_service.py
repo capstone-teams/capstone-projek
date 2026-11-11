@@ -93,6 +93,19 @@ def test_contents_return_what_is_currently_in_moodle_including_page_content():
     assert modules[502].description == "<p>Kerjakan</p>"
 
 
+def test_contents_unescape_names_that_moodle_formats_for_output():
+    """``format_string`` Moodle meng-escape ``&``; nama polos yang dipakai UI dan
+    read-back eksekusi harus sama dengan yang tersimpan di database."""
+    fake = FakeMoodle()
+    fake.sections[2][1]["name"] = "Minggu 1 - Interaksi &amp; AJAX"
+    fake.sections[2][1]["modules"][0]["name"] = "Materi &amp; Contoh"
+
+    contents = run(with_service(fake, lambda service: service.get_course_contents(2)))
+
+    assert contents.sections[1].name == "Minggu 1 - Interaksi & AJAX"
+    assert contents.sections[1].modules[0].name == "Materi & Contoh"
+
+
 def test_contents_still_work_when_page_content_cannot_be_read():
     fake = FakeMoodle()
     fake.failing["mod_page_get_pages_by_courses"] = moodle_exception(
