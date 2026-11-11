@@ -23,6 +23,9 @@ const DATE_LABELS = { 'Opened:': 'Dibuka:', 'Due:': 'Tenggat:', 'Closes:': 'Ditu
 
 // Rujukan Moodle: indentasi aktivitas (Geser ke kanan), satu tingkat ≈ 1.5rem.
 const indentStyle = (mod) => (mod.indent > 0 ? { marginLeft: `${Math.min(mod.indent, 16) * 1.5}rem` } : undefined);
+// Gateway menyertakan intro lengkap di `mod.description` untuk assign/quiz agar tampil di halaman aktivitas;
+// di kartu ringkasan kursus teks panjangnya disembunyikan kecuali ditandai `showdescription === 1`.
+const INLINE_HIDDEN_MODNAMES = new Set(['assign', 'quiz', 'page']);
 
 /**
  * Status penyelesaian di pojok kanan kartu seperti LMS ITK: "✓ Selesai" bila sudah selesai, selain itu tombol
@@ -100,8 +103,10 @@ export default function ActivityRow({ courseId, mod, isTeacher, editMode, sectio
         <Completion mod={mod} isTeacher={isTeacher} />
         {menu}
       </div>
-      {/* Deskripsi yang ditampilkan di halaman kursus (mis. petunjuk folder) dalam kotak abu-abu. */}
-      {mod.description && <MoodleHtml html={mod.description} className="mt-3 rounded bg-surface p-3 text-sm" />}
+      {/* Deskripsi yang ditampilkan di halaman kursus (mis. petunjuk folder); isi assign/quiz/page tampil saat dibuka. */}
+      {Boolean(mod.description) && (!INLINE_HIDDEN_MODNAMES.has(mod.modname) || mod.showdescription === 1) && (
+        <MoodleHtml html={mod.description} className="mt-3 rounded bg-surface p-3 text-sm" />
+      )}
     </li>
   );
 }

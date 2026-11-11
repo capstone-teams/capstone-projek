@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { findCourseByMoodleId } from '../../../services/courseService';
 import { getWorkflowPlan } from '../../../services/coursePlanService';
 import { listWorkflowContents } from '../../../services/contentService';
 import { listExecutions } from '../../../services/executionService';
+import { listWorkflowVerifications } from '../../../services/verificationService';
 import { useApi } from '../../../hooks/useApi';
 import { useOnChange } from '../../../hooks/useOnChange';
 import { useMoodleCourse } from '../../../hooks/useMoodleCourse';
@@ -18,25 +19,16 @@ import {
 } from '../../../services/workflowService';
 import { isWorkflowBusy } from '../../../utils/workflowStatus';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
-import { Alert, Badge, ErrorAlert, ErrorBoundary, Spinner } from '../../../components/ui';
+import { Alert, Badge, Card, ErrorAlert, ErrorBoundary, Spinner } from '../../../components/ui';
+import WorkflowEventTimeline from '../../../components/ai/WorkflowEventTimeline';
 import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 import { ForbiddenPage } from '../../StatusPage';
 import WorkflowLayout from './WorkflowLayout';
 
-export const TABS = [
-  { to: '', label: 'Ringkasan', end: true },
-  { to: 'rps', label: 'RPS' },
-  { to: 'plan', label: 'Rencana' },
-  { to: 'content', label: 'Konten' },
-  { to: 'review', label: 'Review' },
-  { to: 'publish', label: 'Publikasi' },
-  // Pemantauan workflow (FE-10) di akhir agar urutan tab project kursus tetap rapi.
-  { to: 'workflows', label: 'Workflow' },
-];
-
 /**
- * Tab "Generator AI" di halaman kursus. Selalu menampilkan layout utama (stepper + tab).
+ * Tab "Generator AI" di halaman kursus. Memakai satu bar stepper interaktif di atas
+ * serta panel "Aktivitas agent" bawaan pada seluruh tahap (kecuali halaman /workflows).
  * Sesuai design-api.md §17: ambil initial state via HTTP dulu, baru pakai event stream.
  */
 function CourseProjectLayout() {
@@ -143,13 +135,14 @@ function CourseProjectLayout() {
   const effectiveWorkflow = workflow ?? activeWorkflow ?? null;
 
   const progressSnapshot = useApi(async () => {
-    if (!workflowId) return { plan: null, contents: null, executions: null };
-    const [plan, contents, executions] = await Promise.all([
+    if (!workflowId) return { plan: null, contents: null, executions: null, verifications: null };
+    const [plan, contents, executions, verifications] = await Promise.all([
       getWorkflowPlan(workflowId).catch(() => null),
       listWorkflowContents(workflowId).catch(() => null),
       listExecutions(workflowId).catch(() => null),
+      listWorkflowVerifications(workflowId).catch(() => null),
     ]);
-    return { plan, contents, executions };
+    return { plan, contents, executions, verifications };
   }, [workflowId, version]);
 
   const progressSignature = effectiveWorkflow
@@ -248,6 +241,7 @@ function CourseProjectLayout() {
     lastSyncAttemptKeyRef.current = null;
     syncCourseTarget({ manual: true });
   };
+  const [activityOpen, setActivityOpen] = useState(true);
 
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
@@ -260,7 +254,16 @@ function CourseProjectLayout() {
         <p className="text-muted">
           Generator konten AI · RPS {course.code ?? course.shortname} — {course.name ?? course.fullname}
         </p>
-        {effectiveWorkflow ? <WorkflowStatusBadge workflow={effectiveWorkflow} /> : <Badge>Belum dimulai</Badge>}
+        <div className="flex flex-wrap items-center gap-2">
+          <NavLink
+            to=""
+            end
+            className={({ isActive }) => `btn btn--xs ${isActive ? 'btn--secondary font-semibold' : 'btn--ghost'}`}
+          >
+            Ringkasan
+          </NavLink>
+          {effectiveWorkflow ? <WorkflowStatusBadge workflow={effectiveWorkflow} /> : <Badge>Belum dimulai</Badge>}
+        </div>
       </div>
       <WorkflowStepper
         workflow={effectiveWorkflow}
@@ -268,6 +271,7 @@ function CourseProjectLayout() {
         plan={progressSnapshot.data?.plan ?? null}
         contents={progressSnapshot.data?.contents ?? null}
         executions={progressSnapshot.data?.executions ?? null}
+        verifications={progressSnapshot.data?.verifications ?? null}
       />
 
       {syncError && (
@@ -288,14 +292,6 @@ function CourseProjectLayout() {
         </Alert>
       )}
 
-      <nav className="tabs" aria-label="Bagian generator AI">
-        {TABS.map((t) => (
-          <NavLink key={t.label} to={t.to} end={t.end} className="tabs__link">
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
-
       <ErrorBoundary>
         <Outlet context={{
           course,
@@ -306,6 +302,7 @@ function CourseProjectLayout() {
           plan: progressSnapshot.data?.plan ?? null,
           contents: progressSnapshot.data?.contents ?? null,
           executions: progressSnapshot.data?.executions ?? null,
+          verifications: progressSnapshot.data?.verifications ?? null,
           connection: monitor.connection,
           version,
           refresh,
@@ -314,6 +311,40 @@ function CourseProjectLayout() {
           workflowLoading: activeWfQuery.loading && !workflowId,
         }} />
       </ErrorBoundary>
+
+      {!onStatusPage && (
+        <section className="mt-6" aria-label="Aktivitas agent">
+          <Card
+            title="Aktivitas agent"
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                {busy && <Badge tone="info">Berjalan</Badge>}
+                <Link to="workflows" className="btn btn--ghost btn--xs">
+                  Detail workflow →
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--xs"
+                  aria-expanded={activityOpen}
+                  onClick={() => setActivityOpen((open) => !open)}
+                >
+                  {activityOpen ? 'Sembunyikan' : `Tampilkan (${events.length})`}
+                </button>
+              </div>
+            )}
+          >
+            {activityOpen ? (
+              <WorkflowEventTimeline events={events} />
+            ) : (
+              <p className="text-sm text-muted">
+                {events.length > 0
+                  ? `Aktivitas terbaru: ${events[events.length - 1]?.message || events[events.length - 1]?.event} (${events.length} catatan)`
+                  : 'Belum ada aktivitas agent.'}
+              </p>
+            )}
+          </Card>
+        </section>
+      )}
     </>
   );
 }

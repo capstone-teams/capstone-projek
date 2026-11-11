@@ -72,26 +72,38 @@ export const OPERATION_TYPE = {
 };
 
 /**
- * Pesan ramah pengguna untuk kode penolakan prasyarat 409 (BE-17.1).
+ * Pesan ramah pengguna untuk kode penolakan prasyarat 409 (BE-17.1, FE-18.1).
  */
 export const EXECUTION_PRECONDITION_ERRORS = {
   PLAN_NOT_APPROVED: 'Course plan versi terbaru belum disetujui dosen.',
   MOODLE_TARGET_NOT_SET: 'Mata kuliah target di Moodle belum dipilih.',
   MOODLE_UNAVAILABLE: 'Server Moodle sedang tidak dapat dijangkau oleh backend.',
   EXECUTION_IN_PROGRESS: 'Eksekusi struktur lain sedang berjalan pada alur kerja ini.',
+  CONTENT_NOT_APPROVED: 'Masih ada konten jenis aktif yang belum disetujui pada tab Review.',
 };
 
 /**
- * Terjemahkan kode error penolakan prasyarat menjadi teks yang informatif.
+ * Terjemahkan kode error penolakan prasyarat 409 (`error.details[0].message`) memakai peta kode alasan.
+ * @param {any} error
+ * @param {Record<string, string>} reasonMap
+ * @param {string} fallbackMessage
+ * @returns {string}
+ */
+export function formatPreconditionError(error, reasonMap, fallbackMessage) {
+  const reasonCode = error?.details?.[0]?.message || error?.details?.[0]?.field;
+  if (reasonCode && reasonMap?.[reasonCode]) {
+    return reasonMap[reasonCode];
+  }
+  return error?.message || fallbackMessage;
+}
+
+/**
+ * Terjemahkan kode error penolakan prasyarat eksekusi menjadi teks yang informatif.
  * @param {any} error
  * @returns {string}
  */
 export function formatExecutionPreconditionError(error) {
-  const reasonCode = error?.details?.[0]?.message || error?.details?.[0]?.field;
-  if (reasonCode && EXECUTION_PRECONDITION_ERRORS[reasonCode]) {
-    return EXECUTION_PRECONDITION_ERRORS[reasonCode];
-  }
-  return error?.message || 'Gagal memulai eksekusi struktur course.';
+  return formatPreconditionError(error, EXECUTION_PRECONDITION_ERRORS, 'Gagal memulai eksekusi ke Moodle.');
 }
 
 /**

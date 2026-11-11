@@ -1,19 +1,76 @@
+import { Link, useInRouterContext, useLocation } from 'react-router-dom';
 import { WORKFLOW_STEPPER_STEPS, deriveStepperState } from '../../utils/workflowStatus';
 
-export default function WorkflowStepper({ workflow = null, events = [], plan = null, contents = null, executions = null }) {
-  const { current, finished } = deriveStepperState(workflow, events, { plan, contents, executions });
+function viewingKeyFromPath(pathname) {
+  const clean = String(pathname || '').replace(/\/+$/, '');
+  if (clean.endsWith('/rps')) return 'rps';
+  if (clean.endsWith('/plan')) return 'plan';
+  if (clean.endsWith('/content')) return 'content';
+  if (clean.endsWith('/review')) return 'review';
+  if (clean.endsWith('/publish')) return 'execution';
+  if (clean.endsWith('/verification')) return 'verification';
+  return null;
+}
 
+function StepperMarkup({ current, finished, viewingKey, interactive }) {
   return (
-    <ol className="stepper" aria-label="Tahapan workflow">
+    <ol className="stepper" aria-label="Tahapan dan navigasi Generator AI">
       {WORKFLOW_STEPPER_STEPS.map((step, i) => {
         const state = i < current || finished ? 'done' : i === current ? 'current' : 'todo';
-        return (
-          <li key={step.key} className={`stepper__item stepper__item--${state}`} aria-current={state === 'current' ? 'step' : undefined}>
+        const isViewing = Boolean(viewingKey && viewingKey === step.key);
+        const clickable = interactive && (step.key !== 'done' || finished);
+
+        const body = (
+          <>
             <span className="stepper__dot">{state === 'done' ? '✓' : i + 1}</span>
             <span className="stepper__label">{step.label}</span>
+          </>
+        );
+
+        return (
+          <li
+            key={step.key}
+            className={`stepper__item stepper__item--${state}${isViewing ? ' stepper__item--viewing' : ''}`}
+            aria-current={state === 'current' ? 'step' : undefined}
+          >
+            {clickable ? (
+              <Link
+                to={step.to}
+                className="stepper__link"
+                aria-current={isViewing ? 'page' : undefined}
+              >
+                {body}
+              </Link>
+            ) : (
+              <span className="stepper__link">{body}</span>
+            )}
           </li>
         );
       })}
     </ol>
   );
+}
+
+function RouterWorkflowStepper({ current, finished, interactive }) {
+  const { pathname } = useLocation();
+  const viewingKey = viewingKeyFromPath(pathname);
+  return <StepperMarkup current={current} finished={finished} viewingKey={viewingKey} interactive={interactive} />;
+}
+
+export default function WorkflowStepper({
+  workflow = null,
+  events = [],
+  plan = null,
+  contents = null,
+  executions = null,
+  verifications = null,
+  interactive = true,
+}) {
+  const inRouter = useInRouterContext();
+  const { current, finished } = deriveStepperState(workflow, events, { plan, contents, executions, verifications });
+
+  if (inRouter) {
+    return <RouterWorkflowStepper current={current} finished={finished} interactive={interactive} />;
+  }
+  return <StepperMarkup current={current} finished={finished} viewingKey={null} interactive={false} />;
 }

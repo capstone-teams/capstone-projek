@@ -35,42 +35,90 @@ const statusMeta = (status) => PLAN_STATUS_META[status] ?? { label: status || 'S
 const PLAN_FAILED_MESSAGE = 'Penyusunan rencana gagal. Silakan coba lagi.';
 
 /**
- * Riwayat versi course plan (GET /plan/versions, terbaru di atas) dengan penanda status approval per versi.
- * Membuka versi lama menampilkannya tanpa aksi review (GET /plan/versions/{version}).
+ * Riwayat versi course plan (GET /plan/versions, terbaru di atas) dalam bar ringkas yang dapat dibuka-tutup
+ * agar tidak menumpuk kartu di atas tabel saat terdapat banyak revisi.
  */
 function PlanHistory({ versions, selected, latest, onSelect }) {
-  if (!versions.length) return null;
+  const [open, setOpen] = useState(false);
+  if (versions.length <= 1 && !selected) return null;
+
+  const activeVersion = selected ?? latest;
+  const sorted = [...versions].sort((a, b) => b.version - a.version);
+  const activeItem = sorted.find((item) => item.version === activeVersion);
+  const activeMeta = statusMeta(activeItem?.status);
+
   return (
-    <section className="mb-4 rounded-lg border border-line" aria-label="Riwayat versi">
-      <h3 className="border-b border-line px-4 py-2.5 text-[15px] font-semibold">Riwayat versi</h3>
-      <ol className="m-0 list-none divide-y divide-line p-0">
-        {[...versions].sort((a, b) => b.version - a.version).map((item) => {
-          const active = (selected ?? latest) === item.version;
-          const meta = statusMeta(item.status);
-          return (
-            <li key={item.version} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 ${active ? 'bg-primary-light/50' : ''}`} aria-label={`Versi ${item.version}`}>
-              <span className="font-semibold">Versi {item.version}</span>
-              {item.version === latest && <span className="text-xs text-muted">(terbaru)</span>}
-              <Badge tone={meta.tone}>{meta.label}</Badge>
-              <span className="text-sm text-muted">
-                {item.created_at && `Dibuat ${formatDateTime(item.created_at)}`}
-                {item.approved_at && ` · Disetujui ${formatDateTime(item.approved_at)}`}
-              </span>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm ml-auto"
-                aria-pressed={active}
-                disabled={active}
-                onClick={() => onSelect(item.version === latest ? null : item.version)}
-              >
-                {active ? 'Sedang ditampilkan' : `Lihat versi ${item.version}`}
-              </button>
-              {item.revision_notes && <p className="w-full text-sm text-ink-subtle">Catatan revisi: {item.revision_notes}</p>}
-            </li>
-          );
-        })}
-      </ol>
+    <section className="mb-3 rounded-lg border border-line bg-surface/50" aria-label="Riwayat versi">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-semibold">Riwayat versi</span>
+          <span className="text-muted">· {versions.length} versi</span>
+          {activeItem && (
+            <>
+              <span className="text-muted">· Menampilkan Versi {activeVersion}</span>
+              <Badge tone={activeMeta.tone}>{activeMeta.label}</Badge>
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn btn--ghost btn--xs font-semibold"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? 'Tutup riwayat' : `Lihat riwayat (${versions.length})`}
+        </button>
+      </div>
+      {open && (
+        <ol className="m-0 max-h-48 list-none divide-y divide-line overflow-y-auto border-t border-line bg-white p-0">
+          {sorted.map((item) => {
+            const active = activeVersion === item.version;
+            const meta = statusMeta(item.status);
+            return (
+              <li key={item.version} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm ${active ? 'bg-primary-light/50' : ''}`} aria-label={`Versi ${item.version}`}>
+                <span className="font-semibold">Versi {item.version}</span>
+                {item.version === latest && <span className="text-xs text-muted">(terbaru)</span>}
+                <Badge tone={meta.tone}>{meta.label}</Badge>
+                <span className="text-xs text-muted">
+                  {item.created_at && `Dibuat ${formatDateTime(item.created_at)}`}
+                  {item.approved_at && ` · Disetujui ${formatDateTime(item.approved_at)}`}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--xs ml-auto"
+                  aria-pressed={active}
+                  disabled={active}
+                  onClick={() => onSelect(item.version === latest ? null : item.version)}
+                >
+                  {active ? 'Sedang ditampilkan' : `Lihat versi ${item.version}`}
+                </button>
+                {item.revision_notes && (
+                  <p className="w-full line-clamp-2 text-xs text-ink-subtle">Catatan revisi: {item.revision_notes}</p>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </section>
+  );
+}
+
+/** Catatan revisi & prompt tambahan regenerasi dalam satu blok ringkas agar tidak menumpuk banyak alert. */
+function PlanRevisionContext({ revisionNotes, regenerationInstruction }) {
+  if (!revisionNotes && !regenerationInstruction) return null;
+  return (
+    <Alert tone={revisionNotes ? 'warning' : 'info'} title={revisionNotes ? 'Catatan revisi' : 'Prompt tambahan saat regenerasi'}>
+      <div className="max-h-36 space-y-1.5 overflow-y-auto text-sm">
+        {revisionNotes && <p className="m-0 whitespace-pre-line">{revisionNotes}</p>}
+        {regenerationInstruction && (
+          <p className="m-0 text-xs text-ink-subtle">
+            {revisionNotes && <strong>Prompt tambahan saat regenerasi: </strong>}
+            {regenerationInstruction}
+          </p>
+        )}
+      </div>
+    </Alert>
   );
 }
 
@@ -222,6 +270,10 @@ export default function CoursePlanPage() {
   }
 
   const meta = statusMeta(shown?.status);
+  const cleanApproved = !viewingOld
+    && latest.status === PLAN_STATUS.APPROVED
+    && shown?.validation?.passed === true
+    && (shown?.validation?.issues?.length ?? 0) === 0;
   return (
     <Card
       title={shown?.version != null ? `Rencana course · versi ${shown.version}` : 'Rencana course'}
@@ -278,11 +330,14 @@ export default function CoursePlanPage() {
       {reviewable && !waitingReview && (
         <p className="mb-4 text-sm text-muted">Setujui atau tolak tersedia ketika workflow menunggu peninjauan Anda.</p>
       )}
-      {shown?.validation && <CoursePlanValidation validation={shown.validation} />}
+      {!cleanApproved && shown?.validation && (
+        <CoursePlanValidation key={shown?.version ?? 'latest'} validation={shown.validation} />
+      )}
       {latest.status === PLAN_STATUS.APPROVED && !viewingOld && (
         <Alert tone="success" title="Rencana course telah disetujui">
-          {latest.approved_at && <p>Disetujui {formatDateTime(latest.approved_at)}.</p>}
           <p>
+            {cleanApproved && 'Lolos validasi akademik. '}
+            {latest.approved_at && `Disetujui ${formatDateTime(latest.approved_at)}. `}
             Langkah berikutnya: buat struktur mingguan rencana ini di kursus Moodle target.
             {course?.id && (
               <>
@@ -292,8 +347,10 @@ export default function CoursePlanPage() {
           </p>
         </Alert>
       )}
-      {shown?.revision_notes && <Alert tone="warning" title="Catatan revisi">{shown.revision_notes}</Alert>}
-      {shown?.regeneration_instruction && <Alert tone="info" title="Prompt tambahan saat regenerasi">{shown.regeneration_instruction}</Alert>}
+      <PlanRevisionContext
+        revisionNotes={shown?.revision_notes}
+        regenerationInstruction={shown?.regeneration_instruction}
+      />
 
       {!viewingOld && !inProgress && shown && (
         <ActivityConfigPanel

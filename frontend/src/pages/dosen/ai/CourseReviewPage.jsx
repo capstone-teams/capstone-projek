@@ -305,7 +305,7 @@ export default function CourseReviewPage() {
               <Alert tone="success" title="Seluruh konten telah disetujui">
                 <p>
                   Langkah berikutnya: kirim struktur dan seluruh konten ke Moodle.{' '}
-                  <Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke eksekusi FULL</Link>
+                  <Link to="../publish" relative="path" className="font-semibold underline">Lanjut ke Eksekusi Moodle →</Link>
                 </p>
               </Alert>
             )}
