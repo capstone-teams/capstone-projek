@@ -254,12 +254,21 @@ Request body bersifat opsional:
 
 ```json
 {
-  "schema_version": "2.0"
+  "schema_version": "2.0",
+  "autopilot": true
 }
 ```
 
 `schema_version` boleh dikosongkan; bila diisi dan berbeda dari versi yang
 tercatat pada dokumen, dokumen diproses ulang untuk versi skema tersebut.
+
+`autopilot` (default `false`) melanjutkan workflow secara otomatis setelah
+analisis: course plan disusun, disetujui otomatis **bila lolos validasi**, lalu
+konten seluruh minggu dibuat. Rangkaian berhenti di `WAITING_FOR_REVIEW` untuk
+review konten; eksekusi ke Moodle tetap menunggu persetujuan dosen (Proposal
+§3.3.7, DL-012). Bila course plan tidak lolos validasi atau satu tahap gagal,
+rangkaian berhenti di tahap tersebut dengan event `WORKFLOW_STAGE_PROGRESS`
+berawalan "Mode otomatis:" yang menjelaskan alasannya.
 
 Response `202 Accepted`:
 
@@ -912,6 +921,8 @@ GET  /api/v1/integrations/moodle/courses/{moodle_course_id}
 GET  /api/v1/integrations/moodle/courses/{moodle_course_id}/contents
 POST /api/v1/integrations/moodle/courses
 POST /api/v1/integrations/moodle/courses/{moodle_course_id}/sections
+POST /api/v1/integrations/moodle/courses/{moodle_course_id}/activities
+POST /api/v1/integrations/moodle/courses/{moodle_course_id}/activities/generate
 ```
 
 | Endpoint                | Kegunaan                                                         | Akses                    |
@@ -922,6 +933,8 @@ POST /api/v1/integrations/moodle/courses/{moodle_course_id}/sections
 | `courses/{id}/contents` | Membaca section dan module course: isi Page, alamat URL, intro assignment dan quiz | Dosen, Mahasiswa |
 | `POST courses`          | Membuat course untuk pengujian integrasi                         | Development environment  |
 | `POST .../sections`     | Membuat atau memperbarui section untuk pengujian integrasi       | Development environment  |
+| `POST .../activities`   | Menambah Assignment, Quiz, atau Text and media area pada satu section (function plugin yang sudah terpasang: `create_assign`/`create_quiz`/`create_page`) | Dosen |
+| `POST .../activities/generate` | Draf isi activity dari AI berdasarkan materi minggu, RPS, dan file referensi; tidak membuat apa pun di Moodle | Dosen |
 
 Endpoint write hanya aktif pada development environment melalui konfigurasi. Eksekusi ke Moodle pada alur produk tetap melalui Moodle Execution API (§13.1).
 
@@ -933,6 +946,22 @@ Ketiga endpoint baca course juga dipakai frontend untuk halaman course mahasiswa
 * course lain menghasilkan `404 RESOURCE_NOT_FOUND`, sama seperti course yang tidak ada.
 
 Dosen tetap melihat seluruh course dan isi course apa adanya, termasuk yang tersembunyi. `status` dan endpoint write tetap khusus dosen.
+
+### 13.4.1 Tambah Activity dari Halaman Course
+
+`POST .../activities` (JSON) menerima `section`, `modname` (`assign`, `quiz`, `label`), dan isian sesuai jenisnya:
+
+| Jenis | Field |
+| ----- | ----- |
+| `assign` | `name`, `intro` (HTML), `duedate` (Unix detik, `0` = tanpa), `grade` (1–100), `onlinetext_enabled`, `file_enabled`, `file_maxfiles` |
+| `quiz` | `name`, `intro`, `timelimit_minutes`, `attempts`, `passpercent`, `shufflequestions`, `questions` (minimal satu; `text`, `generalfeedback`, `answers` dengan tepat satu `correct`) |
+| `label` | `text` (HTML, wajib), `name` (opsional; bila kosong diambil dari awal teks) |
+
+Field mengikuti parameter function plugin `local_capstonebridge` yang sudah dipakai eksekusi Moodle, sehingga fitur ini tidak memerlukan pemasangan ulang plugin. Moodle core tidak menyediakan web service untuk membuat label, jadi Text and media area disimpan sebagai **Page**; isinya tetap tampil langsung di kartu minggu pada halaman course frontend.
+
+Response `201`: `{ "cmid": 512, "modname": "quiz", "section": 4, "created": true }`.
+
+`POST .../activities/generate` (multipart) menerima `modname`, `section`, `instruction`, `question_count` (1–30, quiz), `difficulty`, `use_week`, `use_rps`, dan `reference_file` opsional (PDF, DOCX, PPTX, TXT, MD; maksimal 15 MB). Referensi minggu berasal dari isi section Moodle dan course plan workflow yang menargetkan course ini; referensi RPS dari hasil analisis RPS workflow tersebut. Response berisi draf `{ name, intro, text, questions, references_used }` yang dipakai frontend untuk mengisi formulir; `422` bila tidak ada referensi sama sekali atau file tidak dapat dibaca.
 
 ## 13.5 Student Course Access (Mahasiswa)
 
@@ -1979,3 +2008,4 @@ Hal yang masih perlu ditentukan:
 | 0.2     | 2026-10-21 | Kontrak Sprint 2 pada OpenAPI: enum role kanonik, RPS list/analysis/reanalyze, instructor setup, workflow & event WS (BE-06.4) | Project Team |
 | 0.6     | 2026-11-11 | Eksekusi `FULL` dengan operasi per konten (§16.5, §16.7) dan endpoint verifikasi berbasis workflow §16.9–§16.11 menggantikan §13–§14 (BE-22.2) | Project Team |
 | 0.7     | 2026-11-11 | Akses course untuk mahasiswa (§13.5), bagian Student Access pada OpenAPI, dan catatan status Student Verification pada §22 | Project Team |
+| 0.8     | 2026-11-11 | Mode `autopilot` pada Process RPS (§6.3); tambah activity dan draf AI activity dari halaman course (§13.4.1) | Project Team |
