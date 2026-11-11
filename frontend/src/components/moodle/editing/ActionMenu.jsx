@@ -9,7 +9,7 @@ const TONE_CLASS = {
 
 /**
  * Tombol ⋮ dengan daftar aksi (pola menu ARIA: panah atas/bawah, Home/End, Escape).
- * items: [{ key, label, onSelect, danger, disabled }].
+ * items: [{ key, label, onSelect, danger, disabled, title }].
  */
 export default function ActionMenu({ label, items, disabled = false }) {
   const [open, setOpen] = useState(false);
@@ -77,6 +77,7 @@ export default function ActionMenu({ label, items, disabled = false }) {
               role="menuitem"
               className={`${ITEM_CLASS} ${TONE_CLASS[item.danger ? 'danger' : 'default']}`}
               disabled={item.disabled}
+              title={item.title}
               onClick={() => select(item)}
             >
               {item.label}

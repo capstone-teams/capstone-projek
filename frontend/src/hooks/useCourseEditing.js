@@ -8,6 +8,7 @@ import {
   moveActivity,
   renameActivity,
   renameSection,
+  addSection,
   updateCourseState,
 } from '../services/moodle/courseEditing';
 
@@ -58,14 +59,14 @@ export function useCourseEditing() {
     moveCm: (cm, targetSectionId, targetCmId) =>
       run(`${CM_ACTION.MOVE}:${cm.id}`, () => moveActivity(course.id, cm.id, targetSectionId, targetCmId), 'Aktivitas dipindahkan.'),
     renameCm: (cm, name) => run(`rename:${cm.id}`, () => renameActivity(cm.id, name)),
-    renameSection: (section, name) => run(`rename-section:${section.id}`, () => renameSection(course.format, section.id, name)),
+    renameSection: (section, name) => run(`rename-section:${section.id}`, () => renameSection(course.id, course.format, section.id, name)),
     setSectionVisible: (section, visible) =>
       run(
         `section:${section.id}`,
         () => updateCourseState(course.id, visible ? SECTION_ACTION.SHOW : SECTION_ACTION.HIDE, [section.id]),
         visible ? 'Section ditampilkan untuk mahasiswa.' : 'Section disembunyikan dari mahasiswa.',
       ),
-    addSection: () => run(SECTION_ACTION.ADD, () => updateCourseState(course.id, SECTION_ACTION.ADD), 'Section baru ditambahkan.'),
+    addSection: () => run(SECTION_ACTION.ADD, () => addSection(course.id), 'Section baru ditambahkan.'),
     createActivity: (section, modname, fields, successMessage, onError) =>
       run(`create:${section.id}`, () => createActivity(course.id, section.section, modname, fields), successMessage, onError),
   };
