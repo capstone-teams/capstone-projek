@@ -80,9 +80,9 @@ sudo systemctl start capstone-autodeploy.service    # deploy sekarang juga
 Deploy berhenti dan gagal (bukan menimpa) kalau server punya perubahan lokal
 yang belum di-commit — commit + push dulu, lalu jalankan service-nya lagi.
 
-`.github/workflows/deploy-develop.yml` (runner self-hosted `thinkpad`) sudah
+`.github/workflows/deploy-main.yml` (runner self-hosted `thinkpad`) sudah
 ada di repo tetapi belum aktif karena mendaftarkan runner butuh akses admin
-repo. Kalau nanti admin mendaftarkannya, push ke `develop` juga memicu deploy
+repo. Kalau nanti admin mendaftarkannya, push ke `main` juga memicu deploy
 dari GitHub Actions; keduanya idempoten.
 
 Langkah manual berikut hanya untuk darurat:

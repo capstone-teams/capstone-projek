@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -659,12 +660,24 @@ def _expect_dict(
     return payload
 
 
+def _plain_name(value: Any) -> str:
+    """Teks polos dari Web Service Moodle, dikembalikan ke bentuk tersimpan.
+
+    ``core_course_get_contents``/``core_course_get_courses`` memformat nama
+    dengan ``format_string(escape=true)``, sehingga ``&`` keluar sebagai
+    ``&amp;``. Nama di database Moodle (dan di course plan) adalah teks polos;
+    tanpa di-decode, judul ber-``&`` tampil ganda di UI dan read-back eksekusi
+    menganggap section berbeda padahal isinya sama.
+    """
+    return html.unescape(str(value or ""))
+
+
 def _to_course(raw: dict[str, Any]) -> MoodleCourse:
     category_id = raw.get("categoryid")
     return MoodleCourse(
         moodle_course_id=int(raw["id"]),
-        fullname=raw.get("fullname", ""),
-        shortname=raw.get("shortname", ""),
+        fullname=_plain_name(raw.get("fullname")),
+        shortname=_plain_name(raw.get("shortname")),
         visible=bool(raw.get("visible", 1)),
         summary=raw.get("summary") or "",
         category_id=int(category_id) if category_id is not None else None,
@@ -686,7 +699,7 @@ def _to_user(raw: dict[str, Any]) -> MoodleUser:
 def _to_module(raw: dict[str, Any]) -> MoodleModule:
     return MoodleModule(
         moodle_module_id=int(raw["id"]),
-        name=raw.get("name", ""),
+        name=_plain_name(raw.get("name")),
         modname=raw.get("modname", ""),
         visible=bool(raw.get("visible", 1)),
         url=_module_url(raw),
@@ -728,7 +741,7 @@ def _to_section(raw: dict[str, Any]) -> MoodleSection:
     return MoodleSection(
         moodle_section_id=int(raw["id"]),
         section_number=int(raw.get("section", 0)),
-        name=raw.get("name", ""),
+        name=_plain_name(raw.get("name")),
         summary=raw.get("summary") or "",
         visible=bool(raw.get("visible", 1)),
         modules=[

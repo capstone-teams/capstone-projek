@@ -1,11 +1,11 @@
-name: Deploy develop
+name: Deploy main
 
-# Deploy otomatis ke server demo (thinkpad) setiap kali develop diperbarui.
+# Deploy otomatis ke server demo (thinkpad) setiap kali main diperbarui.
 # Runner `self-hosted` terpasang di server itu sendiri, jadi workflow ini tidak
 # menyimpan SSH key atau secret apa pun di GitHub.
 #
 # Pengganti langkah manual: `git pull --ff-only` lalu `docker compose up -d
-# --build` di server. Hanya push ke develop yang memicu deploy — branch lain
+# --build` di server. Hanya push ke main yang memicu deploy — branch lain
 # dan pull request tidak menyentuh server.
 #
 # Catatan keamanan: server adalah milik tim, jangan tambahkan trigger
@@ -13,13 +13,13 @@ name: Deploy develop
 
 on:
   push:
-    branches: [develop]
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-develop
+  group: deploy-main
   cancel-in-progress: false
 
 jobs:
@@ -27,15 +27,15 @@ jobs:
     runs-on: [self-hosted, thinkpad]
     timeout-minutes: 30
     steps:
-      - name: Tarik kode develop
+      - name: Tarik kode main
         run: |
           set -euo pipefail
           cd "$HOME/capstone-projek"
-          git checkout develop
+          git checkout main
           # --ff-only: deploy berhenti dan gagal bila server punya perubahan
           # lokal yang belum di-commit, bukannya menimpanya diam-diam.
-          git fetch --prune origin develop
-          git merge --ff-only origin/develop
+          git fetch --prune origin main
+          git merge --ff-only origin/main
           git log -1 --oneline
 
       - name: Bersihkan image lama
