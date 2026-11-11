@@ -105,6 +105,20 @@ class CreateMoodleCourseRequest(BaseModel):
     category_id: int = Field(default=1, ge=1)
 
 
+class AddCourseSectionRequest(BaseModel):
+    """Tambah section dari Edit mode halaman course; nama kosong menjadi "Pertemuan N"."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(default="", max_length=255)
+
+
+class RenameCourseSectionRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=255)
+
+
 class SaveMoodleSectionRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
