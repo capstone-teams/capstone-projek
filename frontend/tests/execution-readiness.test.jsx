@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CoursePublishPage from '../src/pages/dosen/ai/CoursePublishPage';
 import * as coursePlanService from '../src/services/coursePlanService';
+import * as contentService from '../src/services/contentService';
+import * as instructorService from '../src/services/instructorService';
 import * as moodleIntegrationService from '../src/services/moodleIntegrationService';
 import * as executionService from '../src/services/executionService';
 import * as workflowService from '../src/services/workflowService';
@@ -47,6 +49,8 @@ describe('FE-13.1 Moodle Structure Execution Readiness Check & Start', () => {
     });
 
     vi.spyOn(executionService, 'listExecutions').mockResolvedValue([]);
+    vi.spyOn(contentService, 'listWorkflowContents').mockResolvedValue([]);
+    vi.spyOn(instructorService, 'getInstructorSetup').mockResolvedValue(null);
     vi.spyOn(executionService, 'startExecution').mockResolvedValue({
       execution_id: 'exec-demo-1',
       workflow_id: 'wf-1',
@@ -273,5 +277,147 @@ describe('FE-13.1 Moodle Structure Execution Readiness Check & Start', () => {
 
     expect(bindSpy).toHaveBeenCalledWith('wf-1', 48, expect.objectContaining({ rpsId: 'rps-1', throwOnError: true }));
     expect(executionService.startExecution).toHaveBeenCalledWith('wf-1', 'STRUCTURE');
+  });
+
+  it('FE-18.1: otomatis memilih FULL saat konten ada & menonaktifkan tombol bila masih ada konten aktif belum APPROVED', async () => {
+    vi.spyOn(instructorService, 'getInstructorSetup').mockResolvedValue({
+      activity: { enabled_activity_types: ['learning_material', 'assignment'] },
+    });
+    vi.spyOn(contentService, 'listWorkflowContents').mockResolvedValue([
+      { id: 'c-1', week_number: 1, kind: 'LEARNING_MATERIAL', title: 'Pengantar Basis Data', status: 'APPROVED' },
+      { id: 'c-2', week_number: 2, kind: 'ASSIGNMENT', title: 'Tugas ERD Lanjutan', status: 'DRAFT' },
+      { id: 'c-3', week_number: 3, kind: 'LEARNING_MATERIAL', title: 'Normalisasi', status: 'REJECTED' },
+    ]);
+
+    await renderPage();
+    await waitFor(() => container.textContent.includes('Kesiapan Eksekusi Course ke Moodle (FULL)'), 'FULL readiness card');
+
+    const fullBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Eksekusi Course ke Moodle')
+    );
+    expect(fullBtn).toBeTruthy();
+    expect(fullBtn.disabled).toBe(true);
+
+    // Daftar konten belum disetujui dan tautan ke tab Review harus tampil
+    expect(container.textContent).toContain('2 Belum Disetujui');
+    expect(container.textContent).toContain('Minggu 2 · Tugas — Tugas ERD Lanjutan');
+    expect(container.textContent).toContain('Minggu 3 · Materi pembelajaran — Normalisasi');
+
+    const reviewLink = [...container.querySelectorAll('a')].find((a) =>
+      a.textContent.includes('Buka Tab Review →')
+    );
+    expect(reviewLink).toBeTruthy();
+    expect(reviewLink.getAttribute('href')).toContain('/review');
+  });
+
+  it('FE-18.1: mengabaikan konten nonaktif, menampilkan ringkasan section+activity di modal FULL, dan memanggil scope FULL', async () => {
+    vi.spyOn(instructorService, 'getInstructorSetup').mockResolvedValue({
+      activity: { enabled_activity_types: ['learning_material', 'assignment'] },
+    });
+    vi.spyOn(contentService, 'listWorkflowContents').mockResolvedValue([
+      { id: 'c-1', week_number: 1, kind: 'LEARNING_MATERIAL', title: 'Pengantar', status: 'APPROVED' },
+      { id: 'c-2', week_number: 1, kind: 'ASSIGNMENT', title: 'Tugas 1', status: 'APPROVED' },
+      { id: 'c-3', week_number: 2, kind: 'LEARNING_MATERIAL', title: 'ERD', status: 'EXECUTED' },
+      { id: 'c-4', week_number: 2, kind: 'RESOURCE', title: 'Referensi Nonaktif', status: 'DRAFT' },
+    ]);
+    vi.spyOn(executionService, 'startExecution').mockResolvedValue({
+      execution_id: 'exec-full-1',
+      workflow_id: 'wf-1',
+      scope: 'FULL',
+      status: 'PENDING',
+      moodle_course_id: 2,
+      summary: { total: 19, success: 0, failed: 0, skipped: 0 },
+    });
+
+    await renderPage();
+    await waitFor(() => container.textContent.includes('Semua Disetujui (3 konten)'), 'All active approved');
+
+    const fullBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Eksekusi Course ke Moodle')
+    );
+    expect(fullBtn.disabled).toBe(false);
+
+    await act(async () => {
+      fullBtn.click();
+    });
+
+    await waitFor(() => container.querySelector('dialog'), 'FULL confirm modal');
+    const dialog = container.querySelector('dialog');
+    expect(dialog.textContent).toContain('Konfirmasi Eksekusi Course ke Moodle');
+    expect(dialog.textContent).toContain('16 section mingguan');
+    expect(dialog.textContent).toContain('3 activity konten');
+    expect(dialog.textContent).toContain('2 Materi pembelajaran · 1 Tugas');
+
+    const confirmBtn = [...dialog.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Ya, Mulai Eksekusi')
+    );
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    expect(executionService.startExecution).toHaveBeenCalledWith('wf-1', 'FULL');
+    await waitFor(() => container.textContent.includes('Status Eksekusi Course Moodle'), 'FULL progress card');
+  });
+
+  it('FE-18.1: menangani penolakan 409 CONTENT_NOT_APPROVED dari backend dengan pesan yang jelas', async () => {
+    vi.spyOn(contentService, 'listWorkflowContents').mockResolvedValue([
+      { id: 'c-1', week_number: 1, kind: 'LEARNING_MATERIAL', title: 'Pengantar', status: 'APPROVED' },
+    ]);
+    vi.spyOn(executionService, 'startExecution').mockRejectedValue(
+      new ApiError('INVALID_REQUEST', 409, 'Masih ada konten belum disetujui.', [
+        { field: 'reason', message: 'CONTENT_NOT_APPROVED' },
+      ])
+    );
+
+    await renderPage();
+    await waitFor(() => container.textContent.includes('Eksekusi Course ke Moodle'), 'Ready FULL button');
+
+    const fullBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Eksekusi Course ke Moodle')
+    );
+    await act(async () => {
+      fullBtn.click();
+    });
+
+    const confirmBtn = [...container.querySelectorAll('dialog button')].find((b) =>
+      b.textContent.includes('Ya, Mulai Eksekusi')
+    );
+    await act(async () => {
+      confirmBtn.click();
+    });
+
+    await waitFor(() => container.textContent.includes('Masih ada konten jenis aktif yang belum disetujui'), 'CONTENT_NOT_APPROVED message');
+  });
+
+  it('menampilkan label mode yang jelas serta panduan beralih ke Mode Lengkap saat memilih Struktur Saja', async () => {
+    vi.spyOn(contentService, 'listWorkflowContents').mockResolvedValue([
+      { id: 'c-1', week_number: 1, kind: 'LEARNING_MATERIAL', title: 'Pengantar', status: 'APPROVED' },
+    ]);
+
+    await renderPage();
+    await waitFor(() => container.textContent.includes('Lengkap: Struktur + Konten'), 'Clear FULL tab');
+
+    expect(container.textContent).toContain('Disarankan');
+    expect(container.textContent).toContain('Struktur Saja');
+    expect(container.textContent).toContain('tidak perlu menjalankan "Struktur Saja" secara terpisah');
+
+    const structureTab = [...container.querySelectorAll('button[role="tab"]')].find((b) =>
+      b.textContent.includes('Struktur Saja'),
+    );
+    await act(async () => {
+      structureTab.click();
+    });
+
+    await waitFor(() => container.textContent.includes('Konten pembelajaran sudah tersedia'), 'Structure switch guidance');
+    expect(container.textContent).toContain('Eksekusi Struktur Course');
+
+    const switchBackBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Pindah ke Mode Lengkap'),
+    );
+    await act(async () => {
+      switchBackBtn.click();
+    });
+
+    await waitFor(() => container.textContent.includes('Eksekusi Course ke Moodle'), 'Switched back to FULL');
   });
 });

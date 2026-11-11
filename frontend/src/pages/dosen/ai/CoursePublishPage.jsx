@@ -4,19 +4,22 @@ import { useApi } from '../../../hooks/useApi';
 import { usePolling } from '../../../hooks/usePolling';
 import { useWorkflowEvents } from '../../../hooks/useWorkflowEvents';
 import { getWorkflowPlan } from '../../../services/coursePlanService';
+import { listWorkflowContents } from '../../../services/contentService';
+import { getInstructorSetup } from '../../../services/instructorService';
 import { getMoodleStatus } from '../../../services/moodleIntegrationService';
 import {
   getExecution,
   listExecutions,
   retryExecution,
 } from '../../../services/executionService';
+import { isFullScopeExecution } from '../../../utils/executionReadiness';
 import ExecutionReadinessCard from '../../../components/ai/course/ExecutionReadinessCard';
 import ExecutionProgressCard from '../../../components/ai/course/ExecutionProgressCard';
 import ExecutionHistoryCard from '../../../components/ai/course/ExecutionHistoryCard';
 import { Alert } from '../../../components/ui';
 
 export default function CoursePublishPage() {
-  const { moodleCourse, workflow, workflowId, refresh } = useCourse();
+  const { course, moodleCourse, workflow, workflowId, refresh } = useCourse();
   const [newExecution, setNewExecution] = useState(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState(null);
   const [retrying, setRetrying] = useState(false);
@@ -25,6 +28,17 @@ export default function CoursePublishPage() {
   const planQuery = useApi(
     () => (workflowId ? getWorkflowPlan(workflowId).catch(() => null) : null),
     [workflowId]
+  );
+
+  // Ambil daftar konten mingguan & konfigurasi aktivitas untuk prasyarat cakupan FULL (FE-18.1)
+  const contentsQuery = useApi(
+    () => (workflowId ? listWorkflowContents(workflowId).catch(() => []) : []),
+    [workflowId]
+  );
+
+  const setupQuery = useApi(
+    () => getInstructorSetup().catch(() => null),
+    []
   );
 
   // Cek status koneksi Moodle backend
@@ -45,7 +59,7 @@ export default function CoursePublishPage() {
     || executions[0]?.execution_id
     || null;
 
-  // Ambil detail lengkap eksekusi terpilih (termasuk operations 16 minggu dan readback)
+  // Ambil detail lengkap eksekusi terpilih (termasuk operasi & readback)
   const executionDetailQuery = useApi(
     () => (workflowId && activeExecutionId ? getExecution(workflowId, activeExecutionId).catch(() => null) : null),
     [workflowId, activeExecutionId]
@@ -69,6 +83,7 @@ export default function CoursePublishPage() {
       } else if (event?.event === 'WORKFLOW_STAGE_COMPLETED' || event?.event === 'WORKFLOW_FAILED') {
         executionDetailQuery.reload({ silent: true });
         executionsQuery.reload({ silent: true });
+        contentsQuery.reload({ silent: true });
         refresh?.();
       }
     }
@@ -108,11 +123,16 @@ export default function CoursePublishPage() {
     }
   };
 
-  const targetCourse = moodleCourse || (workflow?.moodle_course_id ? { id: workflow.moodle_course_id } : null);
+  const moodleTargetId = moodleCourse?.id || workflow?.moodle_course_id || course?.moodle_course_id || null;
+  const targetCourse = moodleCourse || (moodleTargetId ? { id: moodleTargetId } : null);
+  const courseUrl = moodleTargetId ? `/course/${moodleTargetId}` : null;
+  const verificationUrl = currentExecution && !isRunning && isFullScopeExecution(currentExecution)
+    ? '../verification'
+    : null;
 
   return (
     <div className="stack">
-      {/* Kartu Pemeriksaan Kesiapan & Inisiasi Eksekusi Struktur (FE-13.1) */}
+      {/* Kartu Pemeriksaan Kesiapan & Inisiasi Eksekusi (FE-13.1 & FE-18.1) */}
       <ExecutionReadinessCard
         workflowId={workflowId}
         workflow={workflow}
@@ -121,31 +141,39 @@ export default function CoursePublishPage() {
         planLoading={planQuery.loading}
         moodleStatus={moodleStatusQuery.data}
         moodleStatusLoading={moodleStatusQuery.loading}
+        contents={contentsQuery.data ?? []}
+        contentsLoading={contentsQuery.loading}
+        instructorSetup={setupQuery.data}
         onExecutionStarted={handleExecutionStarted}
       />
 
       {currentExecution?.scope === 'STRUCTURE' && currentExecution?.status === 'SUCCESS' && (
-        <Alert tone="info" title="Cakupan eksekusi saat ini baru struktur section (STRUCTURE)">
-          Eksekusi struktur sudah membuat/memperbarui section mingguan beserta ringkasan topik di Moodle. Publikasi konten hasil generate menjadi activity Moodle (Page, URL, Assignment, Quiz — cakupan FULL) masih dinonaktifkan pada endpoint eksekusi backend saat ini.
+        <Alert tone="info" title="Cakupan eksekusi struktur section (STRUCTURE) selesai">
+          Struktur 16 section mingguan sudah dibuat di Moodle. Untuk menerbitkan materi, sumber belajar, tugas, dan kuis menjadi activity di tab Kursus serta melanjutkan ke Step 6 (Verifikasi), pastikan konten sudah disetujui lalu jalankan mode <strong>Lengkap: Struktur + Konten</strong> pada panel di atas.
         </Alert>
       )}
 
-      {/* Kartu Pemantauan Progres, Detail 16 Minggu, dan Verifikasi Read-Back (FE-13.2) */}
+      {/* Kartu Pemantauan Progres, Detail Operasi, dan Verifikasi Read-Back */}
       {currentExecution && (
         <ExecutionProgressCard
           execution={currentExecution}
           plan={planQuery.data}
+          courseUrl={courseUrl}
+          verificationUrl={verificationUrl}
           onRetry={handleRetry}
           retrying={retrying}
         />
       )}
 
-      {/* Riwayat Eksekusi Sebelumnya (FE-13.2) */}
+      {/* Riwayat Eksekusi Sebelumnya */}
       {executions.length > 0 && (
         <ExecutionHistoryCard
           executions={executions}
           activeExecutionId={activeExecutionId}
-          onSelectExecution={(id) => setSelectedExecutionId(id)}
+          onSelectExecution={(id) => {
+            setNewExecution(null);
+            setSelectedExecutionId(id);
+          }}
         />
       )}
     </div>
