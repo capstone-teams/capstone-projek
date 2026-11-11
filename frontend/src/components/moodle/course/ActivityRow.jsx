@@ -5,6 +5,7 @@ import MoodleHtml from '../MoodleHtml';
 import { ActivityEditMenu, InlineNameEditor } from '../editing';
 import { formatUnixDateTime } from '../../../utils/format';
 import { htmlToText, readingMinutes } from '../../../utils/htmlText';
+import { DIRECT_MOODLE_EDITING } from '../../../services/moodle/courseEditing';
 import { COURSE_CARD } from './courseCard';
 
 const MOD_LABELS = {
@@ -85,7 +86,7 @@ export default function ActivityRow({ courseId, mod, isTeacher, editMode, sectio
         <div className="min-w-0 flex-1">
           <span className="sr-only">{MOD_LABELS[mod.modname] ?? mod.modplural ?? mod.modname}: </span>
           {editMode ? (
-            <InlineNameEditor name={mod.name} itemLabel={mod.name} disabled={!!editing.pending} onSave={(name) => editing.renameCm(mod, name)}>
+            <InlineNameEditor name={mod.name} itemLabel={mod.name} disabled={!!editing.pending || !DIRECT_MOODLE_EDITING} onSave={(name) => editing.renameCm(mod, name)}>
               {title}
             </InlineNameEditor>
           ) : title}

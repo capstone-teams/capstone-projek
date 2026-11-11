@@ -281,3 +281,29 @@ async def test_valid_for_sample_rps(monkeypatch):
 
     result = await analyze_rps(VALID_YAML, max_fix_attempts=0)
     assert result.schema_version == "2.0"
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_from_provider_is_retried_with_fix_attempts(llm, events):
+    from src.services.llm.base import LLMInvalidOutputError
+
+    llm.responses = [LLMInvalidOutputError("bukan JSON"), VALID]
+    result = await analyze_rps(VALID_YAML, max_fix_attempts=1, emit_event=events)
+    assert result.count == 1
+    assert len(llm.calls) == 2
+    assert "RETRY_FIX" in events.types()
+
+
+@pytest.mark.asyncio
+async def test_exhausted_retry_reports_the_underlying_cause(llm):
+    from src.services.llm.base import LLMRateLimitError, LLMRetryExhaustedError
+
+    exhausted = LLMRetryExhaustedError("habis")
+    exhausted.last_error = LLMRateLimitError("429")
+    llm.responses = [exhausted]
+    with pytest.raises(RPSAnalysisError) as exc_info:
+        await analyze_rps(VALID_YAML, max_fix_attempts=2)
+    assert exc_info.value.reason_code == "PROVIDER_RATE_LIMIT"
+    assert "rate limit" in str(exc_info.value)
+    assert "Percobaan ulang otomatis sudah habis." in str(exc_info.value)
+    assert len(llm.calls) == 1

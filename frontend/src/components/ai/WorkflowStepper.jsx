@@ -1,16 +1,5 @@
 import { Link, useInRouterContext, useLocation } from 'react-router-dom';
-import { WORKFLOW_STEPPER_STEPS, deriveStepperState } from '../../utils/workflowStatus';
-
-function viewingKeyFromPath(pathname) {
-  const clean = String(pathname || '').replace(/\/+$/, '');
-  if (clean.endsWith('/rps')) return 'rps';
-  if (clean.endsWith('/plan')) return 'plan';
-  if (clean.endsWith('/content')) return 'content';
-  if (clean.endsWith('/review')) return 'review';
-  if (clean.endsWith('/publish')) return 'execution';
-  if (clean.endsWith('/verification')) return 'verification';
-  return null;
-}
+import { WORKFLOW_STEPPER_STEPS, deriveStepperState, isStepReachable, viewingKeyFromPath } from '../../utils/workflowStatus';
 
 function StepperMarkup({ current, finished, viewingKey, interactive }) {
   return (
@@ -18,7 +7,8 @@ function StepperMarkup({ current, finished, viewingKey, interactive }) {
       {WORKFLOW_STEPPER_STEPS.map((step, i) => {
         const state = i < current || finished ? 'done' : i === current ? 'current' : 'todo';
         const isViewing = Boolean(viewingKey && viewingKey === step.key);
-        const clickable = interactive && (step.key !== 'done' || finished);
+        const reachable = isStepReachable(i, { current, finished });
+        const clickable = interactive && reachable && (step.key !== 'done' || finished);
 
         const body = (
           <>
@@ -42,7 +32,13 @@ function StepperMarkup({ current, finished, viewingKey, interactive }) {
                 {body}
               </Link>
             ) : (
-              <span className="stepper__link">{body}</span>
+              <span
+                className={`stepper__link${interactive && !reachable ? ' cursor-not-allowed opacity-60' : ''}`}
+                aria-disabled={interactive && !reachable ? 'true' : undefined}
+                title={interactive && !reachable ? 'Selesaikan tahap sebelumnya terlebih dahulu.' : undefined}
+              >
+                {body}
+              </span>
             )}
           </li>
         );

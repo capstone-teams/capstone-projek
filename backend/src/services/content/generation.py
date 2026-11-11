@@ -17,6 +17,7 @@ Aturan yang dijaga di sini:
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import json
 from dataclasses import dataclass
@@ -221,22 +222,38 @@ class ContentGenerationService:
         *,
         emit_event,
     ) -> list[GenerationOutcome]:
-        """Jalankan Content Generation Service per minggu, isolasi kegagalan."""
+        """Jalankan Content Generation Service per minggu, isolasi kegagalan.
+
+        Beberapa minggu dikerjakan bersamaan (``CONTENT_GENERATION_CONCURRENCY``)
+        karena hampir seluruh waktunya menunggu LLM. Session database tidak boleh
+        dipakai beberapa coroutine sekaligus, jadi setiap akses database selama
+        generation (konteks minggu dan event) dilewatkan satu lock; yang berjalan
+        paralel hanya panggilan model. Hasil tetap diurutkan per minggu.
+        """
         by_week: dict[int, list[GenerationTarget]] = {}
         for target in prepared.targets:
             by_week.setdefault(target.ctx.week_number, []).append(target)
 
-        outcomes: list[GenerationOutcome] = []
-        for week in sorted(by_week):
-            outcomes.extend(
-                await self._generate_week(
+        db_lock = asyncio.Lock()
+        limit = asyncio.Semaphore(get_settings().content_generation_concurrency)
+
+        async def locked_emit(**kwargs) -> None:
+            async with db_lock:
+                await emit_event(**kwargs)
+
+        async def run(week: int) -> list[GenerationOutcome]:
+            async with limit:
+                return await self._generate_week(
                     prepared,
                     week,
                     by_week[week],
-                    emit_event=emit_event,
+                    emit_event=locked_emit,
+                    db_lock=db_lock,
                 )
-            )
-        return outcomes
+
+        weeks = sorted(by_week)
+        results = await asyncio.gather(*(run(week) for week in weeks))
+        return [outcome for week_outcomes in results for outcome in week_outcomes]
 
     async def store(
         self,
@@ -436,6 +453,7 @@ class ContentGenerationService:
         targets: list[GenerationTarget],
         *,
         emit_event,
+        db_lock: asyncio.Lock | None = None,
     ) -> list[GenerationOutcome]:
         attempts: dict[str, int] = {}
 
@@ -455,7 +473,7 @@ class ContentGenerationService:
 
         try:
             results = await generate_contents(
-                self._session,
+                _LockedSession(self._session, db_lock) if db_lock is not None else self._session,
                 prepared.course_plan_id,
                 week_numbers=[week],
                 content_types=[target.kind.value for target in targets],
@@ -744,3 +762,18 @@ def _prompt_version(kind: ContentKind) -> str:
 def _model_name() -> str | None:
     settings = get_settings()
     return settings.llm_model_for(settings.llm_provider) or None
+
+
+class _LockedSession:
+    """Session yang ``execute``-nya bergiliran lewat lock (generation paralel per minggu)."""
+
+    def __init__(self, session: AsyncSession, lock: asyncio.Lock) -> None:
+        self._session = session
+        self._lock = lock
+
+    async def execute(self, *args, **kwargs):
+        async with self._lock:
+            return await self._session.execute(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)

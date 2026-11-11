@@ -17,6 +17,7 @@ karena ilustrasi.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import html
 import logging
@@ -51,7 +52,7 @@ _TAG = re.compile(r"<[^>]+>")
 
 
 def _kroki_base() -> str:
-    return (get_settings().KROKI_BASE_URL or "https://kroki.io").rstrip("/")
+    return get_settings().kroki_base_url
 
 
 def illustration_hosts() -> set[str]:
@@ -98,7 +99,7 @@ async def _photo(client: httpx.AsyncClient, item: MaterialIllustration) -> Mater
     if not query:
         return None
     response = await client.get(
-        get_settings().WIKIMEDIA_API_URL,
+        get_settings().wikimedia_api_url,
         params={
             "action": "query",
             "format": "json",
@@ -160,7 +161,7 @@ async def resolve_material_illustrations(material, *, client: httpx.AsyncClient 
     ``material`` adalah ``LearningMaterialOutput`` (atau model lain dengan
     ``sections``); model baru dikembalikan, model asli tidak diubah.
     """
-    if not get_settings().ILLUSTRATIONS_ENABLED:
+    if not get_settings().illustrations_enabled:
         return material
     sections = getattr(material, "sections", None) or []
     if not any(section.illustration for section in sections):
@@ -169,10 +170,14 @@ async def resolve_material_illustrations(material, *, client: httpx.AsyncClient 
     own_client = client is None
     client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}, follow_redirects=True)
     try:
-        resolved = []
-        for section in sections:
-            illustration = await resolve_illustration(section.illustration, client=client)
-            resolved.append(section.model_copy(update={"illustration": illustration}))
+        # Semua section bersamaan: tiap pencarian dapat menunggu hingga TIMEOUT_SECONDS.
+        illustrations = await asyncio.gather(
+            *(resolve_illustration(section.illustration, client=client) for section in sections)
+        )
+        resolved = [
+            section.model_copy(update={"illustration": illustration})
+            for section, illustration in zip(sections, illustrations)
+        ]
     finally:
         if own_client:
             await client.aclose()
@@ -181,7 +186,7 @@ async def resolve_material_illustrations(material, *, client: httpx.AsyncClient 
 
 async def resolve_single_illustration(item: MaterialIllustration | None) -> MaterialIllustration | None:
     """Selesaikan satu ilustrasi (mis. pada draf Text and media area) dengan client sendiri."""
-    if item is None or not get_settings().ILLUSTRATIONS_ENABLED:
+    if item is None or not get_settings().illustrations_enabled:
         return None
     async with httpx.AsyncClient(
         timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}, follow_redirects=True

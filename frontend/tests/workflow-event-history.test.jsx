@@ -73,12 +73,12 @@ describe('FE-10.3 tampilan timeline', () => {
   const items = () => [...container.querySelectorAll('ol[aria-label="Riwayat event workflow"] > li')];
   const filter = (label) => [...container.querySelectorAll('[aria-label="Filter jenis event"] button')].find((b) => b.textContent.startsWith(label));
 
-  it('menampilkan seluruh event dari yang paling lama dengan jenis, tahap, pesan, dan waktu', async () => {
+  it('menampilkan seluruh event dari yang terbaru di atas dengan jenis, tahap, pesan, dan waktu', async () => {
     const events = history();
     await render(<WorkflowEventTimeline events={events} />);
     expect(items()).toHaveLength(events.length);
-    expect(items().map((li) => li.dataset.event)).toEqual(events.map((e) => e.event));
-    const failed = items()[5];
+    expect(items().map((li) => li.dataset.event)).toEqual(events.map((e) => e.event).reverse());
+    const failed = items()[events.length - 1 - 5];
     expect(failed.textContent).toContain('Kegagalan'); // jenis event
     expect(failed.textContent).toContain('Workflow gagal'); // nama event
     expect(failed.textContent).toContain('Analisis RPS'); // tahap
@@ -122,6 +122,8 @@ describe('FE-10.3 tampilan timeline', () => {
     await render(<WorkflowEventTimeline events={history()} />);
     expect(container.textContent).toContain('Proses ke-1');
     expect(container.textContent).toContain('Proses ke-2');
+    // Proses terbaru tampil lebih dulu.
+    expect(container.textContent.indexOf('Proses ke-2')).toBeLessThan(container.textContent.indexOf('Proses ke-1'));
     await act(async () => filter('Perubahan tahap').click());
     expect(container.textContent).not.toContain('Proses ke-');
   });
@@ -152,7 +154,8 @@ describe('FE-10.3 tampilan timeline', () => {
     await render(<WorkflowDetail workflowId="wf1" rpsName="RPS Uji" />);
     for (let i = 0; i < 50 && !items().length; i += 1) await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(items()).toHaveLength(42);
-    expect(items()[0].dataset.event).toBe('WORKFLOW_STARTED');
-    expect(items().at(-1).dataset.event).toBe(last);
+    // Terbaru di atas.
+    expect(items()[0].dataset.event).toBe(last);
+    expect(items().at(-1).dataset.event).toBe('WORKFLOW_STARTED');
   });
 });

@@ -293,6 +293,17 @@ class RPSService:
         persisted = await self._persist(document)
         return RPSProcessStart(document=persisted, reused=False)
 
+    def analysis_in_progress(self, document: RPSDocument) -> bool:
+        """Analisis dokumen sedang dikerjakan run lain (belum melewati lease pemrosesan).
+
+        Dipakai ``POST /rps/{id}/process`` agar permintaan berulang (klik ganda,
+        unggah ulang file yang sama) tidak menjalankan analisis kedua secara
+        bersamaan pada dokumen yang sama.
+        """
+        return document.is_analyzing and not document._is_stale(  # noqa: SLF001 - aturan lease domain
+            stale_after=self._processing_lease(), now=None
+        )
+
     async def attach_workflow(
         self, *, rps_id: str, owner_id: str, workflow_id: str
     ) -> RPSDocument:

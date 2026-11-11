@@ -28,6 +28,8 @@ from src.schemas.moodle import (
     MoodleSectionResponse,
     MoodleStatusResponse,
     SaveMoodleSectionRequest,
+    AddCourseSectionRequest,
+    RenameCourseSectionRequest,
 )
 from src.schemas.course_activity import (
     ActivityModname,
@@ -351,3 +353,49 @@ async def generate_activity(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.public_message) from exc
     except LLMProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.public_message) from exc
+
+
+
+# --- Section dari Edit mode halaman course (dosen) ------------------------------------------
+
+
+@router.post(
+    "/courses/{moodle_course_id}/course-sections",
+    response_model=MoodleSectionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Tambah section di akhir course",
+    dependencies=[Depends(instructor_only)],
+)
+async def add_course_section(
+    moodle_course_id: MoodleCourseIdPath,
+    service: ServiceDependency,
+    payload: AddCourseSectionRequest | None = None,
+) -> MoodleSectionResponse:
+    """Section baru setelah section terakhir, memakai token integrasi backend (bukan sesi Moodle di browser)."""
+    name = payload.name if payload is not None else ""
+    if not name:
+        contents = await service.get_course_contents(moodle_course_id)
+        next_number = max((section.section_number for section in contents.sections), default=0) + 1
+        name = f"Pertemuan {next_number}"
+    result = await service.save_section(moodle_course_id, name=name)
+    return MoodleSectionResponse.model_validate(result.section)
+
+
+@router.put(
+    "/courses/{moodle_course_id}/course-sections/{section_id}",
+    response_model=MoodleSectionResponse,
+    summary="Ganti nama section",
+    dependencies=[Depends(instructor_only)],
+)
+async def rename_course_section(
+    moodle_course_id: MoodleCourseIdPath,
+    section_id: Annotated[int, Path(ge=1, description="ID section di Moodle")],
+    payload: RenameCourseSectionRequest,
+    service: ServiceDependency,
+) -> MoodleSectionResponse:
+    """Nama section diubah lewat ``core_update_inplace_editable`` dengan token integrasi backend."""
+    contents = await service.get_course_contents(moodle_course_id)
+    if not any(section.moodle_section_id == section_id for section in contents.sections):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section tidak ditemukan pada course ini.")
+    result = await service.save_section(moodle_course_id, name=payload.name, section_id=section_id)
+    return MoodleSectionResponse.model_validate(result.section)

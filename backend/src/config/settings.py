@@ -50,6 +50,9 @@ DEFAULT_MOODLE_VERIFICATION_MAX_REPAIRS = 2
 
 # Nilai bawaan konfigurasi analisis RPS
 DEFAULT_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 2
+DEFAULT_CONTENT_GENERATION_CONCURRENCY = 3
+DEFAULT_KROKI_BASE_URL = "https://kroki.io"
+DEFAULT_WIKIMEDIA_API_URL = "https://commons.wikimedia.org/w/api.php"
 MAX_RPS_ANALYSIS_MAX_FIX_ATTEMPTS = 5
 
 # Batas panjang Additional Prompt dosen (BE-10.2). Prompt ini ikut dikirim ke
@@ -118,11 +121,15 @@ class Settings(BaseSettings):
     LLM_RETRY_MAX_WAIT: float | None = None
 
     content_generation_max_fix_attempts: int = 2
+    # Jumlah minggu yang digenerate bersamaan (kosong = 3). Waktu generation hampir
+    # seluruhnya menunggu LLM; turunkan ke 1 bila provider sering membatasi (429).
+    CONTENT_GENERATION_CONCURRENCY: int | None = None
     # Ilustrasi materi: diagram Mermaid dirender Kroki (dapat diarahkan ke instance
     # Kroki sendiri) dan foto berlisensi bebas dari Wikimedia Commons.
-    ILLUSTRATIONS_ENABLED: bool = True
-    KROKI_BASE_URL: str = "https://kroki.io"
-    WIKIMEDIA_API_URL: str = "https://commons.wikimedia.org/w/api.php"
+    # Kosong berarti aktif / alamat publik bawaan (lihat property di bawah).
+    ILLUSTRATIONS_ENABLED: bool | None = None
+    KROKI_BASE_URL: str = ""
+    WIKIMEDIA_API_URL: str = ""
     # Jumlah retry tambahan course planning setelah output tidak sesuai schema
     # (BE-14.3). 0 berarti satu percobaan tanpa retry.
     COURSE_PLANNING_MAX_FIX_ATTEMPTS: int = 1
@@ -372,6 +379,23 @@ class Settings(BaseSettings):
         """Canonical name of the provider selected through LLM_PROVIDER."""
         name = (self.LLM_PROVIDER or "").strip().lower()
         return LLM_PROVIDER_ALIASES.get(name, name)
+
+    @property
+    def content_generation_concurrency(self) -> int:
+        value = self.CONTENT_GENERATION_CONCURRENCY
+        return DEFAULT_CONTENT_GENERATION_CONCURRENCY if value is None else max(1, value)
+
+    @property
+    def illustrations_enabled(self) -> bool:
+        return True if self.ILLUSTRATIONS_ENABLED is None else self.ILLUSTRATIONS_ENABLED
+
+    @property
+    def kroki_base_url(self) -> str:
+        return (self.KROKI_BASE_URL or DEFAULT_KROKI_BASE_URL).rstrip("/")
+
+    @property
+    def wikimedia_api_url(self) -> str:
+        return self.WIKIMEDIA_API_URL or DEFAULT_WIKIMEDIA_API_URL
 
     @property
     def llm_max_retries(self) -> int:

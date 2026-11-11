@@ -18,6 +18,14 @@ import { MoodleError, callWs } from './moodleClient';
 import { api } from '../apiClient';
 import { isMoodleCourseId } from '../../utils/courseId';
 
+/**
+ * Aksi editor yang memanggil Moodle langsung (sembunyikan, pindah, duplikat, hapus, ganti nama aktivitas, visibilitas
+ * section) hanya tersedia bila browser memegang sesi Moodle (VITE_MOODLE_URL). Lewat Backend Gateway aksi itu belum
+ * punya endpoint, jadi menunya dinonaktifkan agar tidak berakhir dengan "Sesi Moodle belum ada".
+ */
+export const DIRECT_MOODLE_EDITING = Boolean(import.meta.env.VITE_MOODLE_URL);
+export const DIRECT_EDITING_UNAVAILABLE = 'Belum tersedia lewat aplikasi; ubah langsung di Moodle.';
+
 /** Aksi aktivitas (course module) yang dikirim ke core_courseformat_update_course. */
 export const CM_ACTION = {
   HIDE: 'cm_hide',
@@ -55,8 +63,20 @@ export function renameActivity(cmId, name) {
   return callWs('core_update_inplace_editable', { component: 'core_course', itemtype: 'activityname', itemid: cmId, value: name });
 }
 
-/** Nama section ditangani plugin format kursus (format_topics, format_weeks, ...). */
-export function renameSection(courseFormat, sectionId, name) {
+/**
+ * Tambah section di akhir kursus. Kursus Moodle lewat Backend Gateway (token integrasi backend), karena browser
+ * tidak memegang sesi Moodle; tanpa gateway (VITE_MOODLE_URL) memakai editor kursus Moodle langsung.
+ */
+export function addSection(courseId) {
+  if (isMoodleCourseId(courseId)) return api.post(`/integrations/moodle/courses/${courseId}/course-sections`, {});
+  return updateCourseState(courseId, SECTION_ACTION.ADD);
+}
+
+/** Nama section: lewat Backend Gateway untuk kursus Moodle; selain itu plugin format kursus (format_topics, ...). */
+export function renameSection(courseId, courseFormat, sectionId, name) {
+  if (isMoodleCourseId(courseId)) {
+    return api.put(`/integrations/moodle/courses/${courseId}/course-sections/${sectionId}`, { name });
+  }
   return callWs('core_update_inplace_editable', {
     component: `format_${courseFormat || 'topics'}`,
     itemtype: 'sectionname',

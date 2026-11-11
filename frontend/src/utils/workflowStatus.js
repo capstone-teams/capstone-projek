@@ -503,6 +503,26 @@ export const WORKFLOW_STEPPER_STEPS = [
   { key: 'done', label: 'Selesai', to: '' },
 ];
 
+/**
+ * Tahap dapat dibuka bila sudah tercapai: tahap yang selesai dan tahap yang sedang berjalan. Tahap berikutnya
+ * terkunci sampai tahap sebelumnya selesai (mis. Rencana belum dapat dibuka selama RPS belum selesai dianalisis).
+ */
+export function isStepReachable(index, { current, finished }) {
+  return finished || index <= current;
+}
+
+/** Kunci langkah stepper dari path halaman Generator AI yang sedang dibuka (null untuk Ringkasan/Workflow). */
+export function viewingKeyFromPath(pathname) {
+  const clean = String(pathname || '').replace(/\/+$/, '');
+  if (clean.endsWith('/rps')) return 'rps';
+  if (clean.endsWith('/plan')) return 'plan';
+  if (clean.endsWith('/content')) return 'content';
+  if (clean.endsWith('/review')) return 'review';
+  if (clean.endsWith('/publish')) return 'execution';
+  if (clean.endsWith('/verification')) return 'verification';
+  return null;
+}
+
 function stepperIndexForStage(stage, events = []) {
   switch (stage) {
     case WORKFLOW_STAGE.RPS_PROCESSING:

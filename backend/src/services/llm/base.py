@@ -67,6 +67,9 @@ class LLMRetryExhaustedError(LLMProviderError):
     error_code = "LLM_RETRY_EXHAUSTED"
     status_code = 503
     public_message = "Gagal terhubung ke layanan LLM setelah beberapa kali percobaan."
+    #: Error sementara terakhir (rate limit, timeout, koneksi) sebelum retry habis;
+    #: dipakai untuk menjelaskan penyebab kegagalan kepada dosen.
+    last_error: Exception | None = None
 
 
 class LLMInvalidOutputError(LLMProviderError):

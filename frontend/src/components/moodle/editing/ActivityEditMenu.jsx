@@ -2,7 +2,7 @@ import { useState } from 'react';
 import ActionMenu from './ActionMenu';
 import DeleteActivityModal from './DeleteActivityModal';
 import MoveActivityModal from './MoveActivityModal';
-import { CM_ACTION } from '../../../services/moodle/courseEditing';
+import { CM_ACTION, DIRECT_EDITING_UNAVAILABLE, DIRECT_MOODLE_EDITING } from '../../../services/moodle/courseEditing';
 
 /** Menu ⋮ aktivitas di Edit mode: pengaturan, pindah, indentasi, visibilitas, duplikat, peran, hapus. */
 export default function ActivityEditMenu({ activity, sections, editing }) {
@@ -19,7 +19,7 @@ export default function ActivityEditMenu({ activity, sections, editing }) {
       : { key: 'hide', label: 'Sembunyikan', onSelect: () => editing.cmAction(activity, CM_ACTION.HIDE) },
     { key: 'duplicate', label: 'Duplikat', onSelect: () => editing.cmAction(activity, CM_ACTION.DUPLICATE) },
     { key: 'delete', label: 'Hapus', danger: true, onSelect: () => setDialog('delete') },
-  ].filter(Boolean);
+  ].filter(Boolean).map((item) => (DIRECT_MOODLE_EDITING ? item : { ...item, disabled: true, title: DIRECT_EDITING_UNAVAILABLE }));
 
   return (
     <>

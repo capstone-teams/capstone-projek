@@ -396,16 +396,17 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
     expect(node.querySelector('nav.tabs')).toBeNull();
     expect(node.textContent).toContain('Halaman Rencana Simulasi');
 
-    // Stepper interaktif menampilkan tautan navigasi dan menandai langkah Rencana sedang dibuka
+    // Stepper interaktif: hanya tahap yang sudah tercapai (sampai Review yang sedang berjalan) yang dapat dibuka
     const stepperLinks = [...node.querySelectorAll('.stepper a.stepper__link')];
     expect(stepperLinks.map((a) => a.getAttribute('href'))).toEqual([
       '/course/48/ai/rps',
       '/course/48/ai/plan',
       '/course/48/ai/content',
       '/course/48/ai/review',
-      '/course/48/ai/publish',
-      '/course/48/ai/verification',
     ]);
+    const locked = [...node.querySelectorAll('.stepper [aria-disabled="true"]')];
+    expect(locked.map((el) => el.textContent)).toEqual(['5Eksekusi Moodle', '6Verifikasi', '7Selesai']);
+    expect(locked[0].getAttribute('title')).toBe('Selesaikan tahap sebelumnya terlebih dahulu.');
     const viewingPlan = stepperLinks.find((a) => a.getAttribute('href') === '/course/48/ai/plan');
     expect(viewingPlan?.getAttribute('aria-current')).toBe('page');
 

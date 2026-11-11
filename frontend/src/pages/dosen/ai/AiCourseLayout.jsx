@@ -17,7 +17,13 @@ import {
   moodleCourseIdOf,
   saveActiveCourseBinding,
 } from '../../../services/workflowService';
-import { isWorkflowBusy } from '../../../utils/workflowStatus';
+import {
+  WORKFLOW_STEPPER_STEPS,
+  deriveStepperState,
+  isStepReachable,
+  isWorkflowBusy,
+  viewingKeyFromPath,
+} from '../../../utils/workflowStatus';
 import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { Alert, Badge, Card, ErrorAlert, ErrorBoundary, Spinner } from '../../../components/ui';
 import WorkflowEventTimeline from '../../../components/ai/WorkflowEventTimeline';
@@ -39,7 +45,8 @@ function CourseProjectLayout() {
   const courseLookupKey = moodleId || courseIdParam;
 
   // Status workflow dapat dibuka walau kursus ini belum punya project, mis. dari tautan di daftar RPS.
-  const onStatusPage = useLocation().pathname.endsWith('/workflows');
+  const { pathname } = useLocation();
+  const onStatusPage = pathname.endsWith('/workflows');
   // Naik setiap ada event; halaman anak memakainya sebagai dependency untuk reload.
   const [version, setVersion] = useState(0);
 
@@ -243,6 +250,16 @@ function CourseProjectLayout() {
   };
   const [activityOpen, setActivityOpen] = useState(true);
 
+  // Tahap yang belum tercapai tidak dapat dibuka, juga lewat URL langsung. Penjagaan menunggu data workflow dan
+  // progres termuat agar halaman tidak sempat terkunci saat data belum ada; ?workflow= (workflow lain) dikecualikan.
+  const stepper = deriveStepperState(effectiveWorkflow, events, progressSnapshot.data ?? {});
+  const viewingIndex = WORKFLOW_STEPPER_STEPS.findIndex((step) => step.key === viewingKeyFromPath(pathname));
+  const guardReady = !workflowParam && !activeWfQuery.loading && !progressSnapshot.loading && (!workflowId || Boolean(effectiveWorkflow));
+  const lockedStep = guardReady && viewingIndex > 0 && !isStepReachable(viewingIndex, stepper)
+    ? WORKFLOW_STEPPER_STEPS[viewingIndex]
+    : null;
+  const currentStep = WORKFLOW_STEPPER_STEPS[Math.min(stepper.current, WORKFLOW_STEPPER_STEPS.length - 1)];
+
   if (!isTeacher) return <ForbiddenPage />;
   if (loading && !course) return <Spinner />;
   if (error && !course) return <ErrorAlert error={error} />;
@@ -295,6 +312,17 @@ function CourseProjectLayout() {
         </Alert>
       )}
 
+      {lockedStep ? (
+        <Card title={`Tahap ${lockedStep.label} belum tersedia`}>
+          <p className="text-sm text-muted">
+            Tahap ini terbuka setelah tahap sebelumnya selesai. Saat ini workflow berada pada tahap{' '}
+            <strong>{currentStep.label}</strong>.
+          </p>
+          <Link to={currentStep.to} className="btn btn--primary btn--sm mt-3">
+            Buka tahap {currentStep.label}
+          </Link>
+        </Card>
+      ) : (
       <ErrorBoundary>
         <Outlet context={{
           course,
@@ -314,6 +342,7 @@ function CourseProjectLayout() {
           workflowLoading: activeWfQuery.loading && !workflowId,
         }} />
       </ErrorBoundary>
+      )}
       </div>
 
       {!onStatusPage && (

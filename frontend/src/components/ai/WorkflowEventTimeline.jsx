@@ -35,8 +35,8 @@ function FilterButton({ active, label, count, onClick }) {
 
 /**
  * Riwayat event workflow sebagai timeline (FE-10.3): seluruh event dari GET /workflows/{id}/events, dari yang
- * paling lama, dengan jenis event, tahap, pesan, dan waktu. Dapat disaring per jenis event; bila workflow
- * dijalankan ulang, awal tiap proses ditandai.
+ * terbaru di atas sampai yang paling lama, dengan jenis event, tahap, pesan, dan waktu. Dapat disaring per jenis
+ * event; bila workflow dijalankan ulang, tiap proses diberi judul di atas event-nya (proses terbaru lebih dulu).
  */
 export default function WorkflowEventTimeline({ events = [] }) {
   const [filter, setFilter] = useState(ALL);
@@ -46,7 +46,8 @@ export default function WorkflowEventTimeline({ events = [] }) {
   const types = Object.values(EVENT_TYPE).filter((type) => counts[type]);
   // Filter yang jenisnya tidak lagi ada (mis. riwayat berganti) kembali ke semua event.
   const active = filter !== ALL && !counts[filter] ? ALL : filter;
-  const shown = active === ALL ? timeline : timeline.filter((event) => event.type === active);
+  // Terbaru di atas: aktivitas agent yang sedang berjalan langsung terlihat tanpa menggulir.
+  const shown = (active === ALL ? timeline : timeline.filter((event) => event.type === active)).slice().reverse();
 
   if (!timeline.length) return <EmptyState title="Belum ada event." />;
 
@@ -62,7 +63,8 @@ export default function WorkflowEventTimeline({ events = [] }) {
         {shown.map((event, index) => {
           const style = ITEM_STYLE[event.type] ?? DEFAULT_STYLE;
           const meta = EVENT_TYPE_META[event.type];
-          const runStart = active === ALL && runs > 1 && event.event === WORKFLOW_EVENT.STARTED;
+          // Judul proses tampil di atas event pertama (terbaru) tiap proses.
+          const runStart = active === ALL && runs > 1 && (index === 0 || shown[index - 1].run !== event.run);
           return (
             <li key={`${event.timestamp}-${event.event}-${index}`} data-event-type={event.type} data-event={event.event} className="flex gap-3">
               <span className="flex flex-col items-center" aria-hidden="true">
