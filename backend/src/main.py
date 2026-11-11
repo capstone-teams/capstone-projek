@@ -8,6 +8,7 @@ ada route individual maupun logika bisnis di sini.
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from starlette.middleware.gzip import GZipMiddleware
@@ -18,6 +19,17 @@ from src.middlewares.cors import register_cors
 from src.middlewares.error_handlers import register_exception_handlers
 from src.routes import api_router, health_router
 from src.services.auth.tokens import warn_if_secret_is_weak
+from src.services.workflow.reconciliation import reconcile_interrupted_runs
+
+logger = logging.getLogger(__name__)
+
+
+async def _close_interrupted_runs() -> None:
+    """Tutup run yang mati bersama proses sebelumnya; kegagalan tidak memblokir startup."""
+    try:
+        await reconcile_interrupted_runs()
+    except Exception:  # pragma: no cover - hanya jalur infrastruktur
+        logger.exception("gagal menutup workflow yang terputus")
 
 
 @asynccontextmanager
@@ -28,6 +40,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     connection pool, HTTP client). Logika bisnis tidak boleh dijalankan di sini.
     """
     warn_if_secret_is_weak()
+    await _close_interrupted_runs()
     yield
     await dispose_engine()
 
