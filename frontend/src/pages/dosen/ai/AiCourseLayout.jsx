@@ -27,7 +27,6 @@ import {
 import { COURSE_API_AVAILABLE } from '../../../services/config';
 import { Alert, Badge, Card, ErrorAlert, ErrorBoundary, Spinner } from '../../../components/ui';
 import WorkflowEventTimeline from '../../../components/ai/WorkflowEventTimeline';
-import WorkflowStatusBadge from '../../../components/ai/WorkflowStatusBadge';
 import WorkflowStepper from '../../../components/ai/WorkflowStepper';
 import { ForbiddenPage } from '../../StatusPage';
 import WorkflowLayout from './WorkflowLayout';
@@ -279,7 +278,6 @@ function CourseProjectLayout() {
           >
             Ringkasan
           </NavLink>
-          {effectiveWorkflow ? <WorkflowStatusBadge workflow={effectiveWorkflow} /> : <Badge>Belum dimulai</Badge>}
         </div>
       </div>
       <WorkflowStepper
