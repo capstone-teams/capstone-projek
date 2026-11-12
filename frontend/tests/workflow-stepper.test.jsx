@@ -200,8 +200,9 @@ describe('AiCourseLayout & CourseOverviewPage tanpa fallback mock DRAFT', () => 
       </MemoryRouter>,
     ));
 
-    // Tidak lagi menampakkan badge Draft hardcoded
-    expect(node.textContent).toContain('Menunggu tindakan Anda');
+    // Tidak lagi menampakkan badge Draft hardcoded atau badge status di header layout
+    const ringkasanLink = [...node.querySelectorAll('a')].find((a) => a.textContent.trim() === 'Ringkasan');
+    expect(ringkasanLink?.parentElement.querySelectorAll('.badge')).toHaveLength(0);
     expect(node.textContent).not.toMatch(/\bDraft\b/);
 
     // Step RPS & Rencana done (✓), Step Konten current
